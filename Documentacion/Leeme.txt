@@ -1,0 +1,5 @@
+Indicaciones al arranque para Cursor:
+
+Lee Agents.md, arquitectura.md y Paso01.md, este PasoNN.md lo has de obedecer al 100%
+No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
+

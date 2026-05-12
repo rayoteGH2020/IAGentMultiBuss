@@ -1,0 +1,46 @@
+---
+description: Reglas críticas del proyecto. Aplicar siempre.
+alwaysApply: true
+---
+
+# Reglas críticas (resumen)
+
+Antes de generar o retocar código de forma sustantiva:
+
+1. Lee `Agents.md` en la raíz (fuente canónica de reglas de código).
+2. Lee `arquitectura.md` si la tarea afecta a estructura, stack, seguridad o dominio de módulos / capa LLM (p. ej. §6–§8). Secretos/config: **`Agents.md` §2** (Infisical, sin `.env`).
+3. Si trabajas en un Paso, lee el `PasoXX.md` correspondiente.
+
+## Stack obligatorio (no sustituir sin aprobación explícita)
+
+- Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2, Instructor, `httpx` async.
+- Jinja2 + HTMX + Alpine.js + Tailwind CSS 4. Sin React, Vue ni Svelte.
+- PostgreSQL 16+ con pgvector. Sin MongoDB, Pinecone ni Qdrant.
+- Jobs: ARQ (Redis). Sin Celery.
+- Storage: Cloudflare R2 (`boto3`). LLM: cliente propio en `app/llm/client.py` (SDKs Anthropic/Google). Sin LangChain ni LlamaIndex como columna vertebral.
+- Auth: Clerk. Tests: pytest, Playwright. Tooling: uv, ruff, mypy estricto; hooks `pre-commit` → ver `arquitectura.md` §3. Secretos: **Infisical** (`Agents.md` §2); no ficheros `.env` en el repo.
+
+## Arquitectura
+
+- Capas: `routes/` → `services/` → `models/` + `llm/` + `core/`.
+- `routes/` no importa `models/` directamente; siempre vía `services/`.
+- `routes/web/`: HTML y patrón página/fragmento (`render()` / header `HX-Request`). `routes/api/`: JSON.
+
+## Convenciones mínimas
+
+- Handlers y servicios async. Type hints estrictos. Imports absolutos desde `app.`. Strings con comillas dobles.
+- Excepciones desde `app.core.errors`. Logging con `structlog`, no `print()`.
+- Prompts en `app/llm/prompts/` versionados; no prompts largos inline en Python.
+
+## Multi-tenant y datos
+
+- RLS en tablas con `tenant_id`; sesión con `app.current_tenant`. No confiar solo en filtros manuales.
+
+## Prohibido
+
+- `session.query()` (SQLAlchemy legado). `time.sleep()`, `requests` síncrono.
+- HTML concatenado en Python. Lógica de negocio en `routes/`. JSON desde `routes/web/`.
+- SQL generado por LLM con permisos de escritura. Guardar archivos de cliente en disco local (usar R2).
+- Crear o commitear `.env`; usar `infisical run` + variables de entorno según `Agents.md` §2.
+
+Si algo contradice `Agents.md` o `arquitectura.md`, detente y pregunta al usuario.

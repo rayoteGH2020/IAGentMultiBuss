@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+
+# uv
+.uv/
+
+# Entornos (Infisical inyecta variables; ignorar `.env*` si se crean por error)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Tailwind compilado (no commitear CSS generado)
+app/static/css/app.css
+
+# Logs
+*.log
+logs/
+
+# Datos locales
+data/
+*.db
+*.sqlite
+
+# Build / dist
+dist/
+build/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
