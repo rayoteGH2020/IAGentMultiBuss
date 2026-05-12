@@ -2,7 +2,7 @@
 
 > **Documentación canónica del proyecto:** diseño y dominio en **`arquitectura.md`**; reglas de código y stack en **`Agents.md`** (raíz; a veces enlazado como `AGENTS.md` / `CLAUDE.md`); tareas de implementación en **`PasoXX.md`**. Este fichero es solo **guía de uso** del asistente para personas.
 
-> Esta guía explica cómo configurar y usar Cursor o Claude Code de forma efectiva en este proyecto. 
+> Esta guía explica cómo configurar y usar Cursor o Claude Code de forma efectiva en este proyecto.
 Si vienes de C#/MVC y es tu primera vez con un asistente de IA pareja-de-código, lee la sección 1 con calma.
 
 ---

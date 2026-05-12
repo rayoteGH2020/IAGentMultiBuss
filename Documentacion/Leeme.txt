@@ -3,3 +3,14 @@ Indicaciones al arranque para Cursor:
 Lee Agents.md, arquitectura.md y Paso01.md, este PasoNN.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
+
+
+###################### 2026/05/12 14:00
+
+
+Set-Location "d:\AppsIA\IAgentMultiBuss"
+git branch -M main
+git commit -m "chore: initial import with docs and project rules"
+
+git remote add origin https://github.com/rayoteGH2020/IAGentMultiBuss.git
+git push -u origin main

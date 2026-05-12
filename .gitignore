@@ -26,7 +26,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Tailwind compilado (no commitear CSS generado)
+# Tailwind compilado
 app/static/css/app.css
 
 # Logs
