@@ -24,6 +24,6 @@ done
 echo ""
 echo "✓ Postgres   → localhost:5432 (user=saas pass=saas db=saas)"
 echo "✓ Redis      → localhost:6379"
-echo "✓ Langfuse   → http://localhost:3000 (dev@local / changeme123)"
+echo "✓ Langfuse   → http://localhost:3000 (dev@local.dev / changeme123)"
 echo ""
 echo "Recuerda registrar las API keys de Langfuse en Infisical (LANGFUSE_*); ver Agents.md §2."

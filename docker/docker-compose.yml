@@ -66,7 +66,7 @@ services:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-in-dev}
       SALT: ${LANGFUSE_SALT:-changeme-in-dev}
       TELEMETRY_ENABLED: "false"
-      LANGFUSE_INIT_USER_EMAIL: dev@local
+      LANGFUSE_INIT_USER_EMAIL: dev@local.dev
       LANGFUSE_INIT_USER_PASSWORD: changeme123
       LANGFUSE_INIT_USER_NAME: Dev
       LANGFUSE_INIT_ORG_NAME: Dev

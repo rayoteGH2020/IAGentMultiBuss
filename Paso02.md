@@ -20,16 +20,16 @@ Al final del paso, `docker compose up -d` levanta los tres servicios. Las URLs d
 
 ## Tareas
 
-- [ ] Crear `docker/docker-compose.yml` con servicios `postgres`, `redis`, `langfuse-db`, `langfuse`.
-- [ ] Crear `docker/postgres/init.sql` para activar extensiones (`pgvector`, `pgcrypto`, `uuid-ossp`).
-- [ ] Crear directorio `docker/data/` (gitignored) para volúmenes.
-- [ ] Añadir `docker/data/` a `.gitignore`.
-- [ ] Levantar los servicios y verificar que están sanos.
-- [ ] Probar conexión a Postgres con `psql` y confirmar que `pgvector` está activo.
-- [ ] Probar conexión a Redis con `redis-cli ping`.
-- [ ] Abrir Langfuse en `http://localhost:3000` y crear cuenta admin local.
-- [ ] Tras crear las API keys en Langfuse (Settings → API Keys), **registrarlas en Infisical** (entorno `dev` o el que uses): `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` (p. ej. `http://localhost:3000`). No crear `.env`.
-- [ ] Crear `scripts/dev_up.sh` y `scripts/dev_down.sh`.
+- [x] Crear `docker/docker-compose.yml` con servicios `postgres`, `redis`, `langfuse-db`, `langfuse`.
+- [x] Crear `docker/postgres/init.sql` para activar extensiones (`pgvector`, `pgcrypto`, `uuid-ossp`).
+- [x] Crear directorio `docker/data/` (gitignored) para volúmenes.
+- [x] Añadir `docker/data/` a `.gitignore`.
+- [x] Levantar los servicios y verificar que están sanos.
+- [x] Probar conexión a Postgres con `psql` y confirmar que `pgvector` está activo.
+- [x] Probar conexión a Redis con `redis-cli ping`. >>>RAR<<< Va dentro de Docker
+- [x] Abrir Langfuse en `http://localhost:3000` y crear cuenta admin local.
+- [x] Tras crear las API keys en Langfuse (Settings → API Keys), **registrarlas en Infisical** (entorno `dev` o el que uses): `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` (p. ej. `http://localhost:3000`). No crear `.env`.
+- [x] Crear `scripts/dev_up.sh` y `scripts/dev_down.sh`.
 - [ ] Commit: `chore: docker compose with postgres, redis, langfuse`.
 
 ## Detalles técnicos

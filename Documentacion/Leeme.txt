@@ -1,7 +1,17 @@
 Indicaciones al arranque para Cursor:
 
 Paso01.md hecho
-Paso02.md
+Paso02.md hecho, pendiente de hacer >>
+
+	Qué debes hacer tú (entorno local)
+		Docker Desktop (o Engine + Compose) en el PATH y puertos 5432, 6379, 3000, 5433 libres.
+		En Git Bash o WSL (bash): chmod +x scripts/dev_up.sh scripts/dev_down.sh y luego ./scripts/dev_up.sh.
+		Abrir http://localhost:3000, login dev@local / changeme123, crear API keys y guardarlas en Infisical: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST (ver Paso02.md y Agents.md §2).
+		Criterios del paso (psql, redis-cli, docker compose ps, etc.) con los comandos de la sección Comandos útiles de Paso02.md.
+		En esta máquina no había docker en el PATH, así que no se ha podido ejecutar docker compose up aquí; el check-yaml de pre-commit sí ha validado el YAML.
+
+		Si quieres, el siguiente paso lógico es git push y luego Paso 03 (FastAPI + healthchecks).
+
 Paso03.md
 Paso04.md
 Paso05.md
@@ -9,7 +19,8 @@ Paso06.md
 Paso07.md
 Paso08.md
 
-Lee Agents.md, arquitectura.md y Paso01.md, este PasoNN.md lo has de obedecer al 100%
+Lee Agents.md, arquitectura.md
+Lee Paso01.md, este PasoNN.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
 
@@ -23,3 +34,50 @@ git commit -m "chore: initial import with docs and project rules"
 
 git remote add origin https://github.com/rayoteGH2020/IAGentMultiBuss.git
 git push -u origin main
+
+###################### 2026/05/12 22:00
+
+Verificaciones Docker
+
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml exec postgres psql -U saas -d saas -c "SELECT extname FROM pg_extension"
+docker compose -f docker/docker-compose.yml exec redis redis-cli ping
+
+@@@@@@@@@@@@@@@@@@@@@@ Cuidado con esto...
+
+Lo que ya cumple el spec
+scripts/dev_up.sh y scripts/dev_down.sh existen.
+Contenido alineado con Paso02.md.
+Puedes marcar el checkbox y seguir.
+
+Lo que probablemente no funcionará en tu máquina (Windows)
+chmod +x no aplica en NTFS: marcarlos como ejecutables solo es relevante si los lanzas desde Git Bash o WSL.
+dev_up.sh usa curl: en PowerShell curl es un alias de Invoke-WebRequest, que no acepta -fsS → desde PowerShell el script no se ejecuta directamente. Pero Git Bash sí trae curl real.
+Path con barras: bash las maneja bien, no hay problema.
+Conclusión: para que dev_up.sh y dev_down.sh te sirvan en tu día a día tienes dos opciones:
+
+Opción A — Usarlos desde Git Bash o WSL
+# desde Git Bash
+chmod +x scripts/dev_up.sh scripts/dev_down.sh
+./scripts/dev_up.sh
+./scripts/dev_down.sh
+Opción B — En PowerShell, ejecutar Docker Compose directamente
+Que es lo que ya estás haciendo en tu rutina:
+
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml down
+Para el Paso 02 esto basta.
+
+Detalle pequeño que conviene corregir (no urgente)
+En dev_up.sh línea 27 dice:
+
+echo "✓ Langfuse   → http://localhost:3000 (dev@local / changeme123)"
+Como en docker-compose.yml cambiamos el email a dev@local.dev, ese mensaje queda desfasado. Igual que el TODO.md. Cuando vuelvas a Agent te lo puedo actualizar.
+
+Mejora opcional (la dejaste en TODO sección 10)
+Si quieres un único comando en Windows nativo sin Git Bash:
+
+scripts/dev_up.ps1 — equivalente PowerShell con Invoke-RestMethod o Test-NetConnection para el polling.
+scripts/dev_down.ps1.
+No es necesario para cerrar el Paso 02; es comodidad.
