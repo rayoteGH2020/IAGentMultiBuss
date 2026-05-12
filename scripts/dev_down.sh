@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+docker compose -f docker/docker-compose.yml down
+echo "Servicios detenidos. Datos persistidos en docker/data/."
