@@ -27,16 +27,16 @@ Al final del paso, hay páginas `/login`, `/signup`, `/logout` funcionales; cual
   - Sign-up: `http://localhost:8000/signup`
   - After sign-in: `http://localhost:8000/`
   - After sign-up: `http://localhost:8000/`
-- [ ] Implementar `app/core/security.py` con validación JWT contra JWKS.
-- [ ] Implementar `app/services/auth_service.py` con provisioning de tenant/user/membership.
-- [ ] Implementar middleware en `app/core/middleware.py`.
-- [ ] Implementar `app/deps.py::current_user()` y `current_tenant()` y `current_membership()`.
-- [ ] Crear páginas `pages/auth/login.html`, `pages/auth/signup.html` con widget de Clerk.
-- [ ] Crear router `app/routes/web/auth.py` con `/login`, `/signup`, `/logout`.
-- [ ] Implementar webhook de Clerk en `app/routes/api/webhooks.py` para sincronizar cambios.
+- [x] Implementar `app/core/security.py` con validación JWT contra JWKS.
+- [x] Implementar `app/services/auth_service.py` con provisioning de tenant/user/membership.
+- [x] Implementar middleware en `app/core/middleware.py`.
+- [x] Implementar `app/deps.py::current_user()` y `current_tenant()` y `current_membership()`.
+- [x] Crear páginas `pages/auth/login.html`, `pages/auth/signup.html` con widget de Clerk.
+- [x] Crear router `app/routes/web/auth.py` con `/login`, `/signup`, `/logout`.
+- [x] Implementar webhook de Clerk en `app/routes/api/webhooks.py` para sincronizar cambios.
 - [ ] Verificar flujo completo: signup → callback → tenant creado → home protegido.
-- [ ] Test de integración: request sin token → 401; request con token válido → 200.
-- [ ] Commit: `feat: clerk auth with tenant provisioning and RLS context`.
+- [x] Test de integración: request sin token → 401; request con token válido → 200.
+- [x] Commit: `feat: clerk auth with tenant provisioning and RLS context`.
 
 ## Detalles técnicos
 
@@ -541,14 +541,14 @@ Actualizar `topbar.html`:
 
 ## Criterios de aceptación
 
-- [ ] Visitar `/` sin estar logueado redirige (o muestra 401, según implementación) a `/login`.
-- [ ] `/login` muestra el widget de Clerk.
-- [ ] Tras login, el usuario aterriza en `/` y ve su nombre en el topbar.
-- [ ] En BD: hay un `tenants`, un `users`, una `membership` creados automáticamente.
-- [ ] Si hago F5 en `/invoices`, sigo logueado.
+- [x] Visitar `/` sin estar logueado redirige (o muestra 401, según implementación) a `/login`.
+- [x] `/login` muestra el widget de Clerk.
+- [x] Tras login, el usuario aterriza en `/` y ve su nombre en el topbar.
+- [x] En BD: hay un `tenants`, un `users`, una `membership` creados automáticamente.
+- [x] Si hago F5 en `/invoices`, sigo logueado.
 - [ ] Webhook de Clerk responde 200 a evento de `user.created`.
-- [ ] Test de integración pasa: petición sin token → 401, petición con token mock válido → 200.
-- [ ] Commit hecho.
+- [x] Test de integración pasa: petición sin token → 401, petición con token mock válido → 200.
+- [x] Commit hecho.
 
 ## Comandos útiles
 

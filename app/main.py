@@ -8,7 +8,9 @@ from app.core.cache import close_redis
 from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
-from app.routes.api import health
+from app.core.middleware import AuthMiddleware
+from app.routes.api import health, webhooks
+from app.routes.web import auth as auth_routes
 from app.routes.web import chat, demo, home, invoices, settings
 
 
@@ -32,12 +34,16 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
 
+    app.add_middleware(AuthMiddleware)
+
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
     # API routes
     app.include_router(health.router)
+    app.include_router(webhooks.router)
 
     # Web (HTML)
+    app.include_router(auth_routes.router)
     app.include_router(home.router)
     app.include_router(invoices.router)
     app.include_router(chat.router)

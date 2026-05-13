@@ -2,7 +2,12 @@ Para arrancar el proyecto >
 
 infisical login
 infisical run -- uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+infisical run -- uv run python -c "from app.config import get_settings; s=get_settings(); print('jwks', bool(s.clerk_jwks_url)); print('pk', s.clerk_publishable_key[:7]+'...'); print('sk', bool(s.clerk_secret_key.get_secret_value())); print('wh', bool(s.clerk_webhook_secret.get_secret_value()))"
+
 infisical run -- uv run alembic upgrade head
+
+ngrok http --domain=evergreen-enable-repose.ngrok-free.dev 8000
 
 Para entrar en docker
 	docker exec -it saas-postgres psql -U saas -d saas
@@ -54,14 +59,12 @@ Paso03.md hecho
 Paso04.md hecho
 Paso05.md hecho
 Paso06.md hecho
-Paso07.md
+Paso07.md hecho
 Paso08.md
 
-Lee Agents.md, arquitectura.md y Paso06.md, este Paso06.md lo has de obedecer al 100%
+Lee Agents.md, arquitectura.md y Paso07.md, este Paso07.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
-antiguo id proyect de infisical
-#"496b7c27-696a-4885-89a8-3423c856e97d",
 
 ###################### 2026/05/12 14:00
 

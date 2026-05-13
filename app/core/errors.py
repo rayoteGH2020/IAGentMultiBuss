@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from app.core.logging import get_logger
 
@@ -50,7 +50,7 @@ class ExternalServiceError(AppError):
 
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
-    async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    async def app_error_handler(request: Request, exc: AppError) -> Response:
         log.warning(
             "app_error",
             code=exc.code,
@@ -58,6 +58,16 @@ def register_error_handlers(app: FastAPI) -> None:
             details=exc.details,
             path=request.url.path,
         )
+        if isinstance(exc, AuthError):
+            accept = request.headers.get("accept", "")
+            if request.headers.get("HX-Request") == "true":
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"code": exc.code, "message": exc.message, "details": exc.details},
+                    headers={"HX-Redirect": "/login"},
+                )
+            if "text/html" in accept and request.url.path not in {"/login", "/signup"}:
+                return RedirectResponse(url="/login", status_code=302)
         return JSONResponse(
             status_code=exc.status_code,
             content={"code": exc.code, "message": exc.message, "details": exc.details},
