@@ -18,23 +18,23 @@ Al final del paso, visitar `http://localhost:8000/demo` muestra una página esti
 
 ## Tareas
 
-- [ ] Descargar Tailwind CLI standalone para tu sistema operativo.
-- [ ] Crear `tailwind.config.js` mínimo.
-- [ ] Crear `app/static/css/input.css` con directivas Tailwind.
-- [ ] Crear `scripts/tailwind_watch.sh` y `scripts/tailwind_build.sh`.
-- [ ] Descargar HTMX y Alpine como ficheros estáticos a `app/static/js/`.
-- [ ] Configurar montaje de `/static` en FastAPI.
-- [ ] Configurar `Jinja2Templates` en FastAPI.
-- [ ] Crear `app/core/templating.py` con el helper `render()` (patrón página/fragmento).
-- [ ] Crear `app/templates/base.html`.
-- [ ] Crear `app/templates/pages/demo.html`.
-- [ ] Crear `app/templates/components/htmx_demo.html` (fragmento que reemplaza).
-- [ ] Crear `app/routes/web/__init__.py` y `app/routes/web/demo.py`.
-- [ ] Montar el router web en `app/main.py`.
-- [ ] Verificar que `/demo` carga con estilos.
-- [ ] Verificar que el botón HTMX cambia el contenido sin recargar.
-- [ ] Verificar que el dropdown Alpine abre/cierra.
-- [ ] Commit: `feat: frontend base with tailwind, htmx, alpine`.
+- [x] Descargar Tailwind CLI standalone para tu sistema operativo.
+- [x] Crear `tailwind.config.js` mínimo.
+- [x] Crear `app/static/css/input.css` con directivas Tailwind.
+- [x] Crear `scripts/tailwind_watch.sh` y `scripts/tailwind_build.sh`.
+- [x] Descargar HTMX y Alpine como ficheros estáticos a `app/static/js/`.
+- [x] Configurar montaje de `/static` en FastAPI.
+- [x] Configurar `Jinja2Templates` en FastAPI.
+- [x] Crear `app/core/templating.py` con el helper `render()` (patrón página/fragmento).
+- [x] Crear `app/templates/base.html`.
+- [x] Crear `app/templates/pages/demo.html`.
+- [x] Crear `app/templates/components/htmx_demo.html` (fragmento que reemplaza).
+- [x] Crear `app/routes/web/__init__.py` y `app/routes/web/demo.py`.
+- [x] Montar el router web en `app/main.py`.
+- [x] Verificar que `/demo` carga con estilos.
+- [x] Verificar que el botón HTMX cambia el contenido sin recargar.
+- [x] Verificar que el dropdown Alpine abre/cierra.
+- [x] Commit: `feat: frontend base with tailwind, htmx, alpine`.
 
 ## Detalles técnicos
 

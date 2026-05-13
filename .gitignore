@@ -26,6 +26,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Infisical
+.infisical.json
+
 # Tailwind compilado
 app/static/css/app.css
 
