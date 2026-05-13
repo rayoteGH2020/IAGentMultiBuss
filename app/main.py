@@ -2,12 +2,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.core.cache import close_redis
 from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.routes.api import health
+from app.routes.web import demo
 
 
 @asynccontextmanager
@@ -30,8 +32,13 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
 
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
     # API routes
     app.include_router(health.router)
+
+    # Web (HTML)
+    app.include_router(demo.router)
 
     return app
 

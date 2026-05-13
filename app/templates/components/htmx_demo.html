@@ -1,0 +1,12 @@
+<div id="htmx-result" class="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+  <p class="text-emerald-800 font-medium">
+    ✓ Fragmento devuelto por el servidor a las {{ now }}
+  </p>
+  <button
+    class="btn-secondary mt-3"
+    hx-post="/demo/htmx"
+    hx-target="#htmx-result"
+    hx-swap="outerHTML">
+    Pulsar de nuevo
+  </button>
+</div>

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Demo · Mi SaaS{% endblock %}
+
+{% block content %}
+<main class="min-h-screen flex items-center justify-center p-6">
+  <div class="max-w-2xl w-full space-y-6">
+    <header>
+      <h1 class="text-4xl font-bold text-slate-900">Demo del stack</h1>
+      <p class="mt-2 text-slate-600">
+        Tailwind compila, HTMX intercepta, Alpine reacciona.
+      </p>
+    </header>
+
+    <section class="card space-y-4">
+      <h2 class="text-xl font-semibold">HTMX · reemplaza un fragmento</h2>
+      <p class="text-sm text-slate-600">
+        El botón pide <code>/demo/htmx</code> y reemplaza el bloque sin recargar.
+      </p>
+
+      <div id="htmx-result">
+        <button
+          class="btn-primary"
+          hx-post="/demo/htmx"
+          hx-target="#htmx-result"
+          hx-swap="outerHTML"
+          hx-indicator="#htmx-spinner">
+          Pulsar
+        </button>
+        <span id="htmx-spinner" class="htmx-indicator ml-2 text-slate-500">cargando…</span>
+      </div>
+    </section>
+
+    <section class="card space-y-4">
+      <h2 class="text-xl font-semibold">Alpine · estado puramente cliente</h2>
+      <div x-data="{ open: false }">
+        <button class="btn-secondary" @click="open = !open" x-text="open ? 'Cerrar' : 'Abrir'">
+        </button>
+        <div x-show="open" x-cloak x-transition class="mt-3 p-4 bg-slate-100 rounded-lg">
+          Contenido controlado por Alpine, sin servidor.
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-sm text-slate-500">
+      Si ves estilos, el botón cambia el texto al pulsar y el dropdown abre: el stack funciona.
+    </footer>
+  </div>
+</main>
+{% endblock %}

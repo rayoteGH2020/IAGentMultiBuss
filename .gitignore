@@ -29,6 +29,10 @@ htmlcov/
 # Tailwind compilado
 app/static/css/app.css
 
+# Tailwind CLI standalone (cada dev lo descarga)
+bin/tailwindcss
+bin/tailwindcss.exe
+
 # Logs
 *.log
 logs/
@@ -49,3 +53,6 @@ playwright/.cache/
 
 # Datos locales de Docker
 docker/data/
+
+# Documentación personal
+Documentacion/**

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token | default('') }}">
+
+  <title>{% block title %}Mi SaaS{% endblock %}</title>
+
+  <link rel="stylesheet" href="/static/css/app.css">
+
+  <script src="/static/js/htmx.min.js" defer></script>
+  <script src="/static/js/htmx-sse.js" defer></script>
+  <script src="/static/js/alpine.min.js" defer></script>
+
+  <script>
+    document.body && document.body.addEventListener("htmx:configRequest", (e) => {
+      // Espacio para inyectar CSRF cuando llegue
+    });
+  </script>
+</head>
+<body hx-boost="true" hx-ext="sse">
+  {% block body %}
+    {% block content %}{% endblock %}
+  {% endblock %}
+
+  <div id="toasts" class="fixed top-4 right-4 z-50 space-y-2"></div>
+</body>
+</html>
