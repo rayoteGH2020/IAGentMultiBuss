@@ -18,23 +18,23 @@ Al final del paso, las 4 páginas son navegables sin recargar la página complet
 
 ## Tareas
 
-- [ ] Crear `app/templates/layouts/dashboard.html` extendiendo `base.html`.
-- [ ] Crear `app/templates/components/sidebar.html`.
-- [ ] Crear `app/templates/components/topbar.html`.
-- [ ] Crear las 4 páginas placeholder en `app/templates/pages/`:
+- [x] Crear `app/templates/layouts/dashboard.html` extendiendo `base.html`.
+- [x] Crear `app/templates/components/sidebar.html`.
+- [x] Crear `app/templates/components/topbar.html`.
+- [x] Crear las 4 páginas placeholder en `app/templates/pages/`:
   - `pages/home/index.html`
   - `pages/invoices/index.html`
   - `pages/chat/index.html`
   - `pages/settings/index.html`
-- [ ] Crear routers en `app/routes/web/`:
+- [x] Crear routers en `app/routes/web/`:
   - `home.py`, `invoices.py`, `chat.py`, `settings.py`
-- [ ] Cada router aplica el patrón página/fragmento con `render()`.
-- [ ] Montar los 4 routers en `app/main.py`.
-- [ ] Sidebar marca el ítem activo según la URL.
-- [ ] `hx-boost="true"` en el `<body>` para navegación SPA-like.
-- [ ] Verificar navegación: click en sidebar → cambia contenido sin recargar, URL cambia, back button funciona.
-- [ ] Verificar deep link: pegar `/invoices` en el navegador → carga directa correcta.
-- [ ] Commit: `feat: dashboard layout with sidebar navigation`.
+- [x] Cada router aplica el patrón página/fragmento con `render()`.
+- [x] Montar los 4 routers en `app/main.py`.
+- [x] Sidebar marca el ítem activo según la URL.
+- [x] `hx-boost="true"` en el `<body>` para navegación SPA-like.
+- [x] Verificar navegación: click en sidebar → cambia contenido sin recargar, URL cambia, back button funciona.
+- [x] Verificar deep link: pegar `/invoices` en el navegador → carga directa correcta.
+- [x] Commit: `feat: dashboard layout with sidebar navigation`.
 
 ## Detalles técnicos
 
@@ -338,13 +338,13 @@ Por ahora, `hx-boost` por defecto es suficiente para mostrar el patrón.
 
 ## Criterios de aceptación
 
-- [ ] Visitar `/` carga la página de inicio con sidebar.
-- [ ] Pulsar "Facturas" en sidebar cambia la URL a `/invoices` y el contenido, sin recargar la página completa (verifica en DevTools: la request es AJAX, no navegación tradicional).
-- [ ] El back button del navegador funciona y vuelve a la página anterior.
-- [ ] Pegar `http://localhost:8000/chat` directamente en la barra de URL carga `/chat` con todo el layout.
-- [ ] El ítem activo del sidebar tiene fondo azul claro.
-- [ ] En móvil (DevTools responsive < 1024px) el sidebar se oculta.
-- [ ] `uv run mypy app` pasa.
+- [x] Visitar `/` carga la página de inicio con sidebar.
+- [x] Pulsar "Facturas" en sidebar cambia la URL a `/invoices` y el contenido, sin recargar la página completa (verifica en DevTools: la request es AJAX, no navegación tradicional).
+- [x] El back button del navegador funciona y vuelve a la página anterior.
+- [x] Pegar `http://localhost:8000/chat` directamente en la barra de URL carga `/chat` con todo el layout.
+- [x] El ítem activo del sidebar tiene fondo azul claro.
+- [x] En móvil (DevTools responsive < 1024px) el sidebar se oculta.
+- [x] `uv run mypy app` pasa.
 - [ ] Commit hecho.
 
 ## Comandos útiles

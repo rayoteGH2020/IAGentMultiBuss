@@ -1,0 +1,16 @@
+{# Paso05: misma barra que en layouts/dashboard.html (allí va el {% block page_title %} para herencia Jinja). #}
+<header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
+  <div class="flex items-center gap-3">
+    <button type="button" class="lg:hidden p-2 rounded-md hover:bg-slate-100">
+      <span class="sr-only">Menú</span>
+      ☰
+    </button>
+    <h1 class="text-lg font-semibold text-slate-900">
+      {% block page_title %}{% endblock %}
+    </h1>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <span class="text-sm text-slate-600">dev@local</span>
+  </div>
+</header>

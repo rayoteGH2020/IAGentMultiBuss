@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{# Header duplicado respecto a components/topbar.html: Jinja2 no aplica bloques hijos dentro de {% include %}. #}
+{% block body %}
+<div class="min-h-screen flex bg-slate-50">
+  {% include "components/sidebar.html" %}
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
+      <div class="flex items-center gap-3">
+        <button type="button" class="lg:hidden p-2 rounded-md hover:bg-slate-100">
+          <span class="sr-only">Menú</span>
+          ☰
+        </button>
+        <h1 class="text-lg font-semibold text-slate-900">{% block page_title %}{% endblock %}</h1>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-slate-600">dev@local</span>
+      </div>
+    </header>
+
+    <main id="main-content" class="flex-1 p-6 lg:p-8 overflow-y-auto">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}

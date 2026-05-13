@@ -9,7 +9,7 @@ from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.routes.api import health
-from app.routes.web import demo
+from app.routes.web import chat, demo, home, invoices, settings
 
 
 @asynccontextmanager
@@ -38,6 +38,10 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
 
     # Web (HTML)
+    app.include_router(home.router)
+    app.include_router(invoices.router)
+    app.include_router(chat.router)
+    app.include_router(settings.router)
     app.include_router(demo.router)
 
     return app
