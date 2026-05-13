@@ -362,14 +362,14 @@ def create_app() -> FastAPI:
 
 ## Criterios de aceptación
 
-- [ ] `./scripts/tailwind_build.sh` genera `app/static/css/app.css`.
-- [ ] `./scripts/tailwind_watch.sh` recompila cuando editas `input.css` o un `.html`.
-- [ ] `http://localhost:8000/demo` muestra la página con estilos Tailwind aplicados.
-- [ ] Pulsar el botón HTMX cambia el contenido SIN recargar la página (verifica en DevTools → Network: petición POST a `/demo/htmx` y respuesta HTML).
-- [ ] El dropdown Alpine abre/cierra al pulsar.
-- [ ] `app/static/css/app.css` está en `.gitignore` (es output compilado).
-- [ ] `bin/tailwindcss` está en `.gitignore`.
-- [ ] Commit hecho.
+- [x] `./scripts/tailwind_build.sh` genera `app/static/css/app.css`.
+- [x] `./scripts/tailwind_watch.sh` recompila cuando editas `input.css` o un `.html`.
+- [x] `http://localhost:8000/demo` muestra la página con estilos Tailwind aplicados.
+- [x] Pulsar el botón HTMX cambia el contenido SIN recargar la página (verifica en DevTools → Network: petición POST a `/demo/htmx` y respuesta HTML).
+- [x] El dropdown Alpine abre/cierra al pulsar.
+- [x] `app/static/css/app.css` está en `.gitignore` (es output compilado).
+- [x] `bin/tailwindcss` está en `.gitignore`.
+- [x] Commit hecho.
 
 ## Comandos útiles
 
