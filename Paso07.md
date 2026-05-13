@@ -21,7 +21,7 @@ Al final del paso, hay páginas `/login`, `/signup`, `/logout` funcionales; cual
 ## Tareas
 
 - [ ] Crear proyecto en Clerk con Organizations habilitado.
-- [ ] **Registrar en Infisical** las claves de Clerk (`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL`, `CLERK_WEBHOOK_SECRET`). No crear `.env`.
+- [x] **Registrar en Infisical** las claves de Clerk (`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL`, `CLERK_WEBHOOK_SECRET`). No crear `.env`.
 - [ ] Configurar URLs en Clerk Dashboard:
   - Sign-in: `http://localhost:8000/login`
   - Sign-up: `http://localhost:8000/signup`

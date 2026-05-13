@@ -13,9 +13,18 @@
   window.addEventListener("load", async () => {
     const C = window.Clerk;
     if (!C) return;
-    await C.load();
+    await C.load({
+      signInUrl: "/login",
+      signUpUrl: "/signup",
+      afterSignInUrl: "/",
+      afterSignUpUrl: "/",
+      afterSignOutUrl: "/login",
+    });
     const el = document.getElementById("clerk-sign-up");
-    if (el) C.mountSignUp(el);
+    if (el) C.mountSignUp(el, {
+      afterSignInUrl: "/",
+      afterSignUpUrl: "/",
+    });
   });
 </script>
 {% endblock %}

@@ -1,7 +1,7 @@
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.config import get_settings
 from app.core.templating import render
@@ -14,7 +14,9 @@ def _extract_host(jwks_url: str) -> str:
 
 
 @router.get("/login")
-async def login_page(request: Request) -> HTMLResponse:
+async def login_page(request: Request) -> Response:
+    if getattr(request.state, "user", None) is not None:
+        return RedirectResponse(url="/", status_code=302)
     settings = get_settings()
     return render(
         request,
