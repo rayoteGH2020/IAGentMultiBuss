@@ -24,19 +24,19 @@ Al final, `infisical run -- uv run uvicorn app.main:app --reload` arranca la app
 
 ## Tareas
 
-- [ ] Implementar `app/config.py` con `Settings` basado en `pydantic-settings`.
-- [ ] Implementar `app/core/db.py` con engine y session factory async.
-- [ ] Implementar `app/core/cache.py` con cliente Redis async.
-- [ ] Implementar `app/core/logging.py` con configuración de `structlog`.
-- [ ] Implementar `app/core/errors.py` con excepciones base y handlers.
-- [ ] Implementar `app/deps.py` con `get_db()` y `get_redis()`.
-- [ ] Implementar `app/routes/api/health.py` con los 3 endpoints.
-- [ ] Implementar `app/main.py` que monte todo.
-- [ ] Verificar arranque con `infisical run -- uv run uvicorn ...`.
-- [ ] Verificar `curl http://localhost:8000/health` → `{"status": "ok"}`.
-- [ ] Verificar `curl http://localhost:8000/health/db` → `{"status": "ok"}`.
-- [ ] Verificar `curl http://localhost:8000/health/redis` → `{"status": "ok"}`.
-- [ ] Commit: `feat: fastapi base with config, db, redis, health`.
+- [x] Implementar `app/config.py` con `Settings` basado en `pydantic-settings`.
+- [x] Implementar `app/core/db.py` con engine y session factory async.
+- [x] Implementar `app/core/cache.py` con cliente Redis async.
+- [x] Implementar `app/core/logging.py` con configuración de `structlog`.
+- [x] Implementar `app/core/errors.py` con excepciones base y handlers.
+- [x] Implementar `app/deps.py` con `get_db()` y `get_redis()`.
+- [x] Implementar `app/routes/api/health.py` con los 3 endpoints.
+- [x] Implementar `app/main.py` que monte todo.
+- [x] Verificar arranque con `infisical run -- uv run uvicorn ...`.
+- [x] Verificar `curl http://localhost:8000/health` → `{"status": "ok"}`.
+- [x] Verificar `curl http://localhost:8000/health/db` → `{"status": "ok"}`.
+- [x] Verificar `curl http://localhost:8000/health/redis` → `{"status": "ok"}`.
+- [x] Commit: `feat: fastapi base with config, db, redis, health`.
 
 ## Detalles técnicos
 
@@ -450,16 +450,16 @@ app = create_app()
 
 ## Criterios de aceptación
 
-- [ ] `infisical run -- uv run uvicorn app.main:app --reload` arranca sin errores.
-- [ ] Logs salen en consola con formato legible (color en dev).
-- [ ] `curl http://localhost:8000/health` → `{"status":"ok"}`.
-- [ ] `curl http://localhost:8000/health/db` → `{"status":"ok"}`.
-- [ ] `curl http://localhost:8000/health/redis` → `{"status":"ok"}`.
+- [x] `infisical run -- uv run uvicorn app.main:app --reload` arranca sin errores.
+- [x] Logs salen en consola con formato legible (color en dev).
+- [x] `curl http://localhost:8000/health` → `{"status":"ok"}`.
+- [x] `curl http://localhost:8000/health/db` → `{"status":"ok"}`.
+- [x] `curl http://localhost:8000/health/redis` → `{"status":"ok"}`.
 - [ ] Si paras Postgres, `/health/db` devuelve 500 con log estructurado.
-- [ ] `curl http://localhost:8000/docs` muestra Swagger con los 3 endpoints.
-- [ ] `uv run mypy app` pasa.
-- [ ] `uv run ruff check .` pasa.
-- [ ] Commit hecho.
+- [x] `curl http://localhost:8000/docs` muestra Swagger con los 3 endpoints.
+- [x] `uv run mypy app` pasa.
+- [x] `uv run ruff check .` pasa.
+- [x] Commit hecho.
 
 ## Comandos útiles
 

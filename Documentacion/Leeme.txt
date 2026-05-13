@@ -1,29 +1,59 @@
+Para arrancar el proyecto >
+
+infisical login
+infisical run -- uv run uvicorn app.main:app --reload
+Validar con : http://localhost:8000/docs
+uv run mypy app
+uv run ruff check .
+
+1. app/config.py — Settings con pydantic-settings
+	Abre el fichero y comprueba: BaseSettings, SettingsConfigDict(env_file=None, ...), campos obligatorios como database_url, redis_url, app_secret_key, y get_settings() con @lru_cache.
+	Prueba en runtime: si infisical run -- uv run uvicorn ... arranca sin ValidationError en Settings, la config se está leyendo bien del entorno.
+2. app/core/db.py — engine y sesión async
+	En el código: create_async_engine, async_sessionmaker, get_engine / get_sessionmaker, session_scope, dispose_engine, Base(DeclarativeBase).
+	Prueba: GET http://localhost:8000/health/db → {"status":"ok"} implica que la sesión ejecuta SELECT 1 contra Postgres con el stack async.
+3. app/core/cache.py — Redis async
+	En el código: redis.asyncio, from_url, get_redis, close_redis.
+	Prueba: GET http://localhost:8000/health/redis → {"status":"ok"}.
+4. app/core/logging.py — structlog
+	En el código: structlog.configure, configure_logging, get_logger.
+	Prueba: al arrancar la app, en consola deberías ver logs con formato legible (en dev, con colores si APP_ENV=development). Al parar el servidor, mensajes de apagado (app.shutting_down o similar).
+5. app/core/errors.py — excepciones y handlers
+	En el código: clases AppError, NotFoundError, etc., y register_error_handlers(app).
+	Prueba en código: en app/main.py debe llamarse register_error_handlers(app).
+	Prueba opcional: provocar un error no capturado en un endpoint de prueba y comprobar respuesta JSON 500 con cuerpo genérico; o lanzar AppError y ver el JSON con code / message (cuando tengas un endpoint que lo use).
+6. app/deps.py — get_db() y Redis para Depends
+	El paso nombra get_redis(); en tu repo suele ser get_redis_dep() para FastAPI. Lo que importa: que get_db exista y health.py use Depends(get_db) y Depends(get_redis_dep) (o el nombre que tengáis).
+	Prueba: los mismos /health/db y /health/redis confirman que los deps inyectan sesión y cliente.
+7. app/routes/api/health.py — tres endpoints
+	Prueba:
+	GET /health
+	GET /health/db
+	GET /health/redis
+	Los tres 200 y {"status":"ok"} (o equivalente).
+8. app/main.py — montar todo
+	En el código: create_app(), lifespan con configure_logging, dispose_engine, close_redis, include_router(health.router) (o el router de health).
+	Prueba: la app arranca con un solo proceso de entrada (app.main:app) y en http://localhost:8000/docs aparecen las tres rutas de health.
+
+
+######################
+
 Indicaciones al arranque para Cursor:
 
 Paso01.md hecho
-Paso02.md hecho, pendiente de hacer >>
-
-	Qué debes hacer tú (entorno local)
-		Docker Desktop (o Engine + Compose) en el PATH y puertos 5432, 6379, 3000, 5433 libres.
-		En Git Bash o WSL (bash): chmod +x scripts/dev_up.sh scripts/dev_down.sh y luego ./scripts/dev_up.sh.
-		Abrir http://localhost:3000, login dev@local / changeme123, crear API keys y guardarlas en Infisical: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST (ver Paso02.md y Agents.md §2).
-		Criterios del paso (psql, redis-cli, docker compose ps, etc.) con los comandos de la sección Comandos útiles de Paso02.md.
-		En esta máquina no había docker en el PATH, así que no se ha podido ejecutar docker compose up aquí; el check-yaml de pre-commit sí ha validado el YAML.
-
-		Si quieres, el siguiente paso lógico es git push y luego Paso 03 (FastAPI + healthchecks).
-
-Paso03.md
+Paso02.md hecho
+Paso03.md hecho
 Paso04.md
 Paso05.md
 Paso06.md
 Paso07.md
 Paso08.md
 
-Lee Agents.md, arquitectura.md
-Lee Paso01.md, este PasoNN.md lo has de obedecer al 100%
+Lee Agents.md, arquitectura.md y Paso03.md, este Paso03.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
-
+antiguo id proyect de infisical
+#"496b7c27-696a-4885-89a8-3423c856e97d",
 
 ###################### 2026/05/12 14:00
 
@@ -43,6 +73,10 @@ docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml ps
 docker compose -f docker/docker-compose.yml exec postgres psql -U saas -d saas -c "SELECT extname FROM pg_extension"
 docker compose -f docker/docker-compose.yml exec redis redis-cli ping
+
+Carga variables de Infisical
+
+infisical run --env=dev -- powershell -c 'echo $env:LANGFUSE_HOST'
 
 @@@@@@@@@@@@@@@@@@@@@@ Cuidado con esto...
 
