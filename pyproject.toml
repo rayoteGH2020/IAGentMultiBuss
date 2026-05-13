@@ -105,11 +105,15 @@ docstring-code-format = true
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-exclude = ["migrations/versions", "tests/"]
+exclude = ["migrations", "tests/"]
 
 [[tool.mypy.overrides]]
 module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["misc"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

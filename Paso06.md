@@ -18,21 +18,21 @@ Al final del paso, hay tres tenants en BD, sus datos están aislados por RLS, y 
 
 ## Tareas
 
-- [ ] Crear `app/models/base.py` con `Base` y `TimestampMixin`.
-- [ ] Crear `app/models/tenant.py` con modelo `Tenant`.
-- [ ] Crear `app/models/user.py` con modelo `User`.
-- [ ] Crear `app/models/membership.py` con modelo `Membership`.
-- [ ] Re-exportar todos en `app/models/__init__.py`.
-- [ ] Inicializar Alembic: `uv run alembic init -t async migrations`.
-- [ ] Configurar `alembic.ini` y `migrations/env.py` para usar `Settings` y `Base`.
-- [ ] Generar primera migración con autogenerate.
-- [ ] Revisar la migración a mano.
-- [ ] Crear segunda migración que activa RLS en las tablas con `tenant_id`.
-- [ ] Aplicar migraciones con `alembic upgrade head`.
-- [ ] Implementar `app/core/db.py::set_tenant_context()` para `SET LOCAL app.current_tenant`.
-- [ ] Crear test de integración que verifica aislamiento RLS.
-- [ ] Crear `scripts/seed_dev.py` para datos de prueba en dev.
-- [ ] Commit: `feat: identity models with RLS isolation`.
+- [x] Crear `app/models/base.py` con `Base` y `TimestampMixin`.
+- [x] Crear `app/models/tenant.py` con modelo `Tenant`.
+- [x] Crear `app/models/user.py` con modelo `User`.
+- [x] Crear `app/models/membership.py` con modelo `Membership`.
+- [x] Re-exportar todos en `app/models/__init__.py`.
+- [x] Inicializar Alembic: `uv run alembic init -t async migrations`.
+- [x] Configurar `alembic.ini` y `migrations/env.py` para usar `Settings` y `Base`.
+- [x] Generar primera migración con autogenerate.
+- [x] Revisar la migración a mano.
+- [x] Crear segunda migración que activa RLS en las tablas con `tenant_id`.
+- [x] Aplicar migraciones con `alembic upgrade head`.
+- [x] Implementar `app/core/db.py::set_tenant_context()` para `SET LOCAL app.current_tenant`.
+- [x] Crear test de integración que verifica aislamiento RLS.
+- [x] Crear `scripts/seed_dev.py` para datos de prueba en dev.
+- [x] Commit: `feat: identity models with RLS isolation`.
 
 ## Detalles técnicos
 
@@ -438,14 +438,14 @@ if __name__ == "__main__":
 
 ## Criterios de aceptación
 
-- [ ] `uv run alembic upgrade head` aplica las dos migraciones sin error.
-- [ ] `\dt` en psql muestra `tenants`, `users`, `memberships`, `alembic_version`.
-- [ ] `SELECT relrowsecurity FROM pg_class WHERE relname='memberships'` devuelve `t`.
-- [ ] `SELECT * FROM pg_policies WHERE tablename='memberships'` devuelve la política.
-- [ ] `uv run python scripts/seed_dev.py` crea tenant + user + membership.
-- [ ] `uv run pytest tests/integration/test_rls_isolation.py -v` pasa.
-- [ ] `uv run mypy app` pasa.
-- [ ] Commit hecho.
+- [x] `uv run alembic upgrade head` aplica las dos migraciones sin error.
+- [x] `\dt` en psql muestra `tenants`, `users`, `memberships`, `alembic_version`.
+- [x] `SELECT relrowsecurity FROM pg_class WHERE relname='memberships'` devuelve `t`.
+- [x] `SELECT * FROM pg_policies WHERE tablename='memberships'` devuelve la política.
+- [x] `uv run python scripts/seed_dev.py` crea tenant + user + membership.
+- [x] `uv run pytest tests/integration/test_rls_isolation.py -v` pasa.
+- [x] `uv run mypy app` pasa.
+- [x] Commit hecho.
 
 ## Comandos útiles
 

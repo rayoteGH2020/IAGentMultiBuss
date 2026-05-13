@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -64,3 +65,15 @@ async def dispose_engine() -> None:
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+
+
+async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:
+    """Configura el contexto RLS para la sesión actual (transacción local)."""
+    await session.execute(
+        text("SELECT set_config('app.current_tenant', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+
+
+async def clear_tenant_context(session: AsyncSession) -> None:
+    await session.execute(text("SELECT set_config('app.current_tenant', '', true)"))

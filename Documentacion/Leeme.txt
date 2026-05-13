@@ -2,6 +2,12 @@ Para arrancar el proyecto >
 
 infisical login
 infisical run -- uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+infisical run -- uv run alembic upgrade head
+
+Para entrar en docker
+	docker exec -it saas-postgres psql -U saas -d saas
+Lanzar consultas a docker
+docker exec saas-postgres psql -U saas -d saas -c "SELECT relrowsecurity FROM pg_class WHERE relname='memberships'"
 
 ## Opcional...
 Validar con : http://localhost:8000/docs
@@ -47,11 +53,11 @@ Paso02.md hecho
 Paso03.md hecho
 Paso04.md hecho
 Paso05.md hecho
-Paso06.md
+Paso06.md hecho
 Paso07.md
 Paso08.md
 
-Lee Agents.md, arquitectura.md y Paso05.md, este Paso05.md lo has de obedecer al 100%
+Lee Agents.md, arquitectura.md y Paso06.md, este Paso06.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
 antiguo id proyect de infisical
