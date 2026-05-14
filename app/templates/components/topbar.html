@@ -26,13 +26,16 @@
         @click="open = !open">
         {{ (user.name or user.email)[0] | upper }}
       </button>
-      <div x-show="open" x-cloak @click.outside="open = false"
+      <div x-show="open" x-cloak @click.outside="open = false" hx-boost="false"
            class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
         <a href="/settings/profile" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Mi cuenta</a>
         <a href="/settings/organization" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Organización</a>
         <hr class="my-1 border-slate-200">
-        <a href="/logout" hx-boost="false"
-           class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cerrar sesión</a>
+        <button type="button"
+                class="block w-full px-4 py-2 text-sm text-left text-slate-700 hover:bg-slate-50"
+                @click="window.location.assign('/logout')">
+          Cerrar sesión
+        </button>
       </div>
     </div>
   </div>
