@@ -60,6 +60,32 @@ def register_error_handlers(app: FastAPI) -> None:
         )
         if isinstance(exc, AuthError):
             accept = request.headers.get("accept", "")
+            if exc.details.get("code") == "no_active_organization":
+                if request.headers.get("HX-Request") == "true":
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={
+                            "code": exc.code,
+                            "message": exc.message,
+                            "details": exc.details,
+                        },
+                        headers={"HX-Redirect": "/onboarding"},
+                    )
+                if "text/html" in accept and request.url.path not in {
+                    "/onboarding",
+                    "/auth/organization",
+                    "/login",
+                    "/signup",
+                }:
+                    return RedirectResponse(url="/onboarding", status_code=302)
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={
+                        "code": exc.code,
+                        "message": exc.message,
+                        "details": exc.details,
+                    },
+                )
             if request.headers.get("HX-Request") == "true":
                 return JSONResponse(
                     status_code=exc.status_code,

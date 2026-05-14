@@ -7,6 +7,14 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _inject_auth_context(request: Request) -> dict[str, Any]:
+    return {
+        "user": getattr(request.state, "user", None),
+        "tenant": getattr(request.state, "tenant", None),
+        "membership": getattr(request.state, "membership", None),
+    }
+
+
 def render(
     request: Request,
     *,
@@ -22,7 +30,7 @@ def render(
     - Con HX-Request: usa `partial` (fragmento HTML).
     - Si `partial` no se pasa, siempre usa `full`.
     """
-    ctx = ctx or {}
+    ctx = {**_inject_auth_context(request), **(ctx or {})}
     is_htmx = request.headers.get("HX-Request") == "true"
     template = partial if (is_htmx and partial) else full
     return templates.TemplateResponse(

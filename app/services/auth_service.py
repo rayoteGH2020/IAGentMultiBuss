@@ -97,7 +97,13 @@ def org_id_from_claims(claims: dict[str, Any]) -> str | None:
 
 
 def org_role_from_claims(claims: dict[str, Any]) -> str:
+    """Rol en org: JWT v1 usa org_role; v2 usa o.rol."""
     raw = claims.get("org_role")
-    if not isinstance(raw, str) or not raw:
-        return "member"
-    return raw.replace("org:", "")
+    if isinstance(raw, str) and raw:
+        return raw.replace("org:", "")
+    o = claims.get("o")
+    if isinstance(o, dict):
+        rol = o.get("rol")
+        if isinstance(rol, str) and rol:
+            return rol
+    return "member"

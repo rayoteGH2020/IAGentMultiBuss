@@ -12,6 +12,11 @@ from app.models import Membership, Tenant, User
 
 
 async def current_user(request: Request) -> User:
+    if getattr(request.state, "auth_missing_organization", False):
+        raise AuthError(
+            "No active organization",
+            details={"code": "no_active_organization"},
+        )
     user = getattr(request.state, "user", None)
     if user is None:
         raise AuthError("Not authenticated")
@@ -19,6 +24,11 @@ async def current_user(request: Request) -> User:
 
 
 async def current_tenant(request: Request) -> Tenant:
+    if getattr(request.state, "auth_missing_organization", False):
+        raise AuthError(
+            "No active organization",
+            details={"code": "no_active_organization"},
+        )
     tenant = getattr(request.state, "tenant", None)
     if tenant is None:
         raise AuthError("No tenant context")
@@ -26,6 +36,11 @@ async def current_tenant(request: Request) -> Tenant:
 
 
 async def current_membership(request: Request) -> Membership:
+    if getattr(request.state, "auth_missing_organization", False):
+        raise AuthError(
+            "No active organization",
+            details={"code": "no_active_organization"},
+        )
     membership = getattr(request.state, "membership", None)
     if membership is None:
         raise AuthError("No membership")

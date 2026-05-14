@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 
-{# Header duplicado respecto a components/topbar.html: Jinja2 no aplica bloques hijos dentro de {% include %}. #}
 {% block body %}
 <div class="min-h-screen flex bg-slate-50">
   {% include "components/sidebar.html" %}
@@ -15,12 +14,31 @@
         <h1 class="text-lg font-semibold text-slate-900">{% block page_title %}{% endblock %}</h1>
       </div>
 
-      <div class="flex items-center gap-3">
-        <span class="text-sm text-slate-600">
-          {% if request.state.user %}{{ request.state.user.name or request.state.user.email }}{% else %}—{% endif %}
-        </span>
-        <a href="/logout" class="text-sm text-slate-500 hover:text-slate-700">Salir</a>
+      {% if tenant and user %}
+      <div class="flex items-center gap-4">
+        <div class="hidden md:flex flex-col items-end leading-tight">
+          <span class="text-sm font-medium text-slate-900">{{ tenant.name }}</span>
+          <span class="text-xs text-slate-500">{{ user.email }}</span>
+        </div>
+        <div class="relative" x-data="{ open: false }">
+          <button
+            type="button"
+            aria-expanded="false"
+            :aria-expanded="open.toString()"
+            class="h-9 w-9 rounded-full bg-primary-600 text-white font-semibold flex items-center justify-center hover:bg-primary-700"
+            @click="open = !open">
+            {{ (user.name or user.email)[0] | upper }}
+          </button>
+          <div x-show="open" x-cloak @click.outside="open = false"
+               class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
+            <a href="/settings/profile" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Mi cuenta</a>
+            <a href="/settings/organization" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Organización</a>
+            <hr class="my-1 border-slate-200">
+            <a href="/logout" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cerrar sesión</a>
+          </div>
+        </div>
       </div>
+      {% endif %}
     </header>
 
     <main id="main-content" class="flex-1 p-6 lg:p-8 overflow-y-auto">

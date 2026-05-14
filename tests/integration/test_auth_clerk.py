@@ -1,8 +1,11 @@
 """Tests de auth Clerk + middleware (sin llamadas reales a Clerk)."""
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from app.models import Membership, Tenant, User
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration
@@ -40,10 +43,69 @@ def test_home_without_session_redirects_to_login() -> None:
     assert r.headers.get("location") == "/login"
 
 
+def test_home_with_bearer_valid_user_but_no_org_redirects_to_org_picker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_sub = f"user_{uuid4().hex[:16]}"
+
+    def verify_no_org(_token: str) -> dict[str, object]:
+        return {"sub": user_sub, "v": 2}
+
+    monkeypatch.setattr("app.core.middleware.verify_clerk_jwt", verify_no_org)
+    from app.main import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(
+            "/",
+            headers={"Authorization": "Bearer fake-jwt", "Accept": "text/html"},
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert r.headers.get("location") == "/onboarding"
+
+
 def test_home_with_bearer_and_clerk_mocks_returns_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     user_sub = f"user_{uuid4().hex[:16]}"
     org_id = f"org_{uuid4().hex[:16]}"
     _make_clerk_mocks(monkeypatch, user_sub, org_id)
+
+    user_id = uuid4()
+    tenant_id = uuid4()
+    membership_id = uuid4()
+    now = datetime.now(tz=UTC)
+
+    async def fake_resolve(request: Request) -> None:
+        user = User(
+            clerk_user_id=user_sub,
+            email=f"{user_sub}@test.local",
+            name="Test",
+            created_at=now,
+            updated_at=now,
+        )
+        user.id = user_id
+        tenant = Tenant(
+            clerk_org_id=org_id,
+            name="Test Org",
+            plan="free",
+            settings={},
+            created_at=now,
+            updated_at=now,
+        )
+        tenant.id = tenant_id
+        membership = Membership(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role="admin",
+            created_at=now,
+            updated_at=now,
+        )
+        membership.id = membership_id
+        request.state.user = user
+        request.state.tenant = tenant
+        request.state.membership = membership
+
+    monkeypatch.setattr("app.core.middleware.try_resolve_clerk_session", fake_resolve)
+
     from app.main import app
 
     with TestClient(app, raise_server_exceptions=True) as client:

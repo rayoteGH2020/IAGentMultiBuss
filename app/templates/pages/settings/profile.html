@@ -1,0 +1,27 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Mi cuenta{% endblock %}
+{% block page_title %}Ajustes{% endblock %}
+
+{% block settings_content %}
+<div class="card space-y-4">
+  <div>
+    <h3 class="font-semibold">Datos personales</h3>
+    <p class="text-sm text-slate-500">Gestionados por Clerk. Para cambiarlos abre tu perfil.</p>
+  </div>
+  <dl class="divide-y divide-slate-200">
+    <div class="py-3 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Nombre</dt>
+      <dd class="text-sm font-medium">{{ user.name or "—" }}</dd>
+    </div>
+    <div class="py-3 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Email</dt>
+      <dd class="text-sm font-medium break-all">{{ user.email }}</dd>
+    </div>
+    <div class="py-3 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Cuenta creada</dt>
+      <dd class="text-sm font-medium">{{ user.created_at.strftime("%d/%m/%Y") }}</dd>
+    </div>
+  </dl>
+</div>
+{% endblock %}

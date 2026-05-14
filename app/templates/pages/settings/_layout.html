@@ -1,0 +1,23 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block content %}
+<div class="max-w-4xl space-y-6">
+  <nav class="flex gap-1 border-b border-slate-200" aria-label="Ajustes">
+    {% set tabs = [
+      ("/settings/profile", "Mi cuenta"),
+      ("/settings/organization", "Organización"),
+      ("/settings/billing", "Facturación"),
+    ] %}
+    {% for href, label in tabs %}
+      {% set active = request.url.path == href %}
+      <a href="{{ href }}"
+         class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
+                {{ 'border-primary-600 text-primary-700' if active else 'border-transparent text-slate-600 hover:text-slate-900' }}">
+        {{ label }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% block settings_content %}{% endblock %}
+</div>
+{% endblock %}
