@@ -33,6 +33,10 @@ SESSION_OPTIONAL_PATHS = frozenset(
 )
 
 
+def _is_logout_related_path(path: str) -> bool:
+    return path == "/logout" or path.startswith("/logout/")
+
+
 def _is_public(path: str) -> bool:
     return path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES)
 
@@ -41,6 +45,8 @@ def _skip_session_resolution(path: str) -> bool:
     """Rutas donde no hace falta leer JWT ni tocar BD (salvo login/signup/org/onboarding)."""
     if path in SESSION_OPTIONAL_PATHS:
         return False
+    if _is_logout_related_path(path):
+        return True
     return _is_public(path)
 
 
@@ -48,7 +54,7 @@ def _path_allowed_without_active_organization(path: str) -> bool:
     """Rutas accesibles con sesión Clerk pero sin organización activa en el JWT."""
     if path in SESSION_OPTIONAL_PATHS:
         return True
-    if path in frozenset({"/logout"}):
+    if _is_logout_related_path(path):
         return True
     return _is_public(path)
 
