@@ -482,4 +482,4 @@ def render(request, *, full, partial=None, ctx=None, status_code=200):
 
 ## Siguiente paso
 
-`Paso09.md` — Crear modelos `Invoice` e `InvoiceLine`, migración con RLS, servicio `invoice_service` con CRUD básico, y página `/invoices` que lista las facturas del tenant (todavía sin upload ni extracción).
+`Paso50.md` — Consola `/sadm/` SuperAdmin (SADM): crear/gestionar organizaciones y tenants enlazados a Clerk, alta de usuarios, primer login con cambio de contraseña obligatorio y webhooks de sincronización.

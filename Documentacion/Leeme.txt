@@ -1,3 +1,6 @@
+
+
+HAY QUE ANONIMIZAR > PRESIDIO
 Para arrancar el proyecto >
 
 infisical login
@@ -60,9 +63,16 @@ Paso04.md hecho
 Paso05.md hecho
 Paso06.md hecho
 Paso07.md hecho
-Paso08.md
+Paso08.md hecho
+Paso09.md
+Paso10.md
+Paso11.md
+Paso12.md
+Paso13.md
+Paso14.md
+Paso15.md
 
-Lee Agents.md, arquitectura.md y Paso07.md, este Paso07.md lo has de obedecer al 100%
+Lee Agents.md, arquitectura.md y Paso09.md, este Paso09.md lo has de obedecer al 100%
 No escribas código hasta confirmar que los tres están cargados y resumir en una frase el objetivo del Paso.
 
 
