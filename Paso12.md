@@ -18,14 +18,14 @@ Al final del paso, un test que recibe una factura real de fixtures devuelve una 
 
 ## Tareas
 
-- [ ] Crear `app/schemas/invoice.py` con `Factura` y `LineaFactura`.
-- [ ] Exportar desde `app/schemas/__init__.py`.
-- [ ] Crear prompt `app/llm/prompts/extraction_v1.txt`.
-- [ ] Crear `app/llm/extraction.py` con función `extract_invoice()`.
-- [ ] Adaptar `LLMClient.complete()` para aceptar contenido multimodal (lista de bloques `text` / `image` / `document`).
-- [ ] Tests unitarios con mock del LLM en `tests/unit/test_extraction.py`.
-- [ ] Test de integración con fixture real en `tests/integration/test_extraction_real.py` (gated).
-- [ ] Commit: `feat: invoice extraction with instructor and gemini flash`.
+- [x] Crear `app/schemas/invoice.py` con `Factura` y `LineaFactura`.
+- [x] Exportar desde `app/schemas/__init__.py`.
+- [x] Crear prompt `app/llm/prompts/extraction_v1.txt`.
+- [x] Crear `app/llm/extraction.py` con función `extract_invoice()`.
+- [x] Adaptar `LLMClient.complete()` para aceptar contenido multimodal (lista de bloques `text` / `image` / `document`).
+- [x] Tests unitarios con mock del LLM en `tests/unit/test_extraction.py`.
+- [x] Test de integración con fixture real en `tests/integration/test_extraction_real.py` (gated).
+- [x] Commit: `feat: invoice extraction with instructor and gemini flash`.
 
 ## Detalles técnicos
 
