@@ -19,15 +19,15 @@ Al final del paso, subir un PDF en la UI culmina con la fila mostrando proveedor
 
 ## Tareas
 
-- [ ] Crear `app/jobs/invoice_jobs.py` con función `process_invoice`.
-- [ ] Registrar la función en `app/jobs/settings.py` (`functions = [process_invoice]`).
-- [ ] Implementar setup/teardown del contexto del worker: pool de sesión Postgres con `app.current_tenant`.
-- [ ] Ampliar `app/services/invoice_service.py` con `apply_extraction_result()`.
-- [ ] Crear endpoint `GET /jobs/invoice/{invoice_id}/status` que devuelve `components/invoice_row.html`.
-- [ ] Asegurar que el worker procesa con concurrencia limitada por tenant (semáforo en Redis).
-- [ ] Test de integración: encolar job manualmente, ejecutar worker en línea, verificar fila `ready`.
-- [ ] Documentar cómo levantar el worker en `README.md`.
-- [ ] Commit: `feat: arq worker for invoice extraction with polling endpoint`.
+- [x] Crear `app/jobs/invoice_jobs.py` con función `process_invoice`.
+- [x] Registrar la función en `app/jobs/settings.py` (`functions = [process_invoice]`).
+- [x] Implementar setup/teardown del contexto del worker: pool de sesión Postgres con `app.current_tenant`.
+- [x] Ampliar `app/services/invoice_service.py` con `apply_extraction_result()`.
+- [x] Crear endpoint `GET /jobs/invoice/{invoice_id}/status` que devuelve `components/invoice_row.html`.
+- [x] Asegurar que el worker procesa con concurrencia limitada por tenant (semáforo en Redis).
+- [x] Test de integración: encolar job manualmente, ejecutar worker en línea, verificar fila `ready`.
+- [x] Documentar cómo levantar el worker en `README.md`.
+- [x] Commit: `feat: arq worker for invoice extraction with polling endpoint`.
 
 ## Detalles técnicos
 

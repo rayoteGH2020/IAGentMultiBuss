@@ -11,7 +11,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import AuthMiddleware
 from app.routes.api import health, webhooks
 from app.routes.web import auth as auth_routes
-from app.routes.web import chat, demo, home, invoices, settings
+from app.routes.web import chat, demo, home, invoices, jobs, settings
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(home.router)
     app.include_router(invoices.router)
+    app.include_router(jobs.router)
     app.include_router(chat.router)
     app.include_router(settings.router)
     app.include_router(demo.router)

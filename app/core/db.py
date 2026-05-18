@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -78,3 +79,12 @@ async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:
 
 async def clear_tenant_context(session: AsyncSession) -> None:
     await session.execute(text("SELECT set_config('app.current_tenant', '', true)"))
+
+
+@asynccontextmanager
+async def session_factory_for_worker(tenant_id: UUID) -> AsyncIterator[AsyncSession]:
+    """Sesión Postgres con variable RLS de tenant (uso en worker ARQ, sin HTTP middleware)."""
+    sm = get_sessionmaker()
+    async with sm() as session:
+        await set_tenant_context(session, str(tenant_id))
+        yield session

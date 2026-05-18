@@ -19,7 +19,12 @@ Ver `Paso01.md` para el bootstrap inicial.
 
 ```bash
 uv sync
+
+# Terminal 1 — API HTTP
 infisical run -- uv run uvicorn app.main:app --reload
+
+# Terminal 2 — worker ARQ (procesamiento de facturas encoladas)
+infisical run -- uv run arq app.jobs.settings.WorkerSettings
 ```
 
 *(Tras el Paso 03; hasta entonces la app puede no existir aún. Secretos vía Infisical, ver `Agents.md` §2.)*
