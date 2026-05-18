@@ -97,6 +97,7 @@ ignore = [
 "tests/**" = ["S", "ASYNC"]
 "migrations/**" = ["ALL"]
 "app/models/invoice.py" = ["TCH003"]
+"app/models/llm_call.py" = ["TCH003"]
 
 [tool.ruff.format]
 quote-style = "double"

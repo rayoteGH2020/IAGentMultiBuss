@@ -10,17 +10,22 @@ Este paso no toca facturas todavía. Construye la base sobre la que Paso 12 impl
 
 - Pasos 01-09 completados.
 - Claves de API: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`.
-- Langfuse local levantado (Paso 02) con sus claves.
+- Langfuse local levantado (Paso 02) con sus claves (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`).
+- Variables y secretos inyectados con **Infisical** (`infisical run -- uv run alembic upgrade head`, `infisical run -- uv run pytest ...`). Este proyecto **no** usa ficheros `.env`; ver `Agents.md` (gestión de secretos).
 
 ## Contexto relevante
 
 - `arquitectura.md` sección 8 (Capa LLM): router por defecto, prompts versionados, observabilidad.
 - `Agents.md`: no LangChain, prompts en ficheros con sufijo `_vN`, cada llamada en `llm_calls` + Langfuse, Instructor para output estructurado.
 
+## Secretos (Infisical)
+
+Definir en Infisical (o en el entorno que el CLI exporte), entre otros: `APP_SECRET_KEY`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`. Ejecutar la app y las migraciones con `infisical run -- <comando>`.
+
 ## Tareas
 
 - [ ] Añadir dependencias: `anthropic`, `google-genai`, `instructor`, `langfuse`.
-- [ ] Añadir variables a `app/config.py` y a `.env.example`.
+- [ ] Añadir variables a `app/config.py` (valores vía entorno / Infisical).
 - [ ] Crear `app/models/llm_call.py`.
 - [ ] Exportar el modelo desde `app/models/__init__.py`.
 - [ ] Migración Alembic con RLS para `llm_calls`.
@@ -38,19 +43,11 @@ Este paso no toca facturas todavía. Construye la base sobre la que Paso 12 impl
 
 ### `app/config.py` (añadir)
 
-```python
-class Settings(BaseSettings):
-    # ... lo anterior ...
-    anthropic_api_key: str
-    google_api_key: str
-    langfuse_public_key: str
-    langfuse_secret_key: str
-    langfuse_host: str = "http://localhost:3000"
-    llm_model_extraction: str | None = None
-    llm_model_chat: str | None = None
-    llm_model_classify: str | None = None
-    llm_model_sql: str | None = None
-```
+Expón en `Settings` (`pydantic-settings`, `env_file=None`) lectura desde Infisical/entorno, por ejemplo:
+
+- `anthropic_api_key`, `google_api_key`, `voyage_api_key` como `SecretStr` (pueden estar vacíos donde no aplique).
+- `langfuse_public_key`, `langfuse_secret_key`, `langfuse_host`.
+- Overrides opcionales: `llm_model_extraction`, `llm_model_chat`, `llm_model_classify`, `llm_model_sql`.
 
 ### `app/models/llm_call.py`
 
@@ -106,7 +103,7 @@ class LLMCall(Base):
     )
 ```
 
-Genera migración con `uv run alembic revision --autogenerate -m "add llm_calls"` y añade RLS como en Paso 09.
+Revisión `p10_llm_calls_01`: crear tabla `llm_calls`, política `tenant_isolation`, `FORCE ROW LEVEL SECURITY`, `GRANT` al rol `saas_app` igual que invoices (Paso 09). Opcional: `uv run alembic revision --autogenerate` y revisar antes de aplicar.
 
 ### `app/llm/prompts/ping_v1.txt`
 
@@ -170,165 +167,19 @@ def compute_cost_eur(model: str, input_tokens: int, output_tokens: int) -> Decim
 
 ### `app/llm/tracing.py`
 
-```python
-from functools import lru_cache
-
-from langfuse import Langfuse
-
-from app.config import settings
-
-
-@lru_cache(maxsize=1)
-def get_langfuse() -> Langfuse:
-    return Langfuse(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=settings.langfuse_host,
-    )
-```
+Factory `get_langfuse()` usando `from app.config import get_settings`, `public_key` / `secret_key` opcionales (strings vacíos se normalizan a `None`; sin claves válidas Langfuse trabaja deshabilitado). Host por defecto `http://localhost:3000`.
 
 ### `app/llm/client.py`
 
-```python
-from __future__ import annotations
+Implementación en repo:
 
-import time
-import uuid
-from typing import Literal, TypeVar
-
-import instructor
-import structlog
-from anthropic import AsyncAnthropic
-from google import genai
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import settings
-from app.llm.pricing import compute_cost_eur
-from app.llm.tracing import get_langfuse
-from app.models import LLMCall
-
-logger = structlog.get_logger(__name__)
-
-TaskType = Literal["extraction", "chat", "sql", "classify"]
-
-DEFAULT_MODELS: dict[TaskType, str] = {
-    "extraction": "gemini-2.5-flash",
-    "classify": "claude-haiku-4-5-20251001",
-    "chat": "claude-sonnet-4-6",
-    "sql": "claude-sonnet-4-6",
-}
-
-T = TypeVar("T", bound=BaseModel)
-
-
-class LLMClient:
-    def __init__(self) -> None:
-        self._anthropic = instructor.from_anthropic(
-            AsyncAnthropic(api_key=settings.anthropic_api_key)
-        )
-        self._google = instructor.from_genai(
-            genai.Client(api_key=settings.google_api_key), use_async=True
-        )
-        self._langfuse = get_langfuse()
-
-    def _resolve_model(self, task: TaskType) -> tuple[str, str]:
-        override = getattr(settings, f"llm_model_{task}", None)
-        model = override or DEFAULT_MODELS[task]
-        provider = "anthropic" if model.startswith("claude") else "google"
-        return model, provider
-
-    async def complete(
-        self,
-        *,
-        task: TaskType,
-        messages: list[dict],
-        response_model: type[T],
-        tenant_id: uuid.UUID,
-        db: AsyncSession,
-        prompt_version: str | None = None,
-        max_retries: int = 2,
-    ) -> T:
-        model, provider = self._resolve_model(task)
-        trace = self._langfuse.trace(
-            name=f"llm.{task}",
-            metadata={"tenant_id": str(tenant_id), "model": model},
-        )
-        start = time.perf_counter()
-        status = "ok"
-        error: str | None = None
-        input_tokens = output_tokens = 0
-        result: T | None = None
-
-        try:
-            if provider == "anthropic":
-                result, raw = await self._anthropic.messages.create_with_completion(
-                    model=model,
-                    messages=messages,
-                    response_model=response_model,
-                    max_retries=max_retries,
-                    max_tokens=4096,
-                )
-                input_tokens = raw.usage.input_tokens
-                output_tokens = raw.usage.output_tokens
-            else:
-                result = await self._google.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    response_model=response_model,
-                    max_retries=max_retries,
-                )
-                input_tokens = getattr(result, "_input_tokens", 0)
-                output_tokens = getattr(result, "_output_tokens", 0)
-        except Exception as exc:
-            status = "error"
-            error = str(exc)[:1000]
-            logger.exception("llm.error", task=task, model=model)
-            raise
-        finally:
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            cost = compute_cost_eur(model, input_tokens, output_tokens)
-            db.add(
-                LLMCall(
-                    tenant_id=tenant_id,
-                    task=task,
-                    model=model,
-                    provider=provider,
-                    prompt_version=prompt_version,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cost_eur=cost,
-                    latency_ms=latency_ms,
-                    status=status,
-                    error=error,
-                    langfuse_trace_id=trace.id,
-                )
-            )
-            trace.update(
-                output=result.model_dump() if result else None,
-                metadata={
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "cost_eur": float(cost),
-                    "latency_ms": latency_ms,
-                    "status": status,
-                },
-            )
-            self._langfuse.flush()
-
-        assert result is not None
-        return result
-
-
-_client: LLMClient | None = None
-
-
-def get_llm_client() -> LLMClient:
-    global _client
-    if _client is None:
-        _client = LLMClient()
-    return _client
-```
+- Singleton `get_llm_client()` y clase `LLMClient` con `complete(...)` async.
+- `DEFAULT_MODELS` por `TaskType` y overrides desde `Settings`.
+- Proveedor `anthropic` si el nombre del modelo empieza por `claude`, en caso contrario `google` (`gemini-...`).
+- Anthropic: `instructor.from_anthropic(AsyncAnthropic(...))` y `messages.create_with_completion`.
+- Google: `instructor.from_genai(Client(...), use_async=True)` y `chat.completions.create_with_completion`.
+- **Langfuse 2.x**: `create_trace_id()`, `start_observation(..., as_type="generation", trace_context=TraceContext(...))`, `update` con `usage_details` / `cost_details`, `end()`, `flush()`.
+- Tras cada intento: fila en `llm_calls` con `langfuse_trace_id` (id de traza), coste vía `compute_cost_eur`.
 
 ### `app/llm/__init__.py`
 
@@ -341,15 +192,24 @@ __all__ = ["LLMClient", "get_llm_client", "load_prompt", "render_prompt"]
 
 ### Test de humo
 
-`tests/integration/test_llm_client.py`:
+`tests/integration/test_llm_client.py`: skip si falta tabla `llm_calls` (migración pendiente). Skip si falta `ANTHROPIC_API_KEY` salvo ejecutar con `infisical run -- pytest ...`.
+
+Antes de `complete` / `SELECT`, llama `await set_tenant_context(db_session, str(tenant.id))` (`app.core.db`) para cumplir RLS.
+
+Ejemplo:
 
 ```python
 import pytest
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.config import get_settings
+from app.core.db import set_tenant_context
 from app.llm import get_llm_client, render_prompt
+from app.llm.client import reset_llm_client_for_tests
 from app.models import LLMCall
+
+pytestmark = pytest.mark.integration
 
 
 class Greeting(BaseModel):
@@ -357,12 +217,18 @@ class Greeting(BaseModel):
     idioma: str
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_llm_client_classify_smoke(db_session, tenant_factory):
+async def test_llm_client_classify_smoke(
+    db_session,
+    tenant_factory,
+    llm_calls_schema_ready,
+):
+    if not get_settings().anthropic_api_key.get_secret_value():
+        pytest.skip("Inyectar ANTHROPIC_API_KEY con Infisical antes del test.")
+    reset_llm_client_for_tests()
     tenant = await tenant_factory()
-    client = get_llm_client()
+    await set_tenant_context(db_session, str(tenant.id))
 
+    client = get_llm_client()
     prompt = render_prompt("ping_v1", name="Ana")
     result = await client.complete(
         task="classify",
@@ -381,11 +247,12 @@ async def test_llm_client_classify_smoke(db_session, tenant_factory):
     assert len(rows) == 1
     assert rows[0].status == "ok"
     assert rows[0].input_tokens > 0
+    assert rows[0].cost_eur > 0
 ```
 
 ## Criterios de aceptación
 
-- `uv run alembic upgrade head` aplica la migración.
+- `infisical run -- uv run alembic upgrade head` aplica la migración (BD con Postgres accesible).
 - El test de humo pasa contra la API real.
 - En Langfuse aparece una traza `llm.classify` con tokens y coste.
 - Hay una fila en `llm_calls` con `status='ok'`, `cost_eur > 0`.

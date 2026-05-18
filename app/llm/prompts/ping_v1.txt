@@ -1,0 +1,2 @@
+Eres un asistente conciso. Devuelve un saludo personalizado en español.
+Nombre del destinatario: {name}

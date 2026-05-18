@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr = SecretStr("")
     langfuse_host: str = "http://localhost:3000"
 
+    llm_model_extraction: str | None = None
+    llm_model_chat: str | None = None
+    llm_model_classify: str | None = None
+    llm_model_sql: str | None = None
+
     # Crypto
     encryption_key: SecretStr = SecretStr("")
 

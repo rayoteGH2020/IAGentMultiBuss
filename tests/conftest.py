@@ -91,3 +91,15 @@ async def invoices_schema_ready(db_session: AsyncSession) -> None:
     )
     if result.scalar_one_or_none() is None:
         pytest.skip("Run Paso09 migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def llm_calls_schema_ready(db_session: AsyncSession) -> None:
+    result = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'llm_calls'"
+        ),
+    )
+    if result.scalar_one_or_none() is None:
+        pytest.skip("Run Paso10 migration (`uv run alembic upgrade head`).")

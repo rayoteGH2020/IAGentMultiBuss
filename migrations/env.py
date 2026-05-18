@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.models import Base
 
 # IMPORTANTE: importar todos los modelos para que autogenerate los detecte
-from app.models import invoice, membership, tenant, user  # noqa: F401
+from app.models import invoice, llm_call, membership, tenant, user  # noqa: F401
 
 
 def _database_url() -> str:
