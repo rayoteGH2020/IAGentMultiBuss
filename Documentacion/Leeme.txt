@@ -4,7 +4,11 @@ HAY QUE ANONIMIZAR > PRESIDIO
 Para arrancar el proyecto >
 
 infisical login
-infisical run -- uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+infisical run -- uv run alembic upgrade head
+infisical run -- uv run pytest tests/integration/test_llm_client.py
+
+# infisical run -- uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ngrok http --domain=evergreen-enable-repose.ngrok-free.dev 8000
 
 		infisical run -- uv run python -c "from app.config import get_settings; s=get_settings(); print('jwks', bool(s.clerk_jwks_url)); print('pk', s.clerk_publishable_key[:7]+'...'); print('sk', bool(s.clerk_secret_key.get_secret_value())); print('wh', bool(s.clerk_webhook_secret.get_secret_value()))"
