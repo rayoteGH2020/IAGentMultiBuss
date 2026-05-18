@@ -10,14 +10,8 @@
       Sube facturas y tickets en PDF o foto. Las extraemos automáticamente.
     </p>
   </div>
-  <button
-    type="button"
-    class="px-4 py-2 bg-slate-200 text-slate-600 rounded-md cursor-not-allowed shrink-0"
-    disabled
-    title="Disponible en el siguiente paso">
-    Subir facturas
-  </button>
+  {% include "components/upload_modal.html" %}
 </div>
 
-{% include "components/invoices_table.html" %}
+{% include "components/invoices_panel.html" %}
 {% endblock %}

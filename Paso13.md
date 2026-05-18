@@ -17,17 +17,17 @@ Cerrar el lado web de la subida: modal con drag&drop, validación cliente, valid
 
 ## Tareas
 
-- [ ] Añadir dependencia: `python-magic` para validar magic bytes.
-- [ ] Configurar ARQ: `app/jobs/settings.py` con `WorkerSettings` (aunque el worker no se levante todavía).
-- [ ] Crear `app/jobs/queue.py` con helper `enqueue_invoice_processing()`.
-- [ ] Ampliar `app/services/invoice_service.py` con `create_invoice_from_upload()`.
-- [ ] Crear endpoint `POST /invoices/upload` en `app/routes/web/invoices.py`.
-- [ ] Habilitar el botón "Subir facturas" en `pages/invoices/index.html`.
-- [ ] Crear `app/templates/components/upload_modal.html`.
-- [ ] Crear `app/templates/components/invoice_row.html` con estados visuales.
-- [ ] Endpoint `GET /invoices/rows` que devuelve solo las filas recientes (para refrescar la tabla tras subir).
-- [ ] Test de integración: subir un PDF, recibir 200, verificar fila en BD con estado `pending`.
-- [ ] Commit: `feat: invoice upload UI with htmx dropzone`.
+- [x] Añadir dependencia: `python-magic` para validar magic bytes.
+- [x] Configurar ARQ: `app/jobs/settings.py` con `WorkerSettings` (aunque el worker no se levante todavía).
+- [x] Crear `app/jobs/queue.py` con helper `enqueue_invoice_processing()`.
+- [x] Ampliar `app/services/invoice_service.py` con `create_invoice_from_upload()`.
+- [x] Crear endpoint `POST /invoices/upload` en `app/routes/web/invoices.py`.
+- [x] Habilitar el botón "Subir facturas" en `pages/invoices/index.html`.
+- [x] Crear `app/templates/components/upload_modal.html`.
+- [x] Crear `app/templates/components/invoice_row.html` con estados visuales.
+- [x] Endpoint `GET /invoices/rows` que devuelve solo las filas recientes (para refrescar la tabla tras subir).
+- [x] Test de integración: subir un PDF, recibir 200, verificar fila en BD con estado `processing`.
+- [x] Commit: `feat: invoice upload UI with htmx dropzone`.
 
 ## Detalles técnicos
 

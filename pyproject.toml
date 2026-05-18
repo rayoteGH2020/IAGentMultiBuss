@@ -34,6 +34,7 @@ dependencies = [
 
     # Background jobs
     "arq>=0.26.0",
+    "python-magic>=0.4.27",
 
     # Storage
     "boto3>=1.35.0",
@@ -100,6 +101,7 @@ ignore = [
 "app/models/invoice.py" = ["TCH003"]
 "app/models/llm_call.py" = ["TCH003"]
 "app/schemas/invoice.py" = ["TCH003"]
+"app/jobs/queue.py" = ["TCH003"]
 
 [tool.ruff.format]
 quote-style = "double"

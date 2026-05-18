@@ -61,10 +61,11 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
 
 
 async def dispose_engine() -> None:
-    global _engine
+    global _engine, _sessionmaker
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+    _sessionmaker = None
 
 
 async def set_tenant_context(session: AsyncSession, tenant_id: str) -> None:

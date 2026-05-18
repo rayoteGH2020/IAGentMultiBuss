@@ -1,0 +1,85 @@
+<div
+  x-data="{ open: false, files: [], dragging: false }"
+  @keydown.escape.window="open = false"
+  class="inline-block">
+
+  <button type="button" @click="open = true"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm shrink-0">
+    Subir facturas
+  </button>
+
+  <div x-show="open" x-cloak
+       class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
+       @click.self="open = false">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-slate-900">Subir facturas</h2>
+        <button type="button" @click="open = false"
+                class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="Cerrar">✕</button>
+      </div>
+
+      <form
+        hx-post="/invoices/upload"
+        hx-encoding="multipart/form-data"
+        hx-target="#invoices-table-container"
+        hx-swap="outerHTML"
+        hx-indicator="#upload-spinner"
+        @htmx:after-request="open = false; files = []">
+
+        <label
+          class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition"
+          :class="dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300'"
+          @dragover.prevent="dragging = true"
+          @dragleave.prevent="dragging = false"
+          @drop.prevent="
+            dragging = false;
+            files = Array.from($event.dataTransfer.files);
+            const dt = new DataTransfer();
+            files.forEach(function (f) { dt.items.add(f); });
+            $refs.input.files = dt.files;">
+
+          <input
+            type="file"
+            name="files"
+            x-ref="input"
+            class="hidden"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            @change="files = Array.from($event.target.files)">
+
+          <p class="text-sm text-slate-600">
+            Arrastra aquí PDFs o fotos de facturas, o haz click para elegir.
+          </p>
+          <p class="text-xs text-slate-400 mt-1">
+            Máximo 20 ficheros, 20 MB cada uno.
+          </p>
+        </label>
+
+        <ul x-show="files.length" class="mt-4 space-y-1 max-h-40 overflow-y-auto">
+          <template x-for="f in files" :key="f.name">
+            <li class="flex items-center justify-between text-sm text-slate-700">
+              <span x-text="f.name" class="truncate"></span>
+              <span class="text-xs text-slate-400"
+                    x-text="(f.size / 1024).toFixed(0) + ' KB'"></span>
+            </li>
+          </template>
+        </ul>
+
+        <div class="mt-6 flex items-center justify-end gap-2">
+          <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">
+            Subiendo…
+          </span>
+          <button type="button" @click="open = false"
+                  class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900">
+            Cancelar
+          </button>
+          <button type="submit"
+                  :disabled="files.length === 0"
+                  class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-sm rounded-md">
+            Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError
+from app.core.keys import invoice_key
+from app.core.storage import get_storage
 from app.models import Invoice, InvoiceStatus
 
 if TYPE_CHECKING:
@@ -77,4 +79,28 @@ async def create_invoice_stub(
     db.add(invoice)
     await db.flush()
     logger.info("invoice.created", invoice_id=str(invoice.id), tenant_id=str(tenant_id))
+    return invoice
+
+
+async def create_invoice_from_upload(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filename: str,
+    file_bytes: bytes,
+    mime_type: str,
+) -> Invoice:
+    """Sube bytes a R2 y crea `Invoice` en estado procesando."""
+    storage = get_storage()
+    key = invoice_key(tenant_id, filename)
+    await storage.upload_bytes(key, file_bytes, content_type=mime_type)
+    invoice = await create_invoice_stub(
+        db,
+        tenant_id,
+        source_file_key=key,
+        source_filename=filename[:300],
+        source_mime=mime_type,
+    )
+    invoice.status = InvoiceStatus.processing
+    await db.flush()
     return invoice

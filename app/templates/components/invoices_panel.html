@@ -1,0 +1,36 @@
+{% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
+<div id="invoices-table-container" class="space-y-3">
+  {% if upload_errors %}
+  <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+    <p class="font-medium">Algunos ficheros no se han subido</p>
+    <ul class="mt-2 list-disc pl-5 space-y-1">
+      {% for err in upload_errors %}
+      <li><span class="font-mono text-xs">{{ err.filename }}</span>: {{ err.error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if invoices %}
+  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600 text-left">
+        <tr>
+          <th class="px-4 py-3 font-medium" scope="col">Fecha</th>
+          <th class="px-4 py-3 font-medium" scope="col">Proveedor</th>
+          <th class="px-4 py-3 font-medium" scope="col">CIF/NIF</th>
+          <th class="px-4 py-3 font-medium text-right" scope="col">Total</th>
+          <th class="px-4 py-3 font-medium" scope="col">Estado</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for invoice in invoices %}
+          {% include "components/invoice_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {% include "components/empty_state.html" %}
+  {% endif %}
+</div>
