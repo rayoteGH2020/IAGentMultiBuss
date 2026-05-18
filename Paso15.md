@@ -17,17 +17,17 @@ Validar el módulo 1 completo: subir N facturas reales, comprobar que se extraen
 
 ## Tareas
 
-- [ ] Crear `app/evals/datasets/invoices_v1.json` con 10-20 casos (fichero + ground truth).
-- [ ] Crear `app/evals/runners/extraction.py` que itera el dataset y mide.
-- [ ] Crear `app/evals/conftest.py` con fixtures comunes.
-- [ ] Ejecutar el eval contra Gemini Flash, registrar métricas en `app/evals/results/`.
-- [ ] Crear `tests/e2e/test_invoice_upload_flow.py` con Playwright.
-- [ ] Crear endpoint `GET /metrics/module1` (interno, sin auth de tenant pero con un token) que devuelve agregados de `llm_calls` e `invoices`.
-- [ ] Job nightly opcional para snapshot de métricas.
-- [ ] Workflow GitHub Actions `.github/workflows/evals.yml`.
-- [ ] Cierre: ejecutar checklist (sección Final).
-- [ ] Commit: `feat: invoice extraction evals, e2e test and module1 metrics`.
-- [ ] Tag: `git tag mvp-module1` y push.
+- [x] Crear `app/evals/datasets/invoices_v1.json` con 10-20 casos (fichero + ground truth). _(stub con 3 ficheros existentes; ground_truth a rellenar)_
+- [x] Crear `app/evals/runners/extraction.py` que itera el dataset y mide.
+- [x] Crear `app/evals/conftest.py` con fixtures comunes.
+- [ ] Ejecutar el eval contra Gemini Flash, registrar métricas en `app/evals/results/`. _(humano: necesita claves LLM en Infisical y ground_truth real)_
+- [x] Crear `tests/e2e/test_invoice_upload_flow.py` con Playwright.
+- [x] Crear endpoint `GET /metrics/module1` (interno, sin auth de tenant pero con un token) que devuelve agregados de `llm_calls` e `invoices`.
+- [ ] Job nightly opcional para snapshot de métricas. _(opcional; no incluido)_
+- [x] Workflow GitHub Actions `.github/workflows/evals.yml`.
+- [ ] Cierre: ejecutar checklist (sección Final). _(humano)_
+- [x] Commit: `feat: invoice extraction evals, e2e test and module1 metrics`.
+- [ ] Tag: `git tag mvp-module1` y push. _(humano, al cerrar checklist)_
 
 ## Detalles técnicos
 

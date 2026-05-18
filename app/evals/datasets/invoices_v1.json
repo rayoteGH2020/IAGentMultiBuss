@@ -1,0 +1,22 @@
+{
+  "version": "v1",
+  "model_target": "gemini-2.5-flash",
+  "notes": "Ground-truth placeholder. Rellenar a mano con los valores reales de cada factura en tests/fixtures/invoices/. Casos con ground_truth a null se omiten en el runner.",
+  "cases": [
+    {
+      "id": "inv_001",
+      "file": "ejemplo_01.pdf",
+      "ground_truth": null
+    },
+    {
+      "id": "inv_002",
+      "file": "ejemplo_02.pdf",
+      "ground_truth": null
+    },
+    {
+      "id": "inv_003",
+      "file": "ejemplo_03.pdf",
+      "ground_truth": null
+    }
+  ]
+}

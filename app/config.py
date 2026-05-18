@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Crypto
     encryption_key: SecretStr = SecretStr("")
 
+    # Metrics interno (Paso 15) — token para `/metrics/module1`
+    metrics_token: SecretStr = SecretStr("")
+
     @property
     def is_dev(self) -> bool:
         return self.app_env == "development"

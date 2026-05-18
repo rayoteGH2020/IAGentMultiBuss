@@ -40,6 +40,12 @@ bin/tailwindcss.exe
 *.log
 logs/
 
+# Eval results (artefactos locales/CI; los `.gitkeep` sí se versionan)
+app/evals/results/*.json
+
+# Playwright auth state
+tests/e2e/auth_state.json
+
 # Datos locales
 data/
 *.db

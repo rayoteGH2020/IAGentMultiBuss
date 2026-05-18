@@ -121,6 +121,10 @@ ignore_missing_imports = true
 module = "tests.*"
 disable_error_code = ["misc"]
 
+[[tool.mypy.overrides]]
+module = "app.evals.conftest"
+disable_error_code = ["misc"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

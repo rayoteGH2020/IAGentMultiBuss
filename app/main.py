@@ -9,7 +9,7 @@ from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import AuthMiddleware
-from app.routes.api import health, webhooks
+from app.routes.api import health, metrics, webhooks
 from app.routes.web import auth as auth_routes
 from app.routes.web import chat, demo, home, invoices, jobs, settings
 
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
 
     # API routes
     app.include_router(health.router)
+    app.include_router(metrics.router)
     app.include_router(webhooks.router)
 
     # Web (HTML)
