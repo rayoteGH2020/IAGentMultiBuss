@@ -18,6 +18,7 @@ down_revision: str | None = "p06_grant_truncate_04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# create_type=False: el tipo se crea una sola vez en upgrade(); si True, create_table lo duplica.
 invoice_status = postgresql.ENUM(
     "pending",
     "processing",
@@ -25,7 +26,7 @@ invoice_status = postgresql.ENUM(
     "failed",
     "reviewed",
     name="invoice_status",
-    create_type=True,
+    create_type=False,
 )
 
 
