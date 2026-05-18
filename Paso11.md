@@ -9,8 +9,9 @@ Al final del paso, un test sube un fichero, genera presigned URL de descarga, de
 ## Pre-requisitos
 
 - Pasos 01-10 completados.
+- Secretos de R2 cargados vía **Infisical** (`infisical run -- ...`); ver `Agents.md` (no ficheros `.env`).
 - Cuenta de Cloudflare con R2 activado y bucket creado en región EU.
-- Credenciales: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+- Credenciales (en Infisical / entorno): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
 - Alternativa local: MinIO en `docker-compose.yml` con bucket `saas-files` ya creado.
 
 ## Contexto relevante
@@ -20,15 +21,15 @@ Al final del paso, un test sube un fichero, genera presigned URL de descarga, de
 
 ## Tareas
 
-- [ ] Añadir dependencias: `boto3`, `botocore` (ya vienen juntos).
-- [ ] Para tests: `moto[s3]`.
-- [ ] Añadir variables R2 a `app/config.py` y `.env.example`.
-- [ ] Crear `app/core/storage.py` con clase `Storage` y funciones públicas.
-- [ ] Crear `app/core/keys.py` con helpers de generación de claves.
-- [ ] Crear `app/core/storage.py` singleton accesible por `get_storage()`.
-- [ ] Test unitario con moto en `tests/unit/test_storage.py`.
-- [ ] Test de integración opcional contra R2 real en `tests/integration/test_storage_r2.py` (gated por env var).
-- [ ] Commit: `feat: r2 storage client with presigned urls`.
+- [x] Añadir dependencias: `boto3`, `botocore` (ya vienen juntos).
+- [x] Para tests: `moto[s3]`.
+- [x] Añadir variables R2 a `app/config.py` y registrar los valores en **Infisical** (o el entorno que exporte el CLI).
+- [x] Crear `app/core/storage.py` con clase `Storage` y funciones públicas.
+- [x] Crear `app/core/keys.py` con helpers de generación de claves.
+- [x] Crear `app/core/storage.py` singleton accesible por `get_storage()`.
+- [x] Test unitario con moto en `tests/unit/test_storage.py`.
+- [x] Test de integración opcional contra R2 real en `tests/integration/test_storage_r2.py` (gated por env var).
+- [x] Commit: `feat: r2 storage client with presigned urls`.
 
 ## Detalles técnicos
 
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     storage_presigned_ttl_seconds: int = 3600
 ```
 
-En `.env.example`:
+**Variables en Infisical / entorno** (nombres típicos; este proyecto no usa `.env` en el repo):
 
 ```
 R2_ACCOUNT_ID=
@@ -55,7 +56,10 @@ R2_SECRET_ACCESS_KEY=
 R2_BUCKET=saas-files
 R2_ENDPOINT_URL=
 R2_REGION=auto
+STORAGE_PRESIGNED_TTL_SECONDS=3600
 ```
+
+Registrar cada una en Infisical y ejecutar aplicación, migraciones y tests con `infisical run -- <comando>`.
 
 Para R2 real, el endpoint es `https://<account_id>.r2.cloudflarestorage.com`. Para MinIO local, `http://minio:9000`.
 
@@ -205,6 +209,7 @@ from app.core.storage import Storage
 
 @pytest.mark.asyncio
 async def test_storage_round_trip(monkeypatch):
+    # En tests, las variables se inyectan al proceso (pytest); no hace falta Infisical.
     monkeypatch.setenv("R2_ACCOUNT_ID", "test")
     monkeypatch.setenv("R2_ACCESS_KEY_ID", "test")
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "test")
@@ -277,8 +282,8 @@ docker compose exec minio mc mb local/saas-files
 # Listar contenidos del bucket
 docker compose exec minio mc ls local/saas-files
 
-# Probar contra R2 real
-RUN_R2_TESTS=1 uv run pytest tests/integration/test_storage_r2.py -v
+# Probar contra R2 real (definir RUN_R2_TESTS=1 en Infisical o en el shell antes de infisical run)
+infisical run -- uv run pytest tests/integration/test_storage_r2.py -v
 ```
 
 ## Lo que NO toca este paso

@@ -27,8 +27,10 @@ class Settings(BaseSettings):
     r2_access_key_id: str = ""
     r2_secret_access_key: SecretStr = SecretStr("")
     r2_bucket: str = "saas-files"
+    r2_endpoint_url: str | None = None
     r2_public_url: str = ""
     r2_region: str = "auto"
+    storage_presigned_ttl_seconds: int = 3600
 
     # Auth (Clerk) — se usan en Paso 07
     clerk_secret_key: SecretStr = SecretStr("")
