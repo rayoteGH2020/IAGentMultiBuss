@@ -1,6 +1,17 @@
 from app.models.base import Base, IdMixin, TimestampMixin
+from app.models.invoice import Invoice, InvoiceLine, InvoiceStatus
 from app.models.membership import Membership
 from app.models.tenant import Tenant
 from app.models.user import User
 
-__all__ = ["Base", "IdMixin", "Membership", "Tenant", "TimestampMixin", "User"]
+__all__ = [
+    "Base",
+    "IdMixin",
+    "Invoice",
+    "InvoiceLine",
+    "InvoiceStatus",
+    "Membership",
+    "Tenant",
+    "TimestampMixin",
+    "User",
+]

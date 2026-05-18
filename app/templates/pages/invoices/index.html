@@ -1,13 +1,23 @@
 {% extends "layouts/dashboard.html" %}
 
-{% block title %}Facturas · Mi SaaS{% endblock %}
+{% block title %}Facturas · {{ tenant.name if tenant else "Mi SaaS" }}{% endblock %}
 {% block page_title %}Facturas{% endblock %}
 
 {% block content %}
-<div class="card max-w-3xl">
-  <h2 class="text-xl font-semibold">Facturas</h2>
-  <p class="mt-2 text-slate-600">
-    Aquí aparecerán tus facturas procesadas. Se construye en el Paso 13.
-  </p>
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+  <div>
+    <p class="text-sm text-slate-500 mt-1">
+      Sube facturas y tickets en PDF o foto. Las extraemos automáticamente.
+    </p>
+  </div>
+  <button
+    type="button"
+    class="px-4 py-2 bg-slate-200 text-slate-600 rounded-md cursor-not-allowed shrink-0"
+    disabled
+    title="Disponible en el siguiente paso">
+    Subir facturas
+  </button>
 </div>
+
+{% include "components/invoices_table.html" %}
 {% endblock %}

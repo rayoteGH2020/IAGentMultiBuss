@@ -96,6 +96,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ASYNC"]
 "migrations/**" = ["ALL"]
+"app/models/invoice.py" = ["TCH003"]
 
 [tool.ruff.format]
 quote-style = "double"

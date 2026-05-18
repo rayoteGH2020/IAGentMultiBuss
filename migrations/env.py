@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.models import Base
 
 # IMPORTANTE: importar todos los modelos para que autogenerate los detecte
-from app.models import membership, tenant, user  # noqa: F401
+from app.models import invoice, membership, tenant, user  # noqa: F401
 
 config = context.config
 settings = get_settings()

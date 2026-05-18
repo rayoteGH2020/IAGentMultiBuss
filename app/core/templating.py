@@ -32,7 +32,12 @@ def render(
     """
     ctx = {**_inject_auth_context(request), **(ctx or {})}
     is_htmx = request.headers.get("HX-Request") == "true"
-    template = partial if (is_htmx and partial) else full
+    is_boosted = request.headers.get("HX-Boosted") == "true"
+    # Navegación con hx-boost envía HX-Request pero debe recibir la página completa.
+    if is_htmx and partial is not None and not is_boosted:  # noqa: SIM108
+        template = partial
+    else:
+        template = full
     return templates.TemplateResponse(
         request=request,
         name=template,
