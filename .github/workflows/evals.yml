@@ -1,19 +1,33 @@
 name: Evals
 
+# El workflow se activa solo en PRs que tocan ficheros relevantes para la
+# calidad de extracción LLM. Cambios en UI, templates o migraciones no
+# necesitan ejecutar evals (que tienen coste real de API y tardan varios minutos).
 on:
   pull_request:
     paths:
-      - "app/llm/**"
-      - "app/schemas/invoice.py"
-      - "app/services/invoice_service.py"
-      - "app/evals/**"
+      - "app/llm/**"           # Cambios en cliente LLM, prompts, pricing, tracing
+      - "app/schemas/invoice.py"       # Cambios en el schema Pydantic de extracción
+      - "app/services/invoice_service.py"  # Cambios en el servicio que aplica el resultado
+      - "app/evals/**"         # Cambios en datasets, runners o fixtures de evals
+  # workflow_dispatch: permite ejecutar el workflow manualmente desde la UI
+  # de GitHub Actions sin necesidad de hacer un PR. Útil para:
+  #   - Re-ejecutar tras añadir nuevos casos al dataset.
+  #   - Verificar que los evals pasan antes de fusionar una rama larga.
   workflow_dispatch:
 
 jobs:
   invoice-extraction:
     runs-on: ubuntu-latest
+
+    # Servicios de soporte: el runner necesita Postgres (para persistir LLMCall
+    # y hacer queries con RLS) y Redis (para el semáforo de concurrencia por tenant,
+    # aunque en el runner secuencial no se usa, se incluye por compatibilidad con
+    # la configuración de la app).
     services:
       postgres:
+        # pgvector/pgvector:pg16: imagen con la extensión pgvector ya instalada.
+        # La imagen oficial postgres:16 no la incluye y requeriría un init.sql.
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: saas
@@ -25,6 +39,8 @@ jobs:
           --health-cmd "pg_isready -U saas -d saas"
           --health-interval 5s
           --health-timeout 5s
+          # 10 reintentos × 5 s = hasta 50 s para que Postgres arranque.
+          # El arranque en frío del contenedor puede tardar 20-30 s en GitHub-hosted runners.
           --health-retries 10
       redis:
         image: redis:7
@@ -38,15 +54,27 @@ jobs:
 
     env:
       APP_ENV: development
+      # APP_SECRET_KEY con valor conocido: en CI no hay sesiones de usuario reales,
+      # así que el secreto no importa. El comentario evita que detect-secrets lo marque.
       APP_SECRET_KEY: ci-not-secret  # pragma: allowlist secret
+      # asyncpg en DATABASE_URL: obligatorio para que SQLAlchemy use el driver async.
+      # Con psycopg2 las llamadas async fallarían en runtime.
       DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas  # pragma: allowlist secret
       REDIS_URL: redis://localhost:6379/0
+      # Secretos LLM: inyectados desde GitHub Secrets del repositorio.
+      # El runner los necesita para llamar a Gemini (extracción) y opcionalmente
+      # a Anthropic (si el override de modelo apunta a Claude).
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      # Langfuse: si las claves están vacías, el SDK trabaja en modo silencioso
+      # (no lanza error), por lo que las trazas simplemente no se envían en CI.
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
       LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+      # R2: necesario para que Storage no falle al inicializarse. El runner de
+      # evals no sube ficheros a R2 (lee de fixtures locales), pero la app
+      # importa get_storage() al arrancar y necesita la configuración válida.
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -61,18 +89,40 @@ jobs:
           python-version: "3.12"
 
       - name: Sync dependencies
+        # --frozen: usa las versiones exactas de uv.lock sin intentar resolver
+        # nuevas versiones. Garantiza reproducibilidad entre ejecuciones de CI.
         run: uv sync --frozen
 
       - name: Apply DB migrations
+        # Se aplican TODAS las migraciones (upgrade head) para que las tablas
+        # invoices, llm_calls, etc. existan antes de que el runner las use.
+        # Si una migración falla aquí, el eval falla antes de gastar créditos LLM.
         run: uv run alembic upgrade head
 
       - name: Run invoice extraction evals
+        # Se ejecuta como módulo Python (-m) para que las importaciones absolutas
+        # (from app.xxx import ...) funcionen correctamente.
+        # Sin argumento de tenant_uuid: el runner genera un UUID aleatorio,
+        # suficiente para CI donde no hay tenants reales.
+        # No se usa `infisical run --` porque los secretos llegan via el bloque env:.
         run: uv run python -m app.evals.runners.extraction
 
       - name: Upload eval results
+        # if: always(): sube los resultados AUNQUE el step anterior haya fallado.
+        # Si el eval detecta una regresión (accuracy baja), el JSON de resultados
+        # es esencial para diagnosticar qué campos fallaron y con qué valores.
+        # Sin "always()", un fallo del runner ocultaría los resultados parciales.
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: invoice-eval-results
           path: app/evals/results/
+          # if-no-files-found: warn (no error): si todos los casos fueron skipped
+          # (ground_truth null en todos) no hay JSON de resultados, pero eso no
+          # debe considerarse un fallo del CI — simplemente el dataset no está
+          # anotado todavía.
           if-no-files-found: warn
+        # NOTA: Este workflow actualmente NO falla el CI si las métricas caen.
+        # Agents.md §9 especifica que una bajada >5% respecto a main debe fallar
+        # el PR. Pendiente: añadir un step de comparación contra la línea base
+        # (p. ej. descargando el artifact de main y comparando field_accuracy_avg).

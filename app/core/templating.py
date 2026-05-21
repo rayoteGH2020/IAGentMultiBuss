@@ -4,10 +4,22 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.core.datetime_display import local_datetime
+
+# Instancia a nivel de módulo: Jinja2 cachea las plantillas compiladas en
+# memoria. Crear una nueva instancia por request recompilaria las plantillas
+# en cada llamada, lo que sería muy costoso.
+# La ruta es relativa al directorio de trabajo (raíz del proyecto), desde
+# donde se lanza uvicorn.
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["local_datetime"] = local_datetime
 
 
 def _inject_auth_context(request: Request) -> dict[str, Any]:
+    # getattr con default None en lugar de request.state.user directamente:
+    # request.state es un objeto dinámico (SimpleNamespace); acceder a un
+    # atributo no existente lanzaría AttributeError. En rutas sin auth
+    # (health, assets estáticos) estos atributos pueden no estar seteados.
     return {
         "user": getattr(request.state, "user", None),
         "tenant": getattr(request.state, "tenant", None),
@@ -17,27 +29,43 @@ def _inject_auth_context(request: Request) -> dict[str, Any]:
 
 def render(
     request: Request,
-    *,
+    *,  # Todos keyword-only: evita confundir full/partial/ctx por posición.
     full: str,
     partial: str | None = None,
     ctx: dict[str, Any] | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
-    """
-    Renderiza una página completa o un fragmento según el header HX-Request.
+    """Renderiza una página completa o un fragmento según el header HX-Request.
 
-    - Sin HX-Request: usa `full` (página completa con layout).
-    - Con HX-Request: usa `partial` (fragmento HTML).
-    - Si `partial` no se pasa, siempre usa `full`.
+    Implementa el patrón página/fragmento de Agents.md §6:
+    - Sin HX-Request (visita directa, F5, deep link): devuelve `full` con
+      el layout completo (sidebar, nav, etc.) para que la URL funcione sola.
+    - Con HX-Request (navegación HTMX interna): devuelve `partial` para
+      intercambiar solo el fragmento relevante del DOM.
+    - Si `partial` es None, siempre devuelve `full` (endpoints con una sola
+      plantilla que sirve para ambos contextos).
     """
+    # El contexto de auth se inyecta automáticamente en todas las plantillas
+    # para que el layout pueda mostrar el nombre del usuario, el plan del
+    # tenant, etc. sin que cada endpoint lo pase explícitamente.
+    # Los valores del caller (ctx) van al final para poder sobreescribir
+    # los del auth context si algún endpoint lo necesitase.
     ctx = {**_inject_auth_context(request), **(ctx or {})}
+
     is_htmx = request.headers.get("HX-Request") == "true"
+    # HX-Boosted: hx-boost intercepta los clics en enlaces normales y los
+    # convierte en peticiones HTMX (envía HX-Request: true), pero el servidor
+    # debe responder con la página completa para que hx-boost pueda actualizar
+    # solo el <body> sin romper el layout. Sin esta detección, boost recibiría
+    # el fragmento y reemplazaría el body con contenido incompleto.
     is_boosted = request.headers.get("HX-Boosted") == "true"
-    # Navegación con hx-boost envía HX-Request pero debe recibir la página completa.
+
+    # para una condición con tres variables booleanas.
     if is_htmx and partial is not None and not is_boosted:  # noqa: SIM108
         template = partial
     else:
         template = full
+
     return templates.TemplateResponse(
         request=request,
         name=template,

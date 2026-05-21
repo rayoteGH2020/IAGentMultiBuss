@@ -13,6 +13,7 @@ SaaS modular orientado a **pymes y negocios familiares** (gestorías, peluquerí
 ### Módulos
 
 1. **Extracción y conciliación administrativa** — usuario sube PDFs, emails u otros documentos de texto así como fotos o tickets; el sistema extrae datos estructurados (fecha, proveedor, CIF, importes) y los exporta a CSV o ERP.
+   - **1.5 · Consulta documental** — chat conversacional sobre los datos ya extraídos por el módulo 1 (facturas y, en el futuro, otros documentos del propio producto). Permite preguntar en lenguaje natural por proveedor, CIF/NIF, rango de fechas, importes o agregaciones, sin abandonar la app y sin requerir conocimientos SQL. Usa **tool-calling tipado** (no SQL libre): distinto del RAG sobre conocimiento (módulo 2) y del SQL agent sobre BDs externas del cliente (módulo 3).
 2. **Agente RAG conversacional** — chatbot por WhatsApp, Telegram o web, alimentado con la base de conocimiento de la pyme.
 3. **Analista de datos conversacional** — chat donde el dueño pregunta en lenguaje natural sobre su propio negocio y recibe respuesta con gráfico.
 
@@ -200,6 +201,12 @@ Todas las tablas con datos de cliente tienen `tenant_id` (UUID, FK a `tenants`) 
 - `invoices` — facturas extraídas con campos estructurados (`fecha`, `proveedor`, `cif_nif`, `base_imponible`, `iva_percent`, `iva_amount`, `total`, `currency`, `raw_extraction` jsonb, `confidence`).
 - `invoice_lines` — líneas de detalle por factura.
 
+#### Módulo 1.5 — Consulta documental
+- `chat_threads` — conversaciones de consulta documental (una por hilo abierto por usuario).
+- `chat_messages` — mensajes individuales (`user` / `assistant` / `tool`), incluyendo tool calls y resultados serializados.
+- Reutiliza tablas existentes en modo lectura: `invoices`, `invoice_lines`. La consulta se ejecuta vía tools tipadas (no SQL libre); las queries reales contra `invoices` viven en `services/invoice_service.py` y aplican RLS automáticamente.
+- Requiere extensiones Postgres adicionales: `pg_trgm` (búsqueda LIKE eficiente sobre proveedor) y `unaccent` (tolerancia a tildes), además de las ya presentes (`uuid-ossp`, `pgcrypto`, `vector`).
+
 #### Módulo 2 — RAG
 - `documents` — fuentes RAG (PDFs, URLs, FAQs).
 - `chunks` — fragmentos con `embedding vector(1536)` y `ts_vector` para búsqueda híbrida.
@@ -283,6 +290,34 @@ invoice_lines (
   total numeric,
   position int
 )
+
+-- Módulo 1.5: Consulta documental
+chat_threads (
+  id uuid pk,
+  tenant_id uuid fk -> tenants,    -- CASCADE
+  user_id uuid fk -> users null,   -- SET NULL al borrar usuario
+  title text,                      -- generado a partir del primer mensaje o editable
+  created_at timestamptz,
+  updated_at timestamptz
+)
+
+chat_messages (
+  id uuid pk,
+  thread_id uuid fk -> chat_threads,
+  tenant_id uuid fk -> tenants,    -- redundante con thread, necesario para RLS directa
+  role text,                       -- user | assistant | tool
+  content text null,               -- texto del mensaje (null para algunos roles tool)
+  tool_call jsonb null,            -- {name, arguments} cuando assistant invoca una tool
+  tool_result jsonb null,          -- resultado serializado de la tool (rol = tool)
+  llm_call_id uuid fk -> llm_calls null,  -- para correlar coste / traza
+  tokens_in int default 0,
+  tokens_out int default 0,
+  cost_eur numeric default 0,
+  created_at timestamptz
+)
+-- RLS obligatorio en ambas tablas (tenant_id = current_setting('app.current_tenant')::uuid).
+-- Índices: (tenant_id, user_id, updated_at DESC) en chat_threads;
+--          (tenant_id, thread_id, created_at) en chat_messages.
 
 -- Módulo 2: RAG
 documents (
@@ -453,6 +488,55 @@ class Factura(BaseModel):
     lineas: list[LineaFactura] = Field(default_factory=list)
     confidence: float = Field(ge=0, le=1, description="Confianza del modelo en la extracción")
 ```
+
+### Módulo 1.5 — Consulta documental
+
+**Propósito:** chat conversacional sobre los documentos ya procesados por el módulo 1 (facturas en MVP; ampliable a otros documentos estructurados en el futuro). El usuario pregunta en lenguaje natural y el modelo responde citando los registros relevantes.
+
+**Diferencia con módulos vecinos:**
+
+- No es **RAG** (módulo 2): no hay chunking ni embeddings sobre texto libre; los datos consultados son tablas estructuradas.
+- No es **SQL agent** (módulo 3): no se genera SQL libre; el LLM solo invoca un conjunto cerrado de **tools tipadas**. Las BD consultadas son las **internas del producto**, no `data_sources` externos del cliente.
+
+**Flujo de usuario:** `/chat` → composer + sidebar con `chat_threads` del usuario → al enviar mensaje, se ejecuta un loop de tool-calling sobre la capa LLM → cada paso (llamada al modelo y ejecución de tool) se persiste como `chat_message`; la respuesta del modelo se stream con **SSE** (`hx-ext="sse"`).
+
+**Tools mínimas (MVP):**
+
+- `search_invoices(filters)` — busca facturas del tenant con filtros tipados (`proveedor_query`, `cif_nif`, `fecha_from`, `fecha_to`, `total_min`, `total_max`, `status[]`, etc.); devuelve `Page[InvoiceRead]`.
+- `get_invoice(id)` — detalle de una factura concreta (incluye líneas).
+- `aggregate_invoices(filters, group_by)` — agregaciones `SUM(total)`, `COUNT(*)`, opcional `GROUP BY proveedor_normalized`.
+- `list_providers(query?)` — autocompletado / listado de proveedores únicos del tenant.
+
+**Decisiones técnicas:**
+
+- Modelo por defecto: `claude-sonnet-4-6` (task `chat` del router LLM en §8). Override por entorno con `LLM_MODEL_CHAT`.
+- Loop de tool-calling con tope **`max_iters = 6`**; si se agotan sin respuesta final, devolver mensaje de error al usuario.
+- Cada iteración (LLM call + tool exec) deja registro en `llm_calls` y span anidado en Langfuse.
+- Memoria de contexto: últimos **N=20** mensajes del thread (configurable). Para historiales largos, considerar resumen vía modelo `classify` (no en MVP).
+- Reuso de `app/core/text_normalization.py` (`strip_accents` + `lower`) para tolerancia a tildes/mayúsculas en `proveedor`. Mismo helper que el comparador de evals.
+
+**Guardrails obligatorios:**
+
+- **Tools tipadas + RLS:** cada tool valida sus argumentos con Pydantic; las queries internas se ejecutan bajo `set_tenant_context(db, tenant_id)`. Imposible cruzar tenants aunque el LLM lo intente en sus `arguments`.
+- **Solo lectura en MVP:** ninguna tool puede modificar facturas (marcar como revisada, editar, borrar). Si en el futuro se exponen tools mutables, requerirán confirmación explícita del usuario en UI.
+- **Output del LLM saneado:** no devolver `raw_extraction` completo de `invoices` a las tools (es JSON pesado y puede contener PII). Las tools devuelven proyecciones acotadas (`InvoiceRead`).
+- **Anti-prompt-injection:** límite de longitud por mensaje (4 KB); el system prompt avisa al modelo de ignorar instrucciones embebidas en datos extraídos.
+- **Rate-limit:** Token bucket por `(tenant_id, user_id)` en Redis. Default conservador en MVP (p. ej. 60 mensajes/día por usuario, configurable por tenant).
+- **Audit log:** cada mensaje del usuario y cada tool ejecutada se registra en `audit_log` con `tenant_id`, `user_id`, `thread_id`, `tool_name`, `cost_eur`.
+
+**Métricas objetivo (evals `chat_invoices_v1`):**
+
+- `tool_selection_accuracy ≥ 0.90`: el LLM escoge la tool correcta para la intención del usuario.
+- `answer_grounded_in_data ≥ 0.95`: la respuesta solo usa datos devueltos por tools (sin alucinación).
+- `latency_p50 < 6 s`, `p95 < 15 s` por turno (incluyendo todas las iteraciones del loop).
+- `cost_per_turn` orientativo `< 0.01 €` con `claude-sonnet-4-6` y memoria de 20 mensajes.
+
+**Dependencias con otras secciones:**
+
+- §5 (Modelo de datos): tablas `chat_threads`, `chat_messages` y extensiones Postgres `pg_trgm`, `unaccent`.
+- §7 (Frontend): SSE ya soportado por HTMX (`hx-ext="sse"`), descrito en este documento para módulos 2 y 3; aplica igual aquí.
+- §8 (Capa LLM): tarea `chat` ya prevista en `TaskType`; añadir helper `run_tool_loop()` en `app/llm/client.py`.
+- §9 (Seguridad): RLS, audit log, rate-limit. Sin requisitos nuevos transversales, solo aplicación.
 
 ### Módulo 2 — RAG conversacional
 
@@ -758,7 +842,7 @@ Cuando alguno se necesite por un dolor concreto, se añade. Empezar con ellos bl
 
 - **Comandos iniciales** (`uv init`, `uv add`, Tailwind standalone, descarga HTMX/Alpine, `alembic init`): **`Paso01.md`** — guía paso a paso del arranque del repo.
 - **Variables de entorno:** plantilla en **`.env.example`** en la raíz; mantenerla alineada con `app/config.py` / `Settings`.
-- **Docker Compose de desarrollo** (`docker/docker-compose.yml`): servicios típicos **postgres** (imagen con extensión `pgvector`), **redis**, **langfuse** con su base dedicada, **minio** opcional como sustituto local de R2. Arranque: `docker compose -f docker/docker-compose.yml up -d`.
+- **Docker Compose de desarrollo** (`docker/docker-compose.yml`): **postgres** (pgvector), **redis** (ARQ), **langfuse-db**, stack **Langfuse v3** (`langfuse-web`, `langfuse-worker`, ClickHouse, MinIO interno, Redis interno de Langfuse). **MinIO opcional** aparte como sustituto local de R2 (`R2_ENDPOINT_URL`). Arranque: `docker compose -f docker/docker-compose.yml up -d`.
 
 ---
 
@@ -823,6 +907,7 @@ Checklist histórico de alto nivel; el trabajo real se prioriza con **`PasoXX.md
 
 ### Después (no en las tres primeras semanas)
 
+- Módulo 1.5 (Consulta documental sobre facturas) — ~2 semanas; ver fases detalladas en `PendienteImplementar.md`.
 - Módulo 2 (RAG) — varias semanas adicionales.
 - Módulo 3 (analista SQL) — varias semanas adicionales.
 - Integración WhatsApp Business.

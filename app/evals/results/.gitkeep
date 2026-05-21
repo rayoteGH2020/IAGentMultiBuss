@@ -1,0 +1,4 @@
+# Git no rastrea directorios vacíos; este fichero mantiene results/ en el repo.
+# Los ficheros JSON de resultados (invoices_v1_<timestamp>.json) están en
+# .gitignore: son artefactos de ejecución, no código fuente. En CI se publican
+# como GitHub Actions artifacts (actions/upload-artifact) para revisión manual.

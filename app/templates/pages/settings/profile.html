@@ -20,7 +20,7 @@
     </div>
     <div class="py-3 flex justify-between gap-4">
       <dt class="text-sm text-slate-500">Cuenta creada</dt>
-      <dd class="text-sm font-medium">{{ user.created_at.strftime("%d/%m/%Y") }}</dd>
+      <dd class="text-sm font-medium">{{ user.created_at | local_datetime("%d/%m/%Y") }}</dd>
     </div>
   </dl>
 </div>

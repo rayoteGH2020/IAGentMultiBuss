@@ -5,11 +5,16 @@
 
 {% block content %}
 <div class="space-y-6 max-w-5xl">
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
     <div class="card">
-      <p class="text-sm text-slate-500">Facturas este mes</p>
-      <p class="text-3xl font-bold mt-2">0</p>
-      <p class="text-xs text-slate-400 mt-1">se llenará en pasos posteriores</p>
+      <p class="text-sm text-slate-500">Facturas del mes</p>
+      <p class="text-3xl font-bold mt-2">{{ invoice_stats.current_month }}</p>
+      <p class="text-xs text-slate-400 mt-1">por fecha de factura</p>
+    </div>
+    <div class="card">
+      <p class="text-sm text-slate-500">Facturas (30 días)</p>
+      <p class="text-3xl font-bold mt-2">{{ invoice_stats.last_30_days }}</p>
+      <p class="text-xs text-slate-400 mt-1">por fecha de factura</p>
     </div>
     <div class="card">
       <p class="text-sm text-slate-500">Conversaciones</p>

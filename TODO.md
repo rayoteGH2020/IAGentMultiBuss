@@ -57,7 +57,7 @@ En NTFS **`chmod +x` no aplica** como en Linux; elige una opción:
 ```powershell
 docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml ps
-docker compose -f docker/docker-compose.yml logs -f langfuse
+docker compose -f docker/docker-compose.yml logs -f langfuse-web langfuse-worker
 ```
 
 ---
@@ -65,7 +65,7 @@ docker compose -f docker/docker-compose.yml logs -f langfuse
 ## 5. Criterios de salud (Paso02)
 
 - [x] `./scripts/dev_up.sh` **o** `docker compose ... up -d` sin errores
-- [x] `docker compose -f docker/docker-compose.yml ps` muestra los **4** contenedores `Up (healthy)` (`saas-postgres`, `saas-redis`, `saas-langfuse-db`, `saas-langfuse`)
+- [x] `docker compose -f docker/docker-compose.yml ps` muestra contenedores `Up (healthy)`: `saas-postgres`, `saas-redis`, `saas-langfuse-db`, `saas-langfuse-web`, `saas-langfuse-worker`, y dependencias Langfuse v3
 - [x] Extensiones en Postgres principal (`vector`, `pgcrypto`, `uuid-ossp`):
 
 ```powershell

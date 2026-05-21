@@ -1458,6 +1458,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jsonref"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/0d/c1f3277e90ccdb50d33ed5ba1ec5b3f0a242ed8c1b1a85d3afeb68464dca/jsonref-1.1.0.tar.gz", hash = "sha256:32fe8e1d85af0fdefbebce950af85590b22b60f9e95443176adbde4e1ecea552", size = 8814, upload-time = "2023-01-16T16:10:04.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/ec/e1db9922bceb168197a558a2b8c03a7963f1afe93517ddd3cf99f202f996/jsonref-1.1.0-py3-none-any.whl", hash = "sha256:590dc7773df6c21cbf948b5dac07a72a251db28b0238ceecce0a2abfa8ec30a9", size = 9425, upload-time = "2023-01-16T16:10:02.255Z" },
+]
+
+[[package]]
 name = "langchain-core"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1712,6 +1721,7 @@ dependencies = [
     { name = "httpx" },
     { name = "instructor" },
     { name = "jinja2" },
+    { name = "jsonref" },
     { name = "langfuse" },
     { name = "pgvector" },
     { name = "pydantic" },
@@ -1723,6 +1733,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
     { name = "svix" },
+    { name = "tenacity" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "voyageai" },
 ]
@@ -1756,6 +1767,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "instructor", specifier = ">=1.7.0" },
     { name = "jinja2", specifier = ">=3.1.4" },
+    { name = "jsonref", specifier = ">=1.1.0" },
     { name = "langfuse", specifier = ">=2.55.0" },
     { name = "pgvector", specifier = ">=0.3.6" },
     { name = "pydantic", specifier = ">=2.10.0" },
@@ -1767,6 +1779,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "svix", specifier = ">=1.42.0" },
+    { name = "tenacity", specifier = ">=9.1.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
     { name = "voyageai", specifier = ">=0.3.0" },
 ]

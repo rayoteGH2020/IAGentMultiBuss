@@ -1,33 +1,86 @@
+# Compose de desarrollo local. Levanta los servicios de soporte que la app
+# necesita pero que no están en el repo (arquitectura.md §15):
+#   postgres      — BD principal de la app + RLS + pgvector
+#   redis         — cola ARQ + caché + semáforos de concurrencia
+#   langfuse-db          — Postgres de metadatos Langfuse
+#   langfuse-redis       — cola de ingestión Langfuse v3 (no es el Redis de ARQ)
+#   langfuse-clickhouse  — almacén analítico de trazas Langfuse v3
+#   langfuse-minio       — object storage S3-compatible para eventos Langfuse v3
+#   langfuse-web         — UI y API pública Langfuse v3
+#   langfuse-worker      — procesa ingestión → ClickHouse (obligatorio en v3)
+#
+# Arranque: docker compose -f docker/docker-compose.yml up -d
+# Los datos persisten en docker/data/ (directorio en .gitignore).
+
+# name: prefijo del proyecto Compose. Todas las redes, volúmenes y contenedores
+# se nombran "mi-saas-dev_*", evitando colisiones con otros proyectos Compose
+# que corran en la misma máquina de desarrollo.
 name: mi-saas-dev
 
 services:
+
+  # ── POSTGRES ────────────────────────────────────────────────────────────────
   postgres:
+    # pgvector/pgvector:pg16: imagen oficial con la extensión pgvector ya
+    # compilada e instalada. La imagen estándar postgres:16 no la incluye y
+    # requeriría un Dockerfile propio o compilación manual en init.sql.
+    # pgvector es imprescindible para el módulo 2 RAG (columna embedding en chunks).
     image: pgvector/pgvector:pg16
     container_name: saas-postgres
+    # unless-stopped: se reinicia automáticamente tras un crash o reinicio del
+    # host, pero no si se paró manualmente con `docker stop`.
     restart: unless-stopped
     environment:
+      # Credenciales de desarrollo: coinciden con el DATABASE_URL de ejemplo en
+      # docs/environment-variables.md. En producción Infisical inyecta
+      # credenciales reales; estos valores nunca deben usarse en prod.
       POSTGRES_USER: saas
       POSTGRES_PASSWORD: saas
       POSTGRES_DB: saas
     ports:
       - "5432:5432"
     volumes:
+      # Volumen de datos: persiste la BD entre reinicios del contenedor.
+      # Sin este volumen, cada `docker compose down` borraría todos los datos.
+      # docker/data/ está en .gitignore para no subir datos locales.
       - ./data/postgres:/var/lib/postgresql/data
+      # init.sql: directorio especial del contenedor oficial de Postgres.
+      # Los ficheros .sql montados aquí se ejecutan UNA SOLA VEZ, cuando el
+      # directorio de datos está vacío (primer arranque o tras borrar data/postgres/).
+      # :ro monta el fichero en lectura; el contenedor no puede modificarlo.
+      # Cambios en init.sql tras el primer arranque requieren borrar data/postgres/.
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
+      # pg_isready: verifica que Postgres acepta conexiones en el puerto.
+      # Permite usar "condition: service_healthy" en servicios dependientes.
       test: ["CMD-SHELL", "pg_isready -U saas -d saas"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # ── REDIS ───────────────────────────────────────────────────────────────────
   redis:
+    # alpine: variante mínima (~30 MB vs ~100 MB). Más rápida de descargar en CI.
     image: redis:7-alpine
     container_name: saas-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # --appendonly yes: activa AOF (Append Only File). Redis escribe cada operación
+    # en disco antes de confirmarla. Sin esto, un reinicio del contenedor perdería:
+    #   - Los jobs encolados por ARQ (facturas en estado pending sin worker).
+    #   - Los contadores del semáforo de invoice_slots.py (bloqueos de tenant).
+    #
+    # --maxmemory 256mb: límite de memoria del proceso Redis. Sin límite podría
+    # consumir toda la RAM del host en desarrollo.
+    #
+    # --maxmemory-policy allkeys-lru: al alcanzar el límite, expulsa la clave
+    # menos usada recientemente de TODAS las claves (no solo las con TTL).
+    # Acepta perder entradas de caché (coste: un cache miss) antes que bloquear
+    # escrituras de nuevos jobs ARQ.
     ports:
       - "6379:6379"
     volumes:
+      # Persiste el fichero AOF entre reinicios para no perder jobs encolados.
       - ./data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -35,7 +88,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── LANGFUSE DB ─────────────────────────────────────────────────────────────
+  # BD exclusiva de Langfuse, separada de la BD principal por dos razones:
+  #   1. Langfuse gestiona su propio esquema vía Prisma; mezclarlo con las
+  #      tablas de la app crearía conflictos de nombres y de migraciones.
+  #   2. Permite hacer backup o borrar las trazas LLM sin tocar los datos de negocio.
   langfuse-db:
+    # postgres:16-alpine (sin pgvector): Langfuse no usa embeddings.
+    # La imagen más ligera reduce tiempo de arranque y uso de disco.
     image: postgres:16-alpine
     container_name: saas-langfuse-db
     restart: unless-stopped
@@ -44,6 +104,8 @@ services:
       POSTGRES_PASSWORD: langfuse
       POSTGRES_DB: langfuse
     ports:
+      # Puerto 5433 en el host (no 5432) para evitar colisión con el postgres
+      # principal. Dentro de la red Docker interna el servicio escucha en 5432.
       - "5433:5432"
     volumes:
       - ./data/langfuse-db:/var/lib/postgresql/data
@@ -53,23 +115,173 @@ services:
       timeout: 5s
       retries: 5
 
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: saas-langfuse
+  # ── LANGFUSE v3 (stack completo) ────────────────────────────────────────────
+  # Langfuse v3 requiere web + worker + ClickHouse + Redis propio + S3 (MinIO).
+  # El SDK Python 4.x de la app NO es compatible con Langfuse v2.
+  # Migración desde v2: parar contenedor `saas-langfuse` (v2), borrar
+  # `docker/data/langfuse-db/` y volver a levantar. ClickHouse/MinIO/Redis de
+  # Langfuse usan volúmenes Docker nombrados (evita permisos en Windows).
+
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: saas-langfuse-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass langfuse-redis-dev
+      --appendonly yes
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuse-redis-dev", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: saas-langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse  # pragma: allowlist secret
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  langfuse-minio:
+    image: minio/minio:latest
+    container_name: saas-langfuse-minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret  # pragma: allowlist secret
+    ports:
+      - "9090:9000"
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: saas-langfuse-worker
     restart: unless-stopped
     depends_on:
       langfuse-db:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+    environment: &langfuse-env
       NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-in-dev}
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       SALT: ${LANGFUSE_SALT:-changeme-in-dev}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
       TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse  # pragma: allowlist secret
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret  # pragma: allowlist secret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret  # pragma: allowlist secret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: langfuse-redis-dev
+      REDIS_TLS_ENABLED: "false"
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: saas-langfuse-web
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-in-dev}
+      LANGFUSE_INIT_ORG_ID: mi-saas-dev-org
+      LANGFUSE_INIT_ORG_NAME: Dev
+      LANGFUSE_INIT_PROJECT_ID: mi-saas-dev
+      LANGFUSE_INIT_PROJECT_NAME: mi-saas-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-mi-saas-dev-local
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-mi-saas-dev-local  # pragma: allowlist secret
       LANGFUSE_INIT_USER_EMAIL: dev@local.dev
       LANGFUSE_INIT_USER_PASSWORD: changeme123
       LANGFUSE_INIT_USER_NAME: Dev
-      LANGFUSE_INIT_ORG_NAME: Dev
-      LANGFUSE_INIT_PROJECT_NAME: mi-saas-dev
-    ports:
-      - "3000:3000"
+
+  # ── NOTA: MinIO (R2 local) ──────────────────────────────────────────────────
+  # MinIO puede añadirse como sustituto local de Cloudflare R2 para desarrollo
+  # sin necesidad de credenciales de R2 reales. No se incluye por defecto porque:
+  #   - Los tests unitarios usan moto (S3 en memoria, sin red).
+  #   - En desarrollo se puede apuntar directamente a R2 con credenciales de dev.
+  #
+  # Para habilitarlo, añadir al compose:
+  #   minio:
+  #     image: minio/minio
+  #     command: server /data --console-address ":9001"
+  #     environment:
+  #       MINIO_ROOT_USER: minioadmin
+  #       MINIO_ROOT_PASSWORD: minioadmin
+  #     ports:
+  #       - "9000:9000"   # API S3-compatible
+  #       - "9001:9001"   # Consola web de administración
+  #     volumes:
+  #       - ./data/minio:/data
+  #
+  # Y configurar en Infisical (entorno dev):
+  #   R2_ENDPOINT_URL=http://localhost:9000
+  #   R2_REGION=us-east-1
+  #   R2_ACCESS_KEY_ID=minioadmin
+  #   R2_SECRET_ACCESS_KEY=minioadmin
+
+volumes:
+  langfuse_redis_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:

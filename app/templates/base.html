@@ -17,6 +17,11 @@
     document.body && document.body.addEventListener("htmx:configRequest", (e) => {
       // Espacio para inyectar CSRF cuando llegue
     });
+    document.body && document.body.addEventListener("htmx:afterSwap", (e) => {
+      if (window.Alpine && e.detail.target) {
+        window.Alpine.initTree(e.detail.target);
+      }
+    });
   </script>
 </head>
 <body hx-boost="true" hx-ext="sse">

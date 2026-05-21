@@ -1,0 +1,197 @@
+---
+description: Stack lock for Jinja2 + HTMX 2 + Alpine 3 + Tailwind 4 + Basecoat. Prevents the agent from drifting toward React, Vue, or the Node ecosystem when generating frontend code.
+alwaysApply: true
+---
+
+# Frontend stack — autoritativo
+
+Este proyecto **no** usa React, Next.js, Vue, Svelte, ni el ecosistema Node más allá del binario standalone de Tailwind.
+Generar JSX, componentes React, o sugerir `npm install <framework>` es un **error de stack**.
+
+## Stack obligatorio
+
+| Capa                 | Tecnología                                  | Versión                |
+| -------------------- | ------------------------------------------- | ---------------------- |
+| Templating servidor  | Jinja2                                      | última                 |
+| Interactividad red   | HTMX                                        | 2.x                    |
+| Estado cliente puro  | Alpine.js                                   | 3.x                    |
+| Estilos              | Tailwind CSS                                | 4.x (CLI standalone)   |
+| Componentes UI       | Basecoat UI o propios estilo shadcn en HTML | —                      |
+
+## Prohibiciones duras
+
+- ❌ Nunca generar JSX/TSX, `import React`, hooks, ni componentes funcionales.
+- ❌ Nunca proponer `npm install`, `yarn add`, ni dependencias Node más allá del binario standalone de Tailwind.
+- ❌ Nunca crear `tailwind.config.js`. La configuración de Tailwind 4 vive en CSS con `@theme { ... }`.
+- ❌ Nunca usar `@apply` para construir componentes enteros. Permitido solo para utilidades repetidas muy específicas (ej. un `focus-ring` custom).
+- ❌ Nunca duplicar estado servidor en Alpine. Si el dato vive en BD/sesión, lo gestiona HTMX y el servidor, no Alpine.
+- ❌ Nunca devolver JSON desde endpoints que pinten UI. HTMX consume fragmentos HTML.
+- ❌ Nunca usar versiones distintas a HTMX 2.x o Alpine 3.x.
+- ❌ Nunca fuentes "AI-slop": Inter, Roboto, Arial, system-ui como tipografía principal. Usar fuentes con carácter (Google Fonts vía `<link>` en `base.html`).
+
+## División de responsabilidades
+
+- **HTMX** → cualquier cosa que cruce la red: listados, submit de forms, polling, paginación, modales con contenido dinámico, búsqueda live.
+- **Alpine** → estado puramente cliente: toggles, dropdowns, tabs, menús, copy-to-clipboard, validación visual previa, animaciones UI, accordions.
+- **Servidor (rutas Python)** → siempre devuelve HTML. Helper `render()` de `app/core/templating.py` para páginas y fragmentos HTMX: devuelve página completa o partial según el header `HX-Request`.
+
+Si una funcionalidad cabe en ambos, gana el **servidor** (HTMX). Alpine solo cuando NO hay petición de red involucrada.
+
+## Convenciones HTMX 2.x
+
+- Sintaxis nueva de eventos inline: `hx-on::after-request="..."`, no la sintaxis vieja `hx-on="htmx:afterRequest: ..."`.
+- `hx-boost="true"` en `<body>` o en bloques de navegación para mejora progresiva.
+- Targets con CSS extendido cuando ayude: `hx-target="closest tr"`, `hx-target="next .row"`, `hx-target="previous .item"`.
+- Out-of-band swaps (`hx-swap-oob="true"`) para refrescar zonas independientes (contador en header, toast container, badge de notificaciones).
+- **Comunicación HTMX → Alpine**: servidor responde con header `HX-Trigger: nombreEvento` (opcionalmente con payload JSON). Alpine escucha con `@nombre-evento.window="..."`.
+- **Comunicación Alpine → HTMX**: `$dispatch('htmx:trigger', { selector: '#foo' })` o disparar directamente sobre el elemento.
+- Loading states con `hx-indicator` y la clase utilitaria `htmx-request`.
+- Errores: configurar `htmx:responseError` globalmente para enseñar un toast genérico; nunca silenciar.
+
+## Convenciones Alpine 3.x
+
+- Componentes complejos: definir con `Alpine.data('nombreComponente', () => ({ ... }))` en `static/js/alpine-components.js`. **No** inline largo.
+- Inline solo para estado mínimo (1-3 propiedades): `x-data="{ open: false }"`.
+- Comunicación entre componentes: `$dispatch('evento', payload)` y escucha con `@evento.window`.
+- Estado compartido global: `Alpine.store('nombre', { ... })`. Reservar para datos verdaderamente globales (tema, usuario actual, contador de carrito).
+- Transiciones con `x-transition` y sus modificadores antes que CSS custom.
+- `x-cloak` siempre en elementos que dependan de Alpine para evitar FOUC.
+
+## Convenciones Tailwind 4.x
+
+Source CSS en `static/css/input.css`:
+
+```css
+@import "tailwindcss";
+
+@theme {
+  --color-brand: oklch(0.65 0.2 250);
+  --color-surface: oklch(0.18 0.01 250);
+  --font-display: "Instrument Serif", serif;
+  --font-sans: "Geist", system-ui, sans-serif;
+  --radius-card: 1rem;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+```
+
+Build con el binario standalone (sin Node):
+
+```bash
+./tailwindcss -i static/css/input.css -o static/css/app.css --watch
+# o usar el script del proyecto:
+./scripts/tailwind_watch.sh
+```
+
+- Design tokens **siempre** en `@theme`. Nunca hardcodear hex/rgb en clases utilitarias dispersas.
+- Dark mode: variante `dark:` con `@media (prefers-color-scheme: dark)` o estrategia ya establecida en el proyecto.
+- Sintaxis arbitrary `[--my-var:value]` permitida con moderación.
+- Para responder a tokens definidos en `@theme` desde clases: `bg-[--color-brand]`, `font-[--font-display]`.
+
+## Estructura de archivos esperada
+
+```
+templates/
+  base.html              # layout raíz con {% block %}s
+  layouts/               # layouts reutilizables (extienden base.html)
+  pages/                 # vistas completas (extienden layouts/ o base.html)
+  components/            # piezas reutilizables y fragmentos HTMX
+static/
+  css/
+    input.css            # source Tailwind (con @theme) — editar aquí
+    app.css              # compilado por el CLI, no editar a mano, no commitear
+  js/
+    alpine-components.js # Alpine.data() definitions
+    htmx-config.js       # config global + error handlers
+  vendor/
+    htmx.min.js          # 2.x
+    alpine.min.js        # 3.x
+    tailwindcss          # binario CLI
+```
+
+Cada respuesta HTMX que devuelva un fragmento → archivo propio en `components/`. Nunca reusar templates de página "recortándolos" con condicionales.
+
+## Interacción con la skill `frontend-design`
+
+Cuando la skill `frontend-design` esté cargada:
+
+- ✅ **Aplicar**: principios estéticos (anti-AI-slop, tipografía con carácter, paleta intencional, jerarquía visual, motion intencional, asimetría, densidad apropiada, backgrounds con textura/atmósfera).
+- ✅ **Aplicar**: criterios de accesibilidad (contraste ≥ 4.5:1, focus states visibles, `cursor-pointer` en interactivos, áreas táctiles ≥ 44px).
+- ❌ **No aplicar**: cualquier sugerencia de componente React/JSX. Traducir mentalmente a HTML + Tailwind + Alpine antes de escribir una sola línea.
+- ❌ **No aplicar**: librerías JS ricas (Framer Motion, etc.). Equivalente en este stack: `x-transition` de Alpine o `@keyframes` en CSS.
+
+## Patrones canónicos
+
+### Form con validación cliente + envío HTMX
+
+```html
+<form
+  hx-post="/users"
+  hx-target="#user-list"
+  hx-swap="afterbegin"
+  x-data="{ email: '', get valid() { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email) } }"
+>
+  <input type="email" x-model="email" name="email" required
+         class="w-full rounded-[--radius-card] border-2 border-zinc-700 bg-zinc-900 px-4 py-3">
+  <button :disabled="!valid"
+          class="mt-3 bg-[--color-brand] px-5 py-2.5 disabled:opacity-40">
+    Crear
+  </button>
+</form>
+```
+
+### Botón con loading state nativo
+
+```html
+<button hx-post="/process" hx-indicator="#spinner-1"
+        class="relative cursor-pointer">
+  <span>Procesar</span>
+  <svg id="spinner-1" class="htmx-indicator absolute inset-0 m-auto h-5 w-5 animate-spin">…</svg>
+</button>
+```
+
+### Toast disparado desde el servidor (header + OOB)
+
+Servidor:
+
+```python
+response = templates.TemplateResponse(
+    "components/user_row.html", {"request": request, "user": user}
+)
+response.headers["HX-Trigger"] = "userCreated"
+return response
+```
+
+Cliente:
+
+```html
+<div x-data x-show="false"
+     @user-created.window="$el.style.display='block'; setTimeout(()=>$el.style.display='none', 3000)"
+     class="fixed bottom-6 right-6 rounded-[--radius-card] bg-emerald-600 px-4 py-3 text-white">
+  Usuario creado ✓
+</div>
+```
+
+### Modal con Alpine + contenido cargado por HTMX
+
+```html
+<div x-data="{ open: false }" @open-modal.window="open = true">
+  <button @click="open = true" class="cursor-pointer …">Editar</button>
+
+  <div x-show="open" x-transition.opacity
+       class="fixed inset-0 z-50 grid place-items-center bg-black/60">
+    <div @click.outside="open = false"
+         hx-get="/users/42/edit" hx-trigger="intersect once" hx-swap="innerHTML"
+         class="w-full max-w-lg rounded-[--radius-card] bg-[--color-surface] p-6">
+      <!-- fragmento cargado aquí -->
+    </div>
+  </div>
+</div>
+```
+
+## Cuando dudes
+
+Si la petición no encaja claramente (ej. "app realtime con presencia", "editor tipo Notion", "drag-and-drop kanban"):
+
+1. **Pregunta antes de codear**, no asumas React.
+2. Considera alternativas dentro del stack: HTMX SSE/WebSocket extension, Alpine + librería puntual vanilla (Sortable.js, Tippy.js cargados por `<script>`), o reconsiderar el alcance.
+3. Si tras evaluar el stack no es viable, **explica el trade-off** antes de proponer salirse.

@@ -36,7 +36,7 @@ async def test_llm_client_classify_smoke(
 
     prompt = render_prompt("ping_v1", name="Ana")
     client = get_llm_client()
-    result = await client.complete(
+    completion = await client.complete(
         task="classify",
         messages=[{"role": "user", "content": prompt}],
         response_model=Greeting,
@@ -46,8 +46,9 @@ async def test_llm_client_classify_smoke(
     )
     await db_session.commit()
 
-    assert result.saludo
-    assert result.idioma
+    assert completion.result.saludo
+    assert completion.result.idioma
+    assert completion.llm_call_id
 
     rows = (await db_session.execute(select(LLMCall))).scalars().all()
     assert len(rows) == 1

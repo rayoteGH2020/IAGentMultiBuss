@@ -1,19 +1,23 @@
-"""Tests de extracción con LLM mockeado."""
+"""Tests de extracción con LLM mockeado.
+
+Estos tests verifican la lógica de extract_invoice() (construcción de mensajes,
+validaciones previas al LLM) sin hacer llamadas reales a la API. El mock devuelve
+un Factura fijo para aislar el comportamiento del código de los resultados del modelo.
+"""
 
 from collections.abc import Callable, Coroutine
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
+from app.llm.client import LLMCompleteResult
 from app.llm.extraction import PROMPT_VERSION, extract_invoice
 from app.models import Tenant
 from app.schemas.invoice import Factura
 from sqlalchemy.ext.asyncio import AsyncSession
-
-_FIXTURE_PDF = Path(__file__).resolve().parent.parent / "fixtures" / "invoices" / "ejemplo_01.pdf"
 
 
 @pytest.mark.asyncio
@@ -22,6 +26,10 @@ async def test_extract_invoice_calls_llm_with_correct_args(
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
 ) -> None:
     tenant = await tenant_factory()
+
+    # Factura válida que el mock devolverá como si viniera del LLM.
+    # Los valores numéricos deben ser coherentes (base + iva == total) para
+    # que el model_validator de Factura no penalice la confidence.
     fake_factura = Factura(
         fecha=date(2025, 1, 15),
         proveedor="Acme S.L.",
@@ -33,29 +41,51 @@ async def test_extract_invoice_calls_llm_with_correct_args(
         confidence=0.95,
     )
 
+    # AsyncMock: necesario porque LLMClient.complete() es una coroutine;
+    # un Mock normal no sería awaitable y lanzaría TypeError.
     mock_client = AsyncMock()
-    mock_client.complete = AsyncMock(return_value=fake_factura)
+    llm_call_id = uuid4()
+    mock_client.complete = AsyncMock(
+        return_value=LLMCompleteResult(result=fake_factura, llm_call_id=llm_call_id),
+    )
 
+    # Se parchea la referencia en app.llm.extraction (no en app.llm.client),
+    # porque Python resuelve el nombre get_llm_client en el módulo que lo importa.
+    # Parchear el módulo original no afectaría a la copia ya importada.
     with patch("app.llm.extraction.get_llm_client", return_value=mock_client):
         result = await extract_invoice(
-            file_bytes=_FIXTURE_PDF.read_bytes(),
+            file_bytes=b"%PDF-1.4 test",
             mime_type="application/pdf",
             tenant_id=tenant.id,
             db=db_session,
         )
 
-    assert result.proveedor == "Acme S.L."
+    assert result.factura.proveedor == "Acme S.L."
+    assert result.llm_call_id == llm_call_id
+    # assert_awaited_once(): verifica que complete() fue llamado como coroutine
+    # (await) y exactamente una vez. assert_called_once() no distinguiría entre
+    # llamada síncrona y awaitable, lo que daría un falso positivo.
     mock_client.complete.assert_awaited_once()
     call_kw = mock_client.complete.await_args
     assert call_kw is not None
     kwargs = call_kw.kwargs
+
+    # Verificaciones de contrato: extract_invoice debe llamar a complete()
+    # con los argumentos exactos que el cliente LLM y el eval runner esperan.
     assert kwargs["task"] == "extraction"
     assert kwargs["response_model"] is Factura
+    # prompt_version se registra en llm_calls para correlacionar resultados
+    # con la versión del prompt en el dashboard de métricas.
     assert kwargs["prompt_version"] == PROMPT_VERSION
+
+    # Verificación de la estructura del mensaje multimodal:
+    # [0] system: prompt versionado con instrucciones y schema
+    # [1] user: [media_part, instrucción_textual] — el documento va primero.
     msgs = kwargs["messages"]
     assert msgs[0]["role"] == "system"
     assert msgs[1]["role"] == "user"
     assert isinstance(msgs[1]["content"], list)
+    # 2 elementos: el objeto PDF/Image (media) y la instrucción textual.
     assert len(msgs[1]["content"]) == 2
 
 
@@ -65,6 +95,9 @@ async def test_extract_invoice_rejects_huge_files(
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
 ) -> None:
     tenant = await tenant_factory()
+    # 21 MB supera el límite de 20 MB de la API multimodal de Anthropic.
+    # El test verifica que extract_invoice rechaza antes de llamar al LLM,
+    # evitando el coste de red de subir un fichero que se rechazaría igualmente.
     huge = b"x" * (21 * 1024 * 1024)
     with pytest.raises(ValueError, match="too large"):
         await extract_invoice(
@@ -81,6 +114,10 @@ async def test_extract_invoice_rejects_bad_mime(
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
 ) -> None:
     tenant = await tenant_factory()
+    # application/zip no está en la lista de tipos aceptados por _media_part().
+    # El test verifica que el error se lanza en la capa llm (no en uploads.py),
+    # ya que extract_invoice recibe el MIME del llamador (el worker) sin
+    # pasar de nuevo por validate_invoice_upload.
     with pytest.raises(ValueError, match="Unsupported mime type"):
         await extract_invoice(
             file_bytes=b"hello",

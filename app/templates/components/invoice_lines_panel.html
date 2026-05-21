@@ -1,0 +1,30 @@
+{# Detalle expandible de líneas de factura (segunda fila del grupo tbody). #}
+<div class="px-4 py-3">
+  <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Líneas de factura
+  </p>
+  {% if invoice.lines %}
+  <table class="w-full text-xs text-slate-700">
+    <thead>
+      <tr class="text-left text-slate-500 bg-slate-100/80">
+        <th class="px-2 py-1.5 font-medium border-r border-slate-200/60" scope="col">Descripción</th>
+        <th class="px-2 py-1.5 font-medium text-right border-r border-slate-200/60" scope="col">Cant.</th>
+        <th class="px-2 py-1.5 font-medium text-right border-r border-slate-200/60" scope="col">P. unit.</th>
+        <th class="px-2 py-1.5 font-medium text-right" scope="col">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in invoice.lines %}
+      <tr class="{% if loop.index0 is odd %}bg-white{% else %}bg-slate-50/70{% endif %} border-t border-slate-100">
+        <td class="px-2 py-2 pr-3 align-top border-r border-slate-100">{{ line.descripcion }}</td>
+        <td class="px-2 py-2 pr-3 text-right tabular-nums whitespace-nowrap border-r border-slate-100">{{ line.cantidad }}</td>
+        <td class="px-2 py-2 pr-3 text-right tabular-nums whitespace-nowrap border-r border-slate-100">{{ "%.2f"|format(line.precio_unitario) }} €</td>
+        <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap">{{ "%.2f"|format(line.total) }} €</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-500">No hay líneas de detalle para esta factura.</p>
+  {% endif %}
+</div>

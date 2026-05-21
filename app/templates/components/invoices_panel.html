@@ -1,5 +1,10 @@
+{# Default defensivo: el panel puede renderizarse desde la página completa
+   (donde el route siempre pasa just_uploaded_ids) o directamente via HTMX
+   polling desde jobs.py (que pasa just_uploaded_ids=[]), o en tests. #}
 {% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
+
 <div id="invoices-table-container" class="space-y-3">
+
   {% if upload_errors %}
   <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
     <p class="font-medium">Algunos ficheros no se han subido</p>
@@ -12,22 +17,33 @@
   {% endif %}
 
   {% if invoices %}
-  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-slate-600 text-left">
+  <div class="invoices-table-shell">
+    <table class="invoices-table" role="grid" aria-label="Listado de facturas">
+      <colgroup>
+        <col class="w-[7rem]">
+        <col>
+        <col class="w-[6.5rem]">
+        <col class="w-[6.5rem]">
+        <col class="w-[9.5rem]">
+        <col class="w-[5.5rem]">
+        <col class="w-[4.5rem]">
+      </colgroup>
+      <thead>
         <tr>
-          <th class="px-4 py-3 font-medium" scope="col">Fecha</th>
-          <th class="px-4 py-3 font-medium" scope="col">Proveedor</th>
-          <th class="px-4 py-3 font-medium" scope="col">CIF/NIF</th>
-          <th class="px-4 py-3 font-medium text-right" scope="col">Total</th>
-          <th class="px-4 py-3 font-medium" scope="col">Estado</th>
+          <th scope="col">Fecha</th>
+          <th scope="col">Proveedor</th>
+          <th scope="col">CIF/NIF</th>
+          <th class="text-right" scope="col">Total</th>
+          <th scope="col">Subida</th>
+          <th scope="col">Estado</th>
+          <th class="text-center" scope="col">
+            <span class="sr-only">Acciones</span>
+          </th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for invoice in invoices %}
-          {% include "components/invoice_row.html" %}
-        {% endfor %}
-      </tbody>
+      {% for invoice in invoices %}
+        {% include "components/invoice_row.html" %}
+      {% endfor %}
     </table>
   </div>
   {% else %}
