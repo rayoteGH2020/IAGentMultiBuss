@@ -29,9 +29,12 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.errors import LLMCompleteError
+from app.llm.chat_loop import ToolLoopResult
+from app.llm.chat_loop import run_tool_loop as _run_tool_loop
 from app.llm.pricing import compute_cost_eur
+from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
 from app.models import LLMCall
 
@@ -40,6 +43,9 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
+
+_MISSING_ANTHROPIC_KEY_PLACEHOLDER = "missing-anthropic-key"
+_ANTHROPIC_TASKS = frozenset({"classify", "sql"})
 
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
@@ -91,27 +97,70 @@ def _is_retryable_provider_error(exc: BaseException) -> bool:
     return any(marker in msg for marker in _RETRYABLE_MARKERS)
 
 
-def _log_retry_attempt(retry_state: RetryCallState) -> None:
-    """Callback de tenacity: loguea cada reintento como warning."""
+def _anthropic_api_key_configured(settings: Settings) -> bool:
+    raw = settings.anthropic_api_key.get_secret_value().strip()
+    return bool(raw) and raw != _MISSING_ANTHROPIC_KEY_PLACEHOLDER
+
+
+def _log_anthropic_failure(
+    *,
+    event: str,
+    task: TaskType,
+    model: str,
+    tenant_id: str,
+    error: str,
+    exc: BaseException | None,
+) -> None:
+    """Log de error Anthropic muy visible en consola (classify / sql / chat con Claude)."""
+    log = logger.bind(
+        provider="anthropic",
+        task=task,
+        model=model,
+        tenant_id=tenant_id,
+        error=error,
+        hint=(
+            "Revisa ANTHROPIC_API_KEY en Infisical. "
+            "classify y sql usan Claude por defecto; chat usa Gemini salvo LLM_MODEL_CHAT."
+        ),
+    )
+    if exc is not None:
+        log.error(event, exc_type=type(exc).__name__, exc_info=exc)
+    else:
+        log.error(event)
+
+
+def _log_transient_retry(
+    retry_state: RetryCallState,
+    *,
+    provider: str,
+    model: str,
+) -> None:
+    """Callback de tenacity: loguea reintentos; Anthropic con evento dedicado."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     next_sleep = getattr(retry_state.next_action, "sleep", None)
-    logger.warning(
-        "llm.retry_transient_error",
-        attempt=retry_state.attempt_number,
-        next_sleep_s=next_sleep,
-        error=str(exc)[:200] if exc else None,
-    )
+    payload = {
+        "provider": provider,
+        "model": model,
+        "attempt": retry_state.attempt_number,
+        "next_sleep_s": next_sleep,
+        "error": str(exc)[:200] if exc else None,
+    }
+    if provider == "anthropic":
+        logger.warning("anthropic_llm_retry", **payload)
+    else:
+        logger.warning("llm.retry_transient_error", **payload)
 
 
 # Router de modelos por defecto (arquitectura.md §8). Se puede sobreescribir
 # por entorno via LLM_MODEL_* en config.py sin tocar código.
-# - extraction: Gemini Flash es multimodal nativo y muy rápido para PDFs/imágenes.
+# - extraction / chat: Gemini Flash (GOOGLE_API_KEY); mismo proveedor que extracción.
 # - classify: Haiku es el modelo más económico de Anthropic para tareas simples.
-# - chat / sql: Sonnet ofrece el mejor equilibrio calidad/coste para conversación.
+# - sql: Sonnet (ANTHROPIC_API_KEY) cuando exista módulo analytics.
 DEFAULT_MODELS: dict[TaskType, str] = {
     "extraction": "gemini-2.5-flash",
     "classify": "claude-haiku-4-5-20251001",
-    "chat": "claude-sonnet-4-6",
+    "chat": "gemini-2.5-flash",
+    # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
     "sql": "claude-sonnet-4-6",
 }
 
@@ -171,16 +220,31 @@ class LLMClient:
         # Placeholder "missing-*-key": permite que el cliente se instancie aunque
         # la API key no esté configurada (tests unitarios, arranque sin módulo LLM).
         # La llamada real fallará con error de autenticación, no en el constructor.
-        self._anthropic = instructor.from_anthropic(
-            AsyncAnthropic(api_key=sk_anthropic or "missing-anthropic-key"),
+        self._anthropic_raw = AsyncAnthropic(
+            api_key=sk_anthropic or _MISSING_ANTHROPIC_KEY_PLACEHOLDER,
         )
+        self._anthropic = instructor.from_anthropic(self._anthropic_raw)
         # use_async=True: la librería google-genai necesita este flag explícito
         # para devolver coroutines en lugar de resultados síncronos.
+        self._google_raw = genai.Client(api_key=sk_google or "missing-google-key")
         self._google = instructor.from_genai(
-            genai.Client(api_key=sk_google or "missing-google-key"),
+            self._google_raw,
             use_async=True,
         )
         self._langfuse = get_langfuse()
+        if not _anthropic_api_key_configured(self._settings):
+            logger.warning(
+                "llm.anthropic_not_configured",
+                affected_tasks=sorted(_ANTHROPIC_TASKS),
+                default_models={
+                    "classify": DEFAULT_MODELS["classify"],
+                    "sql": DEFAULT_MODELS["sql"],
+                },
+                hint=(
+                    "Sin ANTHROPIC_API_KEY las tareas classify/sql fallarán con "
+                    "anthropic_api_key_missing en consola."
+                ),
+            )
 
     def _resolve_model(self, task: TaskType) -> tuple[str, str]:
         # Overrides de entorno tienen prioridad sobre DEFAULT_MODELS.
@@ -274,7 +338,7 @@ class LLMClient:
                 max=self._settings.llm_retry_max_wait_seconds,
             ),
             retry=retry_if_exception(_is_retryable_provider_error),
-            before_sleep=_log_retry_attempt,
+            before_sleep=lambda rs: _log_transient_retry(rs, provider=provider, model=model),
             reraise=True,
         ):
             with attempt:
@@ -339,26 +403,57 @@ class LLMClient:
         llm_call: LLMCall | None = None
 
         try:
-            result, raw = await self._invoke_sdk(
-                provider=provider,
-                model=model,
-                typed_messages=typed_messages,
-                response_model=response_model,
-                max_retries=max_retries,
+            anthropic_key_missing = provider == "anthropic" and not _anthropic_api_key_configured(
+                self._settings
             )
-            input_tokens, output_tokens = _extract_token_usage(raw)
-        except Exception as exc:
-            status = "error"
-            # Truncado a 1000 chars: el error puede contener la respuesta
-            # completa del LLM si Instructor falla al parsear el schema.
-            error = str(exc)[:1000]
-            logger.exception(
-                "llm.complete_failed",
-                task=task,
-                model=model,
-                tenant_id=str(tenant_id),
-                error=error,
-            )
+            if anthropic_key_missing:
+                status = "error"
+                error = (
+                    f"ANTHROPIC_API_KEY is not configured (task={task}, model={model}). "
+                    "Set ANTHROPIC_API_KEY in Infisical or override LLM_MODEL_CLASSIFY / "
+                    "LLM_MODEL_SQL with a Gemini model."
+                )
+                _log_anthropic_failure(
+                    event="anthropic_api_key_missing",
+                    task=task,
+                    model=model,
+                    tenant_id=str(tenant_id),
+                    error=error,
+                    exc=None,
+                )
+            else:
+                try:
+                    result, raw = await self._invoke_sdk(
+                        provider=provider,
+                        model=model,
+                        typed_messages=typed_messages,
+                        response_model=response_model,
+                        max_retries=max_retries,
+                    )
+                    input_tokens, output_tokens = _extract_token_usage(raw)
+                except Exception as exc:
+                    status = "error"
+                    # Truncado a 1000 chars: el error puede contener la respuesta
+                    # completa del LLM si Instructor falla al parsear el schema.
+                    error = str(exc)[:1000]
+                    if provider == "anthropic":
+                        _log_anthropic_failure(
+                            event="anthropic_llm_call_failed",
+                            task=task,
+                            model=model,
+                            tenant_id=str(tenant_id),
+                            error=error,
+                            exc=exc,
+                        )
+                    else:
+                        logger.exception(
+                            "llm.complete_failed",
+                            task=task,
+                            model=model,
+                            provider=provider,
+                            tenant_id=str(tenant_id),
+                            error=error,
+                        )
         finally:
             # El bloque finally se ejecuta SIEMPRE: en éxito y en error.
             # Garantiza que LLMCall y la traza de Langfuse se cierran aunque
@@ -409,6 +504,38 @@ class LLMClient:
         assert result is not None
         return LLMCompleteResult(result=result, llm_call_id=llm_call.id)
 
+    async def run_tool_loop(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        registry: ToolRegistry,
+        ctx: ToolContext,
+        tenant_id: UUID,
+        db: AsyncSession,
+        prompt_version: str,
+        max_iters: int = 6,
+        task: TaskType = "chat",
+    ) -> ToolLoopResult:
+        """Loop de tool-calling para consulta documental (auditoría en ``llm_calls``)."""
+        if task != "chat":
+            msg = f"run_tool_loop only supports task='chat', got {task!r}"
+            raise ValueError(msg)
+        model, provider = self._resolve_model("chat")
+        return await _run_tool_loop(
+            provider=provider,
+            model=model,
+            messages=messages,
+            registry=registry,
+            ctx=ctx,
+            tenant_id=tenant_id,
+            db=db,
+            prompt_version=prompt_version,
+            max_iters=max_iters,
+            settings=self._settings,
+            anthropic_client=self._anthropic_raw,
+            google_client=self._google_raw,
+        )
+
 
 _client: LLMClient | None = None
 
@@ -429,3 +556,14 @@ def reset_llm_client_for_tests() -> None:
     """Limpia el singleton para que los tests puedan inyectar mocks frescos."""
     global _client
     _client = None
+
+
+__all__ = [
+    "DEFAULT_MODELS",
+    "LLMClient",
+    "LLMCompleteResult",
+    "TaskType",
+    "ToolLoopResult",
+    "get_llm_client",
+    "reset_llm_client_for_tests",
+]

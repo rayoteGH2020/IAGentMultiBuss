@@ -5,6 +5,7 @@ que carga un dataset, llama al LLM real y persiste los resultados en app/evals/r
 
 Runners disponibles:
   extraction.py — eval del módulo 1: latencia, accuracy de campos y json_validity_rate.
+  chat_documents.py — eval stub del módulo 1.5: tool_selection_accuracy, answer_grounded_in_data.
 
 Para añadir un runner de un nuevo módulo, crear un fichero con la misma estructura:
   - Carga el dataset de su módulo.

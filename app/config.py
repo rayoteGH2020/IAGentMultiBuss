@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     llm_model_classify: str | None = None
     llm_model_sql: str | None = None
 
+    # Chat documental (Paso 16): tools de conocimiento vectorial desactivadas hasta módulo 2.
+    knowledge_tools_enabled: bool = False
+    chat_daily_message_limit: int = 60
+    chat_max_message_bytes: int = 4096
+    chat_history_message_limit: int = 20
+    chat_stream_chunk_chars: int = 80
+
     # Reintentos ante errores transitorios del proveedor LLM (HTTP 429/5xx/529).
     # OFF por defecto: en evals/desarrollo es mejor ver el fallo crudo. En
     # producción activarlo evita que un 503 puntual de Gemini/Anthropic se

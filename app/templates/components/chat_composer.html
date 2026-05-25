@@ -1,0 +1,58 @@
+<form
+  id="chat-composer"
+  class="chat-composer-shell"
+  hx-post="/chat/threads/{{ thread.id }}/messages"
+  hx-target="#chat-messages"
+  hx-swap="beforeend"
+  hx-indicator="#chat-composer-spinner"
+  hx-disabled-elt="find button[type='submit']"
+  hx-on::after-request="if (event.detail.successful) { content = ''; $dispatch('chat-scroll-bottom') }"
+  x-data="{
+    content: '',
+    maxBytes: 4096,
+    get byteCount() {
+      try { return new TextEncoder().encode(this.content).length } catch { return this.content.length }
+    },
+    get valid() {
+      const t = this.content.trim()
+      return t.length > 0 && this.byteCount <= this.maxBytes
+    }
+  }"
+  @keydown.enter.prevent="if (!$event.shiftKey && valid) { $el.requestSubmit() }">
+  <label for="chat-content" class="sr-only">Mensaje para el asistente</label>
+  <textarea
+    id="chat-content"
+    name="content"
+    rows="3"
+    required
+    x-model="content"
+    :disabled="$el.closest('form').classList.contains('htmx-request')"
+    placeholder="Pregunta sobre facturas o tickets… (Enter envía, Shift+Enter nueva línea)"
+    class="w-full resize-none rounded-xl border border-slate-300/90 bg-white px-4 py-3 text-sm text-slate-900 shadow-inner placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/25 disabled:opacity-60"></textarea>
+
+  <div class="mt-2.5 flex flex-wrap items-center justify-between gap-3">
+    <div class="text-xs text-slate-500">
+      <span :class="byteCount > maxBytes ? 'text-red-600 font-medium' : ''">
+        <span x-text="byteCount"></span> / <span x-text="maxBytes"></span> bytes
+      </span>
+      <span class="mx-1.5 text-slate-300" aria-hidden="true">·</span>
+      <span>Datos de tus documentos, no manuales RAG</span>
+    </div>
+    <button
+      type="submit"
+      class="btn-primary relative min-w-[6.5rem] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+      :disabled="!valid">
+      <span>Enviar</span>
+      <svg
+        id="chat-composer-spinner"
+        class="htmx-indicator absolute inset-0 m-auto h-5 w-5 animate-spin text-white"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        aria-hidden="true">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+    </button>
+  </div>
+</form>

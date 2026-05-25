@@ -1,4 +1,4 @@
-"""Extracción estructurada de facturas (PDF / imagen) vía cliente LLM."""
+"""Extracción estructurada de facturas y tickets (PDF / imagen) vía cliente LLM."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from instructor.processing.multimodal import PDF, Image
 from app.llm.client import get_llm_client
 from app.llm.prompts_loader import load_prompt
 from app.schemas.invoice import Factura
+from app.schemas.ticket import TicketRecibo
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,13 +28,22 @@ logger = structlog.get_logger(__name__)
 # el campo prompt_version en llm_calls, permitiendo correlacionar resultados
 # con la versión del prompt en el dashboard de métricas.
 PROMPT_VERSION = "extraction_v1"
+TICKET_PROMPT_VERSION = "ticket_extraction_v1"
 
 
 @dataclass(frozen=True, slots=True)
 class ExtractionResult:
-    """Datos extraídos y referencia a la llamada LLM asociada."""
+    """Datos extraídos de factura y referencia a la llamada LLM asociada."""
 
     factura: Factura
+    llm_call_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class TicketExtractionResult:
+    """Datos extraídos de ticket y referencia a la llamada LLM asociada."""
+
+    ticket: TicketRecibo
     llm_call_id: UUID
 
 
@@ -61,21 +71,16 @@ def _media_part(file_bytes: bytes, mime_type: str) -> Image | PDF:
 
 
 def _build_extraction_messages(
-    *, system_prompt: str, file_bytes: bytes, mime_type: str
+    *,
+    system_prompt: str,
+    file_bytes: bytes,
+    mime_type: str,
+    instruction: str,
 ) -> list[dict[str, Any]]:
     media = _media_part(file_bytes, mime_type)
-    # Instrucción breve en el mensaje de usuario: el system prompt ya describe
-    # el schema y el comportamiento esperado; el mensaje de usuario solo
-    # indica la acción sobre el documento adjunto.
-    instruction = "Extrae los datos de esta factura. Devuelve el JSON conforme al schema indicado por el modelo."
     return [
-        # Rol "system": define el contexto del asistente (quién es, qué schema
-        # debe seguir, cómo manejar la confianza). Viene del prompt versionado.
         {"role": "system", "content": system_prompt},
         {
-            # Rol "user": lleva el documento y la instrucción.
-            # El media va primero en la lista de contenido porque los modelos
-            # multimodales procesan mejor el documento antes de la pregunta.
             "role": "user",
             "content": [
                 media,
@@ -103,6 +108,9 @@ async def extract_invoice(
         system_prompt=load_prompt(PROMPT_VERSION),
         file_bytes=file_bytes,
         mime_type=mime_type,
+        instruction=(
+            "Extrae los datos de esta factura. Devuelve el JSON conforme al schema indicado."
+        ),
     )
     client = get_llm_client()
 
@@ -130,3 +138,44 @@ async def extract_invoice(
         confidence=factura.confidence,
     )
     return ExtractionResult(factura=factura, llm_call_id=completion.llm_call_id)
+
+
+async def extract_ticket(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+) -> TicketExtractionResult:
+    """Extrae datos estructurados de un ticket usando el router LLM (`task='extraction'`)."""
+    if len(file_bytes) > 20 * 1024 * 1024:
+        raise ValueError("File too large (>20MB)")
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(TICKET_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction=(
+            "Extrae los datos de este ticket o recibo. Devuelve el JSON conforme al schema."
+        ),
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=TicketRecibo,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=TICKET_PROMPT_VERSION,
+        max_retries=2,
+    )
+    ticket = completion.result
+    logger.info(
+        "ticket_extraction.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        comercio=ticket.comercio,
+        total=str(ticket.total),
+        confidence=ticket.confidence,
+    )
+    return TicketExtractionResult(ticket=ticket, llm_call_id=completion.llm_call_id)

@@ -71,3 +71,17 @@ async def enqueue_invoice_processing(invoice_id: UUID, tenant_id: UUID) -> str:
         msg = "enqueue_invoice_processing returned no job"
         raise RuntimeError(msg)
     return str(job.job_id)
+
+
+async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "process_ticket",
+        str(ticket_id),
+        str(tenant_id),
+        _job_id=f"ticket:{ticket_id}",
+    )
+    if job is None:
+        msg = "enqueue_ticket_processing returned no job"
+        raise RuntimeError(msg)
+    return str(job.job_id)

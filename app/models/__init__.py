@@ -9,15 +9,25 @@
 #    estar importados (y por tanto registrados en Base.metadata) antes de que
 #    Alembic inspeccione el metadata. Importarlos aquí garantiza que basta con
 #    `from app.models import Base` en env.py de Alembic para tenerlos todos.
+from app.models.audit_log import AuditLog
 from app.models.base import Base, IdMixin, TimestampMixin
+from app.models.chat import ChatMessage, ChatMessageRole, ChatThread
+from app.models.doc_type import DocType, DocTypeCode
 from app.models.invoice import Invoice, InvoiceLine, InvoiceStatus
 from app.models.llm_call import LLMCall
 from app.models.membership import Membership
 from app.models.tenant import Tenant
+from app.models.ticket import Ticket, TicketStatus
 from app.models.user import User
 
 __all__ = [
+    "AuditLog",
     "Base",
+    "ChatMessage",
+    "ChatMessageRole",
+    "ChatThread",
+    "DocType",
+    "DocTypeCode",
     "IdMixin",
     "Invoice",
     "InvoiceLine",
@@ -25,6 +35,8 @@ __all__ = [
     "LLMCall",
     "Membership",
     "Tenant",
+    "Ticket",
+    "TicketStatus",
     "TimestampMixin",
     "User",
 ]

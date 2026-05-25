@@ -166,4 +166,78 @@
   .llm-call-status--error {
     @apply bg-red-50 text-red-700 ring-1 ring-red-100;
   }
+
+  /* /chat — consulta documental (módulo 1.5, no RAG) */
+  .chat-shell {
+    @apply flex h-[calc(100vh-9.5rem)] min-h-[28rem] overflow-hidden rounded-xl border border-slate-200/90;
+    @apply bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.04)];
+  }
+  .chat-sidebar {
+    @apply flex w-72 shrink-0 flex-col border-r border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80;
+  }
+  .chat-sidebar-inner {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+  .chat-main {
+    @apply relative flex min-w-0 flex-1 flex-col bg-[radial-gradient(ellipse_at_top_right,rgba(14,165,233,0.06),transparent_55%)];
+  }
+  .chat-badge-doc {
+    @apply inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-800 ring-1 ring-sky-100;
+  }
+  .chat-badge-rag-hint {
+    @apply text-[11px] text-slate-400;
+  }
+  .chat-thread-link {
+    @apply block cursor-pointer rounded-lg px-3 py-2.5 text-sm transition-colors;
+  }
+  .chat-thread-link--active {
+    @apply bg-white font-medium text-primary-700 shadow-sm ring-1 ring-slate-200/80;
+  }
+  .chat-thread-link--idle {
+    @apply text-slate-700 hover:bg-white/70;
+  }
+  .chat-messages {
+    @apply flex-1 space-y-5 overflow-y-auto scroll-smooth px-5 py-5 md:px-8;
+  }
+  .chat-bubble-user {
+    @apply max-w-[min(85%,32rem)] rounded-2xl rounded-br-sm bg-primary-600 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm;
+  }
+  .chat-bubble-assistant {
+    @apply max-w-[min(85%,36rem)] rounded-2xl rounded-bl-sm border border-slate-200/90 bg-white/90 px-4 py-3 text-sm leading-relaxed text-slate-800 shadow-sm;
+  }
+  .chat-bubble-assistant--pending {
+    @apply border-dashed border-slate-300 bg-slate-50/90;
+  }
+  .chat-bubble-assistant--error {
+    @apply border-red-200 bg-red-50/90 text-red-800;
+  }
+  .chat-typing-dots span {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-slate-400;
+    animation: chat-typing 1.2s ease-in-out infinite;
+  }
+  .chat-typing-dots span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .chat-typing-dots span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+  .chat-composer-shell {
+    @apply border-t border-slate-200/90 bg-white/80 px-5 py-4 backdrop-blur-sm md:px-8;
+  }
+  .chat-empty-hero {
+    @apply mx-auto max-w-md text-center;
+  }
+}
+
+@keyframes chat-typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }

@@ -11,6 +11,7 @@ from arq.connections import RedisSettings
 
 from app.config import get_settings
 from app.jobs.invoice_jobs import process_invoice
+from app.jobs.ticket_jobs import process_ticket
 
 
 class WorkerSettings:
@@ -22,7 +23,7 @@ class WorkerSettings:
     # por el nombre de la función ("process_invoice"); si una función no aparece
     # aquí, los jobs encolados con ese nombre se ignorarán silenciosamente.
     # Cada nuevo tipo de job debe añadirse a esta lista.
-    functions: ClassVar[list[object]] = [process_invoice]
+    functions: ClassVar[list[object]] = [process_invoice, process_ticket]
 
     # Máximo de jobs ejecutándose simultáneamente en ESTE proceso worker.
     # No es el límite por tenant (eso lo gestiona invoice_slots.py con el

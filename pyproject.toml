@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     # Web
     "fastapi[standard]>=0.115.0",
+    "sse-starlette>=2.1.0",
     "uvicorn[standard]>=0.32.0",
     "jinja2>=3.1.4",
     "python-multipart>=0.0.12",
@@ -42,7 +43,7 @@ dependencies = [
     # Webhooks
     "svix>=1.42.0",
     "jsonref>=1.1.0",
-    "tenacity>=9.1.4",
+    "pypdf>=5.1.0",
 ]
 
 [dependency-groups]
@@ -90,12 +91,33 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "ASYNC"]
+"tests/**" = ["S", "ASYNC", "TCH"]
 "migrations/**" = ["ALL"]
-"app/models/invoice.py" = ["TCH003"]
-"app/models/llm_call.py" = ["TCH003"]
-"app/schemas/invoice.py" = ["TCH003"]
+"app/core/document_text.py" = ["S112"]
+"app/llm/**" = ["TCH"]
 "app/jobs/queue.py" = ["TCH003"]
+"app/models/invoice.py" = ["TCH003"]
+"app/models/doc_type.py" = ["TCH003"]
+"app/models/ticket.py" = ["TCH003"]
+"app/models/llm_call.py" = ["TCH003"]
+"app/models/audit_log.py" = ["TCH003"]
+"app/models/chat.py" = ["TCH003"]
+"app/schemas/invoice.py" = ["TCH003"]
+"app/schemas/ticket.py" = ["TCH003"]
+"app/schemas/chat.py" = ["TCH"]
+"app/schemas/document_query.py" = ["TCH"]
+"app/schemas/pagination.py" = ["TCH003"]
+"app/llm/classification.py" = ["TCH003"]
+"app/services/ticket_service.py" = ["TCH003"]
+"app/services/chat_service.py" = ["TCH"]
+"app/services/chat_tool_runner.py" = ["TCH"]
+"app/services/document_query_service.py" = ["TCH"]
+"app/services/audit_service.py" = ["TCH"]
+"app/services/document_classification.py" = ["TCH"]
+"app/services/document_upload_service.py" = ["TCH"]
+"app/services/doc_type_service.py" = ["TCH"]
+"app/routes/web/chat.py" = ["TCH"]
+"app/deps.py" = ["TCH"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -113,7 +135,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
-disable_error_code = ["misc"]
+disable_error_code = ["misc", "no-untyped-def", "arg-type"]
 
 [[tool.mypy.overrides]]
 module = "app.evals.conftest"
@@ -123,6 +145,10 @@ disable_error_code = ["misc"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --tb=short"
+# google-genai 2.x usa _UnionGenericAlias (deprecado en 3.12+, eliminado en 3.17).
+filterwarnings = [
+    "ignore:'_UnionGenericAlias' is deprecated:DeprecationWarning:google.genai.types",
+]
 markers = [
     "integration: requiere infra (postgres, redis)",
     "e2e: requiere navegador",

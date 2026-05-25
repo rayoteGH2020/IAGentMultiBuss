@@ -54,7 +54,7 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `GOOGLE_API_KEY` | En prod | Acceso a Gemini (extracción de facturas). Obligatoria para el módulo 1. |
 | `VOYAGE_API_KEY` | En prod | Acceso a Voyage para embeddings (módulo 2 RAG). Puede omitirse si el módulo 2 no está activo. |
 | `LLM_MODEL_EXTRACTION` | No | Override del modelo de extracción. Si no se define, `LLMClient` usa `gemini-2.5-flash` (arquitectura.md §8). |
-| `LLM_MODEL_CHAT` | No | Override del modelo de chat. Default `claude-sonnet-4-6`. |
+| `LLM_MODEL_CHAT` | No | Override del modelo de chat. Default `gemini-2.5-flash` (`GOOGLE_API_KEY`). Alternativa: `claude-sonnet-4-6` con `ANTHROPIC_API_KEY`. |
 | `LLM_MODEL_CLASSIFY` | No | Override del modelo de clasificación. Default `claude-haiku-4-5-20251001`. |
 | `LLM_MODEL_SQL` | No | Override del modelo SQL. Default `claude-sonnet-4-6`. |
 

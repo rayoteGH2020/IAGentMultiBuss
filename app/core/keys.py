@@ -59,6 +59,14 @@ def invoice_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     )
 
 
+def ticket_key(tenant_id: uuid.UUID, original_filename: str) -> str:
+    """Genera una key estable para un ticket subido."""
+    now = datetime.now(UTC)
+    name = PurePosixPath(original_filename).name.replace("/", "_").replace("\\", "_")
+    safe = "".join(c for c in name if c.isalnum() or c in "._-")[:120] or "file"
+    return f"tickets/{tenant_id}/{now:%Y/%m}/{uuid.uuid4()}-{safe}"
+
+
 def document_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     """Genera una key para documentos del módulo de conocimiento (RAG).
 

@@ -9,14 +9,26 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.datetime_display import display_today
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import invoice_key
 from app.core.storage import get_storage
-from app.models import Invoice, InvoiceLine, InvoiceStatus
+from app.core.text_normalization import ilike_pattern, normalize_search_text
+from app.models import DocTypeCode, Invoice, InvoiceLine, InvoiceStatus
+from app.schemas.document_query import (
+    AggregateGroupBy,
+    AggregateMetric,
+    AggregateResult,
+    AggregateRow,
+    DocumentSearchFilters,
+    InvoiceLineRead,
+    InvoiceRead,
+)
+from app.schemas.pagination import Page
+from app.services import doc_type_service
 
 # Los imports dentro de TYPE_CHECKING solo se evalúan por mypy/pyright, no en
 # runtime. Permite usar anotaciones de Sequence, UUID, AsyncSession y Factura
@@ -161,6 +173,7 @@ async def create_invoice_stub(
     source_file_key: str,
     source_filename: str,
     source_mime: str,
+    doc_type: DocTypeCode = DocTypeCode.factura,
 ) -> Invoice:
     """Crea una factura en estado pending, sin datos extraídos.
 
@@ -168,8 +181,10 @@ async def create_invoice_stub(
     empiece el pipeline LLM. Permite mostrar la fila en la UI inmediatamente
     (estado pending) mientras el worker procesa en segundo plano.
     """
+    doc_type_id = await doc_type_service.get_doc_type_id(db, doc_type)
     invoice = Invoice(
         tenant_id=tenant_id,
+        doc_type_id=doc_type_id,
         # pending: el fichero está en R2 pero aún no hay extracción LLM.
         # El worker cambiará este estado a processing y luego a ready o failed.
         status=InvoiceStatus.pending,
@@ -193,6 +208,7 @@ async def create_invoice_from_upload(
     filename: str,
     file_bytes: bytes,
     mime_type: str,
+    doc_type: DocTypeCode = DocTypeCode.factura,
 ) -> Invoice:
     """Sube bytes a R2 y crea `Invoice` en estado procesando.
 
@@ -210,10 +226,9 @@ async def create_invoice_from_upload(
         db,
         tenant_id,
         source_file_key=key,
-        # Truncado a 300 chars para ajustarse al límite de la columna en BD.
-        # Nombres de fichero extremadamente largos son raros pero posibles.
         source_filename=filename[:300],
         source_mime=mime_type,
+        doc_type=doc_type,
     )
     # El stub se crea con status=pending; aquí se avanza a processing para
     # reflejar que el fichero ya está en R2 y el job está a punto de encolarse.
@@ -306,3 +321,214 @@ async def mark_failed(
     # updated_at explícito: SQLAlchemy no actualiza onupdate automáticamente en
     # todos los drivers async; se establece manualmente para coherencia.
     invoice.updated_at = datetime.now(tz=UTC)
+
+
+def _invoice_to_read(invoice: Invoice, *, include_lines: bool) -> InvoiceRead:
+    lineas = (
+        [
+            InvoiceLineRead.model_validate(line)
+            for line in sorted(invoice.lines, key=lambda ln: ln.position)
+        ]
+        if include_lines
+        else []
+    )
+    return InvoiceRead(
+        id=invoice.id,
+        status=invoice.status.value,
+        fecha=invoice.fecha,
+        proveedor=invoice.proveedor,
+        cif_nif=invoice.cif_nif,
+        base_imponible=invoice.base_imponible,
+        iva_percent=invoice.iva_percent,
+        iva_amount=invoice.iva_amount,
+        total=invoice.total,
+        currency=invoice.currency,
+        confidence=invoice.confidence,
+        source_filename=invoice.source_filename,
+        lineas=lineas,
+    )
+
+
+def _invoice_search_conditions(
+    tenant_id: UUID,
+    filters: DocumentSearchFilters,
+) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = [Invoice.tenant_id == tenant_id]
+
+    if filters.fecha_from is not None:
+        conditions.append(Invoice.fecha >= filters.fecha_from)
+    if filters.fecha_to is not None:
+        conditions.append(Invoice.fecha <= filters.fecha_to)
+    if filters.total_min is not None:
+        conditions.append(Invoice.total >= filters.total_min)
+    if filters.total_max is not None:
+        conditions.append(Invoice.total <= filters.total_max)
+    if filters.status:
+        statuses = [InvoiceStatus(s) for s in filters.status]
+        conditions.append(Invoice.status.in_(statuses))
+    if filters.cif_nif:
+        cif_pattern = ilike_pattern(filters.cif_nif)
+        conditions.append(
+            func.lower(func.coalesce(Invoice.cif_nif, "")).like(
+                cif_pattern,
+                escape="\\",
+            ),
+        )
+    if filters.proveedor_query:
+        pattern = ilike_pattern(filters.proveedor_query)
+        normalized = normalize_search_text(filters.proveedor_query)
+        proveedor_col = func.unaccent(func.coalesce(Invoice.proveedor, ""))
+        conditions.append(
+            or_(
+                func.lower(proveedor_col).like(pattern, escape="\\"),
+                func.similarity(proveedor_col, literal(normalized)) >= 0.2,
+            ),
+        )
+    if filters.text_query:
+        pattern = ilike_pattern(filters.text_query)
+        normalized = normalize_search_text(filters.text_query)
+        proveedor_col = func.unaccent(func.coalesce(Invoice.proveedor, ""))
+        filename_col = func.lower(func.coalesce(Invoice.source_filename, ""))
+        cif_col = func.lower(func.coalesce(Invoice.cif_nif, ""))
+        conditions.append(
+            or_(
+                func.lower(proveedor_col).like(pattern, escape="\\"),
+                filename_col.like(pattern, escape="\\"),
+                cif_col.like(pattern, escape="\\"),
+                func.similarity(proveedor_col, literal(normalized)) >= 0.2,
+            ),
+        )
+    return conditions
+
+
+async def search_invoices(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    filters: DocumentSearchFilters,
+) -> Page[InvoiceRead]:
+    """Búsqueda de facturas con filtros tipados y paginación."""
+    conditions = _invoice_search_conditions(tenant_id, filters)
+    count_stmt = select(func.count()).select_from(Invoice).where(*conditions)
+    total = int((await db.execute(count_stmt)).scalar_one())
+
+    stmt = (
+        select(Invoice)
+        .where(*conditions)
+        .order_by(Invoice.fecha.desc().nulls_last(), Invoice.created_at.desc())
+        .limit(filters.limit)
+        .offset(filters.offset)
+    )
+    result = await db.execute(stmt)
+    invoices = result.scalars().all()
+    return Page(
+        items=[_invoice_to_read(inv, include_lines=False) for inv in invoices],
+        total=total,
+        limit=filters.limit,
+        offset=filters.offset,
+    )
+
+
+async def get_invoice_detail(
+    db: AsyncSession,
+    tenant_id: UUID,
+    invoice_id: UUID,
+) -> InvoiceRead:
+    """Detalle de factura con líneas (sin raw_extraction)."""
+    invoice = await get_invoice(db, tenant_id, invoice_id)
+    return _invoice_to_read(invoice, include_lines=True)
+
+
+async def aggregate_invoices(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    filters: DocumentSearchFilters,
+    metric: AggregateMetric,
+    group_by: AggregateGroupBy,
+) -> AggregateResult:
+    """Agregaciones COUNT o SUM(total) con agrupación opcional."""
+    from sqlalchemy import String, cast
+
+    conditions = _invoice_search_conditions(tenant_id, filters)
+    metric_expr = (
+        func.count()
+        if metric == AggregateMetric.metric_count
+        else func.coalesce(func.sum(Invoice.total), 0)
+    )
+
+    if group_by == AggregateGroupBy.none:
+        stmt = select(metric_expr).select_from(Invoice).where(*conditions)
+        raw = (await db.execute(stmt)).scalar_one()
+        if metric == AggregateMetric.metric_count:
+            total_value: Decimal | int = int(raw or 0)
+        else:
+            total_value = Decimal(str(raw)) if raw is not None else Decimal("0")
+        return AggregateResult(
+            doc_type_code=DocTypeCode.factura.value,
+            metric=metric,
+            group_by=group_by,
+            total_value=total_value,
+        )
+
+    if group_by == AggregateGroupBy.proveedor:
+        group_key = func.lower(
+            func.unaccent(func.coalesce(Invoice.proveedor, "(sin proveedor)")),
+        ).label("group_key")
+    elif group_by == AggregateGroupBy.month:
+        group_key = func.to_char(Invoice.fecha, "YYYY-MM").label("group_key")
+    elif group_by == AggregateGroupBy.year:
+        group_key = func.to_char(Invoice.fecha, "YYYY").label("group_key")
+    elif group_by == AggregateGroupBy.status:
+        group_key = cast(Invoice.status, String).label("group_key")
+    else:
+        raise ValidationError(f"Unsupported group_by for invoices: {group_by.value}")
+
+    stmt = (
+        select(group_key, metric_expr)
+        .select_from(Invoice)
+        .where(*conditions)
+        .group_by(group_key)
+        .order_by(metric_expr.desc())
+    )
+    rows_result = await db.execute(stmt)
+    rows = [
+        AggregateRow(
+            group_key=str(row.group_key or ""),
+            value=int(row[1]) if metric == AggregateMetric.metric_count else row[1],
+        )
+        for row in rows_result.all()
+    ]
+    return AggregateResult(
+        doc_type_code=DocTypeCode.factura.value,
+        metric=metric,
+        group_by=group_by,
+        rows=rows,
+    )
+
+
+async def list_providers(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    query: str | None = None,
+    limit: int = 50,
+) -> list[str]:
+    """Proveedores distintos del tenant, opcionalmente filtrados."""
+    stmt = (
+        select(Invoice.proveedor)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.proveedor.is_not(None),
+            Invoice.proveedor != "",
+        )
+        .distinct()
+        .order_by(Invoice.proveedor)
+        .limit(limit)
+    )
+    if query:
+        pattern = ilike_pattern(query)
+        proveedor_col = func.unaccent(Invoice.proveedor)
+        stmt = stmt.where(func.lower(proveedor_col).like(pattern, escape="\\"))
+    result = await db.execute(stmt)
+    return [str(row[0]) for row in result.all() if row[0]]

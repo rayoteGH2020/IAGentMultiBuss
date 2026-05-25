@@ -6,10 +6,8 @@
 
 {# block title: pestaña del navegador. Se personaliza con el nombre del tenant
    para que los usuarios con varias cuentas puedan identificar la pestaña. #}
-{% block title %}Facturas · {{ tenant.name if tenant else "Mi SaaS" }}{% endblock %}
-{# block page_title: H1 visible dentro del layout del dashboard, separado del
-   <title> para que el SEO y la accesibilidad (screen readers) tengan contextos distintos. #}
-{% block page_title %}Facturas{% endblock %}
+{% block title %}Documentos · {{ tenant.name if tenant else "Mi SaaS" }}{% endblock %}
+{% block page_title %}Documentos{% endblock %}
 
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">

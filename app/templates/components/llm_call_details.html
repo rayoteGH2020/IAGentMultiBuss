@@ -1,0 +1,65 @@
+{# Detalle de una fila llm_calls. Requiere variable `call`. #}
+<dl class="llm-call-details">
+  <div class="llm-call-details-item llm-call-details-item--wide">
+    <dt>ID llamada</dt>
+    <dd class="font-mono text-[11px] break-all">{{ call.id }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Tarea</dt>
+    <dd>{{ call.task }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Estado</dt>
+    <dd>
+      <span class="llm-call-status llm-call-status--{{ call.status }}">{{ call.status }}</span>
+    </dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Modelo</dt>
+    <dd class="font-mono">{{ call.model }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Proveedor</dt>
+    <dd class="capitalize">{{ call.provider }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Prompt</dt>
+    <dd class="font-mono">{{ call.prompt_version or "—" }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Tokens entrada</dt>
+    <dd class="tabular-nums">{{ call.input_tokens }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Tokens salida</dt>
+    <dd class="tabular-nums">{{ call.output_tokens }}</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Tokens total</dt>
+    <dd class="tabular-nums">{{ call.input_tokens + call.output_tokens }}</dd>
+  </div>
+  <div class="llm-call-details-item llm-call-details-item--highlight">
+    <dt>Coste</dt>
+    <dd class="tabular-nums font-medium text-amber-800">{{ "%.6f"|format(call.cost_eur) }} €</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Latencia</dt>
+    <dd class="tabular-nums">{{ call.latency_ms }} ms</dd>
+  </div>
+  <div class="llm-call-details-item">
+    <dt>Ejecutada</dt>
+    <dd class="whitespace-nowrap">{{ call.created_at | local_datetime }}</dd>
+  </div>
+  {% if call.langfuse_trace_id %}
+  <div class="llm-call-details-item llm-call-details-item--wide">
+    <dt>Langfuse trace</dt>
+    <dd class="font-mono text-[11px] break-all">{{ call.langfuse_trace_id }}</dd>
+  </div>
+  {% endif %}
+  {% if call.error %}
+  <div class="llm-call-details-item llm-call-details-item--wide">
+    <dt>Error</dt>
+    <dd class="text-red-700 whitespace-pre-wrap break-words">{{ call.error }}</dd>
+  </div>
+  {% endif %}
+</dl>

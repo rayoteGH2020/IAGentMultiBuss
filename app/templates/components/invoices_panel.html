@@ -1,9 +1,20 @@
-{# Default defensivo: el panel puede renderizarse desde la página completa
-   (donde el route siempre pasa just_uploaded_ids) o directamente via HTMX
-   polling desde jobs.py (que pasa just_uploaded_ids=[]), o en tests. #}
+{# Panel unificado de facturas y tickets. #}
 {% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
+{% set just_uploaded_ticket_ids = just_uploaded_ticket_ids|default([], true) %}
+{% set upload_notices = upload_notices|default([], true) %}
 
-<div id="invoices-table-container" class="space-y-3">
+<div id="invoices-table-container" class="space-y-6">
+
+  {% if upload_notices %}
+  <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
+    <p class="font-medium">Avisos de subida</p>
+    <ul class="mt-2 list-disc pl-5 space-y-1">
+      {% for notice in upload_notices %}
+      <li><span class="font-mono text-xs">{{ notice.filename }}</span>: {{ notice.message }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 
   {% if upload_errors %}
   <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
@@ -17,36 +28,76 @@
   {% endif %}
 
   {% if invoices %}
-  <div class="invoices-table-shell">
-    <table class="invoices-table" role="grid" aria-label="Listado de facturas">
-      <colgroup>
-        <col class="w-[7rem]">
-        <col>
-        <col class="w-[6.5rem]">
-        <col class="w-[6.5rem]">
-        <col class="w-[9.5rem]">
-        <col class="w-[5.5rem]">
-        <col class="w-[4.5rem]">
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col">Fecha</th>
-          <th scope="col">Proveedor</th>
-          <th scope="col">CIF/NIF</th>
-          <th class="text-right" scope="col">Total</th>
-          <th scope="col">Subida</th>
-          <th scope="col">Estado</th>
-          <th class="text-center" scope="col">
-            <span class="sr-only">Acciones</span>
-          </th>
-        </tr>
-      </thead>
-      {% for invoice in invoices %}
-        {% include "components/invoice_row.html" %}
-      {% endfor %}
-    </table>
-  </div>
-  {% else %}
+  <section class="space-y-2">
+    <h2 class="text-sm font-semibold text-slate-800">Facturas</h2>
+    <div class="invoices-table-shell">
+      <table class="invoices-table" role="grid" aria-label="Listado de facturas">
+        <colgroup>
+          <col class="w-[7rem]">
+          <col>
+          <col class="w-[6.5rem]">
+          <col class="w-[6.5rem]">
+          <col class="w-[9.5rem]">
+          <col class="w-[5.5rem]">
+          <col class="w-[4.5rem]">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Proveedor</th>
+            <th scope="col">CIF/NIF</th>
+            <th class="text-right" scope="col">Total</th>
+            <th scope="col">Subida</th>
+            <th scope="col">Estado</th>
+            <th class="text-center" scope="col">
+              <span class="sr-only">Acciones</span>
+            </th>
+          </tr>
+        </thead>
+        {% for invoice in invoices %}
+          {% include "components/invoice_row.html" %}
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tickets %}
+  <section class="space-y-2">
+    <h2 class="text-sm font-semibold text-slate-800">Tickets</h2>
+    <div class="invoices-table-shell">
+      <table class="invoices-table" role="grid" aria-label="Listado de tickets">
+        <colgroup>
+          <col class="w-[7rem]">
+          <col>
+          <col class="w-[6.5rem]">
+          <col class="w-[6.5rem]">
+          <col class="w-[9.5rem]">
+          <col class="w-[5.5rem]">
+          <col class="w-[4.5rem]">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Comercio</th>
+            <th scope="col">Nº ticket</th>
+            <th class="text-right" scope="col">Total</th>
+            <th scope="col">Subida</th>
+            <th scope="col">Estado</th>
+            <th class="text-center" scope="col">
+              <span class="sr-only">Acciones</span>
+            </th>
+          </tr>
+        </thead>
+        {% for ticket in tickets %}
+          {% include "components/ticket_row.html" %}
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if not invoices and not tickets %}
     {% include "components/empty_state.html" %}
   {% endif %}
 </div>

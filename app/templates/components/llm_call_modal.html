@@ -1,0 +1,63 @@
+{# Modal LLM genérico. Requiere: record_id, dialog_title, source_filename (opcional), call #}
+{% if call %}
+<template x-teleport="body">
+  <div
+    x-show="llmOpen"
+    x-cloak
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 p-4"
+    @click.self="llmOpen = false"
+    @keydown.escape.window="if (llmOpen) llmOpen = false"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="llm-dialog-title-{{ record_id }}">
+    <div
+      x-show="llmOpen"
+      x-transition:enter="transition ease-out duration-200"
+      x-transition:enter-start="opacity-0 scale-95 translate-y-1"
+      x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+      x-transition:leave="transition ease-in duration-150"
+      x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+      x-transition:leave-end="opacity-0 scale-95 translate-y-1"
+      class="llm-call-dialog"
+      @click.stop>
+      <header class="llm-call-dialog-header">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-amber-700/80">
+            Llamada LLM
+          </p>
+          <h2 id="llm-dialog-title-{{ record_id }}" class="text-base font-semibold text-slate-900 mt-0.5">
+            {{ dialog_title }}
+          </h2>
+          {% if source_filename %}
+          <p class="text-xs text-slate-500 mt-1 truncate max-w-[18rem]"
+             title="{{ source_filename }}">
+            {{ source_filename }}
+          </p>
+          {% endif %}
+        </div>
+        <button
+          type="button"
+          @click="llmOpen = false"
+          class="llm-call-dialog-close"
+          aria-label="Cerrar">
+          ✕
+        </button>
+      </header>
+      <div class="llm-call-dialog-body">
+        {% include "components/llm_call_details.html" %}
+      </div>
+      <footer class="llm-call-dialog-footer">
+        <button type="button" @click="llmOpen = false" class="btn-secondary text-sm px-3 py-1.5">
+          Cerrar
+        </button>
+      </footer>
+    </div>
+  </div>
+</template>
+{% endif %}

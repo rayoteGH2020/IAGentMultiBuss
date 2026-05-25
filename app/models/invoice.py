@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.doc_type import DocType
     from app.models.llm_call import LLMCall
 
 
@@ -56,6 +57,12 @@ class Invoice(Base):
         nullable=False,
         # index=True: tenant_id es el filtro más frecuente en todas las queries;
         # el índice individual se complementa con los compuestos de __table_args__.
+        index=True,
+    )
+    doc_type_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("doc_types.id", ondelete="RESTRICT"),
+        nullable=False,
         index=True,
     )
     status: Mapped[InvoiceStatus] = mapped_column(
@@ -134,6 +141,8 @@ class Invoice(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    doc_type: Mapped[DocType] = relationship(back_populates="invoices")
 
     lines: Mapped[list[InvoiceLine]] = relationship(
         back_populates="invoice",

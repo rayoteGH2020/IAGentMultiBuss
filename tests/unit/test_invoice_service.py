@@ -13,9 +13,9 @@ from uuid import uuid4
 
 import pytest
 from app.core.db import set_tenant_context
-from app.models import Invoice, InvoiceStatus, Tenant
+from app.models import DocTypeCode, Invoice, InvoiceStatus, Tenant
 from app.schemas.invoice import Factura
-from app.services import invoice_service
+from app.services import doc_type_service, invoice_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # pytest.mark.asyncio: habilita pytest-asyncio para funciones async en este módulo.
@@ -63,8 +63,10 @@ async def test_get_invoice_date_stats_by_fecha(
     )
 
     async def add_invoice(fecha: date | None) -> None:
+        doc_type_id = await doc_type_service.get_doc_type_id(db_session, DocTypeCode.factura)
         invoice = Invoice(
             tenant_id=tenant.id,
+            doc_type_id=doc_type_id,
             status=InvoiceStatus.ready,
             source_file_key="test/key.pdf",
             source_filename="factura.pdf",

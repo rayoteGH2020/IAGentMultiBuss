@@ -1,5 +1,7 @@
+import json
 from collections.abc import Awaitable, Callable
 
+import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
@@ -14,6 +16,8 @@ from app.services.auth_service import (
     resolve_tenant,
     resolve_user,
 )
+
+log = structlog.get_logger(__name__)
 
 PUBLIC_PATHS = frozenset(
     {
@@ -121,18 +125,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.membership = None
         request.state.auth_missing_organization = False
 
-        if _skip_session_resolution(request.url.path):
+        try:
+            if _skip_session_resolution(request.url.path):
+                return await call_next(request)
+
+            await try_resolve_clerk_session(request)
+
+            if (
+                request.state.auth_missing_organization
+                and not _path_allowed_without_active_organization(request.url.path)
+            ):
+                return RedirectResponse(url="/onboarding", status_code=302)
+
+            if request.state.user is not None and request.url.path in SESSION_OPTIONAL_PATHS:
+                return RedirectResponse(url="/", status_code=302)
+
             return await call_next(request)
 
-        await try_resolve_clerk_session(request)
-
-        if (
-            request.state.auth_missing_organization
-            and not _path_allowed_without_active_organization(request.url.path)
-        ):
-            return RedirectResponse(url="/onboarding", status_code=302)
-
-        if request.state.user is not None and request.url.path in SESSION_OPTIONAL_PATHS:
-            return RedirectResponse(url="/", status_code=302)
-
-        return await call_next(request)
+        except Exception as exc:
+            log.exception("auth_middleware_error", path=request.url.path, error=str(exc))
+            resp = Response(status_code=500)
+            resp.headers["HX-Trigger"] = json.dumps({"appError": str(exc)})
+            return resp

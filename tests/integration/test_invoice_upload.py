@@ -23,7 +23,7 @@ from app.core.db import set_tenant_context
 from app.core.storage import reset_storage_for_tests
 from app.jobs.queue import reset_arq_pool_for_tests
 from app.main import create_app
-from app.models import Invoice, InvoiceStatus, Membership, Tenant, User
+from app.models import DocTypeCode, Invoice, InvoiceStatus, Membership, Tenant, User
 from app.services import invoice_service
 from fastapi import Request
 from fastapi.testclient import TestClient
@@ -194,10 +194,9 @@ def test_upload_invoice_creates_row(
     # get_storage de app.core.storage; parchear allí afectaría a todos los módulos.
     # Parchear en invoice_service afecta solo a las llamadas desde ese módulo.
     monkeypatch.setattr(invoice_service, "get_storage", _fake_get_storage)
-    # El route llama a enqueue_invoice_processing tras crear el invoice. El mock
-    # evita necesitar un servidor Redis real para este test.
+
     monkeypatch.setattr(
-        "app.routes.web.invoices.enqueue_invoice_processing",
+        "app.services.document_upload_service.enqueue_invoice_processing",
         AsyncMock(return_value="job-test"),
     )
     # Reemplaza la resolución de Clerk JWT por el fake que inyecta los objetos
@@ -219,6 +218,7 @@ def test_upload_invoice_creates_row(
             response = client.post(
                 "/invoices/upload",
                 files=files,
+                data={"doc_type_code": DocTypeCode.factura.value},
                 headers={
                     "Authorization": "Bearer fake-jwt-upload",
                     # HX-Request: activa la rama de respuesta de fragmento HTML.
@@ -273,6 +273,7 @@ def test_upload_invoice_rejects_invalid_type(
                     # plain text." no coinciden con ninguna firma válida.
                     ("files", ("evil.txt", BytesIO(b"This is plain text."), "text/plain")),
                 ],
+                data={"doc_type_code": DocTypeCode.factura.value},
                 headers={
                     "Authorization": "Bearer fake-jwt-bad-upload",
                     "HX-Request": "true",

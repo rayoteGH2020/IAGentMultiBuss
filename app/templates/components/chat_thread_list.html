@@ -1,0 +1,59 @@
+<div class="flex items-center justify-between gap-2 border-b border-slate-200/80 px-4 py-3.5">
+  <div>
+    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Conversaciones</h2>
+    <p class="mt-0.5 text-[10px] text-slate-400">Solo documentos extraídos</p>
+  </div>
+  <form
+    hx-post="/chat/threads"
+    hx-target="#chat-main"
+    hx-swap="innerHTML"
+    hx-indicator="#chat-sidebar-new-spinner">
+    <button
+      type="submit"
+      class="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-primary-700 shadow-sm hover:bg-primary-50"
+      title="Nueva conversación">
+      <span class="relative inline-flex items-center gap-1">
+        <span aria-hidden="true">+</span> Nuevo
+        <svg
+          id="chat-sidebar-new-spinner"
+          class="htmx-indicator absolute -right-4 h-3 w-3 animate-spin text-primary-600"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      </span>
+    </button>
+  </form>
+</div>
+
+<nav class="flex-1 overflow-y-auto p-2" aria-label="Hilos de chat">
+  {% if threads %}
+    <ul class="space-y-1">
+      {% for t in threads %}
+        <li>
+          <a
+            href="/chat?thread_id={{ t.id }}"
+            hx-get="/chat/threads/{{ t.id }}"
+            hx-target="#chat-main"
+            hx-swap="innerHTML"
+            hx-push-url="/chat?thread_id={{ t.id }}"
+            class="chat-thread-link {% if active_thread_id and active_thread_id == t.id %}chat-thread-link--active{% else %}chat-thread-link--idle{% endif %}">
+            <span class="block truncate">{{ t.title or "Sin título" }}</span>
+            {% if t.updated_at %}
+              <span class="mt-0.5 block text-[10px] font-normal text-slate-400">
+                {{ t.updated_at | local_datetime("%d/%m %H:%M") }}
+              </span>
+            {% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="px-3 py-6 text-center text-xs leading-relaxed text-slate-500">
+      Aún no hay conversaciones.<br>
+      Crea una para consultar tus facturas y tickets.
+    </p>
+  {% endif %}
+</nav>

@@ -22,6 +22,9 @@
         window.Alpine.initTree(e.detail.target);
       }
     });
+    document.addEventListener("appError", (e) => {
+      console.error("[middleware error]", e.detail.value ?? e.detail);
+    });
   </script>
 </head>
 <body hx-boost="true" hx-ext="sse">

@@ -1,0 +1,42 @@
+{
+  "_comment": "Dataset stub de evals del chat documental (módulo 1.5). Casos con skip_live_llm=true no llaman al LLM.",
+  "version": "v1",
+  "model_target": "gemini-2.5-flash",
+  "notes": "Rellenar expected_tools y grounded_keywords tras validar comportamiento en staging. El runner calcula tool_selection_accuracy y answer_grounded_in_data.",
+  "cases": [
+    {
+      "id": "list_types_01",
+      "user_message": "¿Qué tipos de documentos puedo consultar?",
+      "expected_tools": ["list_doc_types"],
+      "grounded_keywords": ["factura", "ticket"],
+      "skip_live_llm": true
+    },
+    {
+      "id": "aggregate_tickets_01",
+      "user_message": "¿Cuántos tickets tengo este mes?",
+      "expected_tools": ["aggregate_documents"],
+      "expected_tool_args": {
+        "doc_type_code": "ticket"
+      },
+      "grounded_keywords": ["ticket"],
+      "skip_live_llm": true
+    },
+    {
+      "id": "search_factura_01",
+      "user_message": "Busca facturas de Telefónica en abril",
+      "expected_tools": ["search_documents"],
+      "expected_tool_args": {
+        "doc_type_code": "factura"
+      },
+      "grounded_keywords": ["factura"],
+      "skip_live_llm": true
+    },
+    {
+      "id": "get_document_01",
+      "user_message": "Muéstrame el detalle de la factura con id conocido",
+      "expected_tools": ["get_document"],
+      "grounded_keywords": ["document"],
+      "skip_live_llm": true
+    }
+  ]
+}

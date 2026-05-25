@@ -127,3 +127,6 @@ async def get_redis_dep() -> redis.Redis:
     # dependencia; no puede usar get_redis directamente (es una función sync
     # que devuelve un cliente, no un generador async).
     return get_redis()
+
+
+RedisDep = Annotated[redis.Redis, Depends(get_redis_dep)]

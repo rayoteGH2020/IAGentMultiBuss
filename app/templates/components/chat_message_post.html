@@ -1,0 +1,47 @@
+{# Tras POST: mensaje usuario + respuesta assistant vía SSE #}
+<div id="chat-messages-empty" hx-swap-oob="delete"></div>
+
+{% set message = user_message %}
+{% include "components/chat_message.html" %}
+
+<div
+  class="flex justify-start gap-2.5"
+  id="chat-assistant-pending-{{ user_message.id }}"
+  x-data="{ done: false, errored: false }">
+  <div
+    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700"
+    aria-hidden="true">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+    </svg>
+  </div>
+  <div
+    class="chat-bubble-assistant chat-bubble-assistant--pending w-full max-w-[min(85%,36rem)]"
+    :class="errored ? 'chat-bubble-assistant--error' : ''"
+    :aria-busy="!done && !errored">
+    <div
+      id="assistant-content-{{ user_message.id }}"
+      class="whitespace-pre-wrap min-h-[1.25rem]">
+      <span x-show="!done && !errored" class="chat-typing-dots inline-flex gap-1 py-0.5" aria-label="Generando respuesta">
+        <span></span><span></span><span></span>
+      </span>
+    </div>
+    <div
+      hx-ext="sse"
+      sse-connect="/chat/threads/{{ thread.id }}/stream?message_id={{ user_message.id }}"
+      sse-swap="message, error"
+      sse-close="close"
+      hx-target="#assistant-content-{{ user_message.id }}"
+      hx-swap="innerHTML"
+      class="hidden"
+      aria-hidden="true"
+      hx-on::htmx:sse-message="
+        if (event.detail && event.detail.type === 'error') {
+          errored = true; done = true;
+        } else {
+          $dispatch('chat-scroll-bottom');
+        }
+      "
+      hx-on::htmx:sse-close="done = true; $dispatch('chat-scroll-bottom')"></div>
+  </div>
+</div>

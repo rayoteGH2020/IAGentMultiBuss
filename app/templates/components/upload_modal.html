@@ -1,66 +1,34 @@
-{# Modal de subida de facturas. Estado gestionado por Alpine.js (solo cliente):
-   - open: visibilidad del modal
-   - files: lista de File objects seleccionados (preview antes de enviar)
-   - dragging: resaltado visual de la zona de drop
-   HTMX gestiona el envío al servidor y la actualización del panel de tabla. #}
+{# Modal de subida de documentos administrativos. #}
 <div
-  x-data="{ open: false, files: [], dragging: false }"
-  {# @keydown.escape.window: escucha ESC en el window (no solo en este elemento)
-     para cumplir el estándar de accesibilidad de modales (WCAG 2.1 §2.1.2). #}
+  x-data="{ open: false, files: [], dragging: false, docType: '' }"
   @keydown.escape.window="open = false"
   class="inline-block">
 
   <button type="button" @click="open = true" class="btn-primary shrink-0">
-    Subir facturas
+    Subir documentos
   </button>
 
-  {# x-cloak: Alpine añade `display:none` hasta que el JS se inicializa.
-     Previene que el modal aparezca brevemente antes de que Alpine esté listo
-     (flash of unstyled content). Requiere la regla CSS: [x-cloak] { display:none }
-     en el CSS global.
-     @click.self: cierra el modal al hacer click en el fondo semitransparente.
-     El modificador .self previene el cierre al hacer click en el contenido
-     del modal (que propagaría el evento al contenedor padre sin .self). #}
   <div x-show="open" x-cloak
        class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
        @click.self="open = false">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-slate-900">Subir facturas</h2>
-        {# aria-label="Cerrar": el botón solo tiene un ícono (✕); el label
-           da contexto a los lectores de pantalla. #}
+        <h2 class="text-lg font-semibold text-slate-900">Subir documentos</h2>
         <button type="button" @click="open = false"
                 class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="Cerrar">✕</button>
       </div>
 
       <form
         hx-post="/invoices/upload"
-        {# hx-encoding="multipart/form-data": imprescindible para subida de
-           ficheros. HTMX usa application/x-www-form-urlencoded por defecto,
-           que no puede transportar binarios. #}
         hx-encoding="multipart/form-data"
-        {# hx-target="#invoices-table-container": reemplaza el panel de tabla
-           completo con la respuesta del servidor (que incluye las nuevas filas
-           en estado pending y los posibles errores de validación por fichero). #}
         hx-target="#invoices-table-container"
         hx-swap="outerHTML"
-        {# hx-indicator="#upload-spinner": HTMX añade la clase .htmx-request
-           al elemento con ese id durante la petición, mostrando el spinner.
-           El spinner está oculto por defecto via CSS (opacity:0 en .htmx-indicator). #}
         hx-indicator="#upload-spinner"
-        {# @htmx:after-request: se dispara cuando HTMX completa la petición
-           (éxito o error). Cierra el modal y limpia la lista de ficheros en
-           ambos casos: el resultado ya visible en la tabla es el feedback. #}
-        @htmx:after-request="open = false; files = []">
+        @htmx:after-request="open = false; files = []; docType = ''">
 
-        {# La zona de drop es un <label> que envuelve el <input type="file">
-           oculto. Hacer click en cualquier parte del label activa el input. #}
         <label
           class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition"
           :class="dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300'"
-          {# @dragover.prevent: .prevent llama a event.preventDefault() para
-             evitar que el navegador abra el fichero al soltarlo (comportamiento
-             por defecto del drag-and-drop de archivos). #}
           @dragover.prevent="dragging = true"
           @dragleave.prevent="dragging = false"
           @drop.prevent="
@@ -68,39 +36,25 @@
             files = Array.from($event.dataTransfer.files);
             const dt = new DataTransfer();
             files.forEach(function (f) { dt.items.add(f); });
-            {# Workaround para asignar ficheros al <input> tras drag-and-drop:
-               la propiedad FileList es read-only y no se puede asignar directamente.
-               Se crea un DataTransfer temporal, se añaden los ficheros y se
-               asigna su .files al input. Sin esto el form enviaría sin ficheros
-               aunque Alpine los tenga en su lista `files`. #}
             $refs.input.files = dt.files;">
 
-          {# x-ref="input": alias Alpine para referenciar este elemento desde
-             los handlers de drop ($refs.input.files = ...). #}
           <input
             type="file"
             name="files"
             x-ref="input"
             class="hidden"
             multiple
-            {# accept: filtro de tipo en el selector de ficheros del navegador.
-               Es orientativo (el usuario puede desactivarlo), no es seguridad:
-               la validación real ocurre en app/core/uploads.py (magic bytes). #}
             accept=".pdf,.jpg,.jpeg,.png,.webp"
             @change="files = Array.from($event.target.files)">
 
           <p class="text-sm text-slate-600">
-            Arrastra aquí PDFs o fotos de facturas, o haz click para elegir.
+            Arrastra aquí PDFs o fotos de facturas y tickets, o haz click para elegir.
           </p>
           <p class="text-xs text-slate-400 mt-1">
             Máximo 20 ficheros, 20 MB cada uno.
           </p>
         </label>
 
-        {# Lista de preview de ficheros seleccionados (antes de enviar).
-           <template x-for> es un elemento virtual de Alpine: no genera
-           HTML hasta que Alpine lo procesa, por lo que no aparece en el DOM
-           si JS no está disponible. #}
         <ul x-show="files.length" class="mt-4 space-y-1 max-h-40 overflow-y-auto">
           <template x-for="f in files" :key="f.name">
             <li class="flex items-center justify-between text-sm text-slate-700">
@@ -111,10 +65,27 @@
           </template>
         </ul>
 
+        <div x-show="files.length" x-cloak class="mt-4">
+          <label for="doc-type-code" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Tipo de documento <span class="text-red-600" aria-hidden="true">*</span>
+          </label>
+          <select
+            id="doc-type-code"
+            name="doc_type_code"
+            x-model="docType"
+            required
+            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer">
+            <option value="" disabled selected>Selecciona un tipo…</option>
+            {% for doc_type in doc_types|default([], true) %}
+            <option value="{{ doc_type.code }}">{{ doc_type.name }}</option>
+            {% endfor %}
+          </select>
+          <p class="mt-1.5 text-xs text-slate-500">
+            Obligatorio. Si subes varios ficheros a la vez, todos se tratarán como el mismo tipo.
+          </p>
+        </div>
+
         <div class="mt-6 flex items-center justify-end gap-2">
-          {# class="htmx-indicator": HTMX gestiona la visibilidad de este span
-             durante la petición (opacity:1 mientras carga, opacity:0 en reposo).
-             Está fuera del botón submit para no desplazar el layout al aparecer. #}
           <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">
             Subiendo…
           </span>
@@ -122,11 +93,8 @@
                   class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900">
             Cancelar
           </button>
-          {# :disabled="files.length === 0": deshabilita el botón si no hay
-             ficheros seleccionados. Previene envíos vacíos sin necesidad de
-             validación adicional en el servidor para este caso trivial. #}
           <button type="submit"
-                  :disabled="files.length === 0"
+                  :disabled="files.length === 0 || !docType"
                   class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-600">
             Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
           </button>

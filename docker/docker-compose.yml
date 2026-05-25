@@ -57,6 +57,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ── REDIS ───────────────────────────────────────────────────────────────────
   redis:
@@ -114,6 +115,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ── LANGFUSE v3 (stack completo) ────────────────────────────────────────────
   # Langfuse v3 requiere web + worker + ClickHouse + Redis propio + S3 (MinIO).

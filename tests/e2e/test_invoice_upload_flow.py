@@ -62,7 +62,7 @@ async def test_upload_invoice_and_see_result() -> None:
             await expect(page.locator("h1")).to_contain_text("Facturas")
 
             # 2. Abrir el modal de subida. El botón activa el estado Alpine `open=true`.
-            await page.click("text=Subir facturas")
+            await page.click("text=Subir documentos")
 
             # 3. Seleccionar el fichero mediante el selector de ficheros del navegador.
             # expect_file_chooser intercepta el diálogo OS que se abriría al
@@ -72,6 +72,9 @@ async def test_upload_invoice_and_see_result() -> None:
                 await page.click("label.border-dashed")
             file_chooser = await fc_info.value
             await file_chooser.set_files(str(FIXTURE_PDF))
+
+            # 3b. Elegir tipo de documento (obligatorio).
+            await page.select_option("#doc-type-code", "factura")
 
             # 4. Enviar el formulario. HTMX hace POST multipart a /invoices/upload.
             await page.click("button[type=submit]")

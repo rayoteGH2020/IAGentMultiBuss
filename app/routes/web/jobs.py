@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, get_db
-from app.services import invoice_service
+from app.services import invoice_service, ticket_service
 
 logger = structlog.get_logger(__name__)
 
@@ -57,5 +57,31 @@ async def invoice_job_status_row(
         ctx={
             "invoice": invoice,
             "just_uploaded_ids": [],
+        },
+    )
+
+
+@router.get("/ticket/{ticket_id}/status")
+async def ticket_job_status_row(
+    request: Request,
+    ticket_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    ticket = await ticket_service.get_ticket(db, tenant.id, ticket_id)
+    logger.debug(
+        "jobs.ticket_status",
+        ticket_id=str(ticket_id),
+        tenant_id=str(tenant.id),
+        status=ticket.status.value,
+    )
+    return render(
+        request,
+        full="components/ticket_row.html",
+        partial="components/ticket_row.html",
+        ctx={
+            "ticket": ticket,
+            "just_uploaded_ticket_ids": [],
         },
     )

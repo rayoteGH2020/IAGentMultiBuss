@@ -41,10 +41,10 @@ class NotFoundError(AppError):
 
 
 class ValidationError(AppError):
-    # 422 Unprocessable Entity: la petición está bien formada pero los datos
+    # 422 Unprocessable Content: la petición está bien formada pero los datos
     # no superan la validación de negocio (distinto de 400 Bad Request, que
     # indica un error de formato de la petición en sí).
-    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "validation_error"
 
 
