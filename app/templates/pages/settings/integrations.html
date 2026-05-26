@@ -1,0 +1,111 @@
+{% extends "pages/settings/_layout.html" %}
+
+
+
+{% block title %}Integraciones{% endblock %}
+
+{% block page_title %}Integraciones{% endblock %}
+
+
+
+{% block settings_content %}
+
+<div class="space-y-6">
+
+  <header class="space-y-1">
+
+    <p class="text-sm text-slate-600 leading-relaxed max-w-2xl">
+
+      Conecta servicios externos para ampliar lo que puedes hacer desde la plataforma.
+
+      Cada usuario vincula su propia cuenta; los tokens se almacenan cifrados.
+
+    </p>
+
+  </header>
+
+
+
+  {% if connected_flag == "google" %}
+
+    <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 flex items-start gap-2" role="status">
+
+      <svg class="h-5 w-5 shrink-0 text-emerald-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+
+      </svg>
+
+      <span>Google Calendar conectado correctamente.</span>
+
+    </p>
+
+  {% endif %}
+
+
+
+  {% if error_code == "oauth_state" %}
+
+    <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" role="alert">
+
+      La sesión de autorización expiró o ya fue usada. Vuelve a pulsar «Conectar con Google».
+
+    </p>
+
+  {% elif error_code == "oauth_failed" %}
+
+    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
+
+      No se pudo completar la conexión con Google. Inténtalo de nuevo.
+
+      Si acabas de cambiar permisos en Google Cloud, desconecta y vuelve a conectar.
+
+    </p>
+
+  {% elif error_code == "encryption_key" %}
+
+    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
+
+      Falta configurar <code class="text-xs font-mono">ENCRYPTION_KEY</code> en Infisical para guardar los tokens de forma segura.
+
+    </p>
+
+  {% elif error_code == "oauth_not_configured" %}
+
+    <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" role="alert">
+
+      Google OAuth no está configurado en el servidor.
+
+    </p>
+
+  {% endif %}
+
+
+
+  <section aria-labelledby="integrations-available-heading" class="space-y-4">
+
+    <div class="flex items-end justify-between gap-4">
+
+      <h2 id="integrations-available-heading" class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+
+        Disponibles
+
+      </h2>
+
+      <p class="text-xs text-slate-400">Más integraciones próximamente</p>
+
+    </div>
+
+
+
+    <div class="space-y-4">
+
+      {% include "components/integration_google_calendar.html" %}
+
+    </div>
+
+  </section>
+
+</div>
+
+{% endblock %}

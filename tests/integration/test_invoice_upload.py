@@ -216,7 +216,7 @@ def test_upload_invoice_creates_row(
                 ("files", ("ejemplo.pdf", BytesIO(_PDF_BYTES), "application/pdf")),
             ]
             response = client.post(
-                "/invoices/upload",
+                "/documents/upload",
                 files=files,
                 data={"doc_type_code": DocTypeCode.factura.value},
                 headers={
@@ -267,7 +267,7 @@ def test_upload_invoice_rejects_invalid_type(
     try:
         with TestClient(create_app(), raise_server_exceptions=True) as client:
             response = client.post(
-                "/invoices/upload",
+                "/documents/upload",
                 files=[
                     # Texto plano: tipo no permitido. Los magic bytes de "This is
                     # plain text." no coinciden con ninguna firma válida.
@@ -287,6 +287,95 @@ def test_upload_invoice_rejects_invalid_type(
         assert "unsupported" in response.text.lower()
 
         # El fichero inválido no debe haber creado ningún registro en BD.
+        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        assert len(rows) == 0
+    finally:
+        reset_storage_for_tests()
+        reset_arq_pool_for_tests()
+
+
+def test_upload_two_sequential_htmx_requests(
+    invoices_migration_applied_sync: None,
+    rls_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dos subidas seguidas deben devolver HTML 200 (no JSON 422 ni redirect)."""
+    user_sub = f"u_seq_{uuid4().hex[:12]}"
+    org_id = f"o_seq_{uuid4().hex[:12]}"
+    tid, uid = asyncio.run(
+        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
+    )
+
+    monkeypatch.setattr(invoice_service, "get_storage", _fake_get_storage)
+    monkeypatch.setattr(
+        "app.services.document_upload_service.enqueue_invoice_processing",
+        AsyncMock(return_value="job-test"),
+    )
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
+    )
+
+    headers = {
+        "Authorization": "Bearer fake-jwt-seq",
+        "HX-Request": "true",
+    }
+    payload = {"doc_type_code": DocTypeCode.factura.value}
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=True) as client:
+            for name in ("primera.pdf", "segunda.pdf"):
+                response = client.post(
+                    "/documents/upload",
+                    files=[("files", (name, BytesIO(_PDF_BYTES), "application/pdf"))],
+                    data=payload,
+                    headers=headers,
+                )
+                assert response.status_code == 200
+                assert "invoices-table-container" in response.text
+                assert "application/json" not in response.headers.get("content-type", "")
+
+        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        assert len(rows) == 2
+        assert all(row.status == InvoiceStatus.processing for row in rows)
+    finally:
+        reset_storage_for_tests()
+        reset_arq_pool_for_tests()
+
+
+def test_upload_without_files_field_returns_html_panel(
+    invoices_migration_applied_sync: None,
+    rls_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sin campo files en multipart: HTML 200 con aviso, no JSON 422."""
+    user_sub = f"u_nof_{uuid4().hex[:12]}"
+    org_id = f"o_nof_{uuid4().hex[:12]}"
+    tid, uid = asyncio.run(
+        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
+    )
+
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
+    )
+
+    headers = {
+        "Authorization": "Bearer fake-jwt-nof",
+        "HX-Request": "true",
+    }
+
+    try:
+        with TestClient(create_app(), raise_server_exceptions=True) as client:
+            response = client.post(
+                "/documents/upload",
+                data={"doc_type_code": DocTypeCode.factura.value},
+                headers=headers,
+            )
+        assert response.status_code == 200
+        assert "text/html" in response.headers.get("content-type", "")
+        assert "invoices-table-container" in response.text
+        assert "No se ha seleccionado ningún fichero" in response.text
         rows = asyncio.run(_list_invoices(rls_database_url, tid))
         assert len(rows) == 0
     finally:

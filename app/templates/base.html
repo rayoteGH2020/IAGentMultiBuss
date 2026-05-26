@@ -11,6 +11,8 @@
 
   <script src="/static/js/htmx.min.js" defer></script>
   <script src="/static/js/htmx-sse.js" defer></script>
+  {# alpine-components DEBE cargarse antes que alpine.min.js (registra Alpine.data en alpine:init). #}
+  <script src="/static/js/alpine-components.js" defer></script>
   <script src="/static/js/alpine.min.js" defer></script>
 
   <script>

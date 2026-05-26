@@ -1,28 +1,53 @@
-{# Página completa de /invoices. Se devuelve cuando la petición NO lleva
+{# Página completa de /documents. Se devuelve cuando la petición NO lleva
+
    el header HX-Request (visita directa, F5, deep link). Si lleva HX-Request
+
    se devuelve components/invoices_panel.html directamente (patrón página/fragmento,
+
    Agents.md §6). La lógica de selección está en render() de core/templating.py. #}
+
 {% extends "layouts/dashboard.html" %}
 
-{# block title: pestaña del navegador. Se personaliza con el nombre del tenant
-   para que los usuarios con varias cuentas puedan identificar la pestaña. #}
+
+
 {% block title %}Documentos · {{ tenant.name if tenant else "Mi SaaS" }}{% endblock %}
+
 {% block page_title %}Documentos{% endblock %}
 
+
+
 {% block content %}
+
 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+
   <div>
+
     <p class="text-sm text-slate-500">
-      Sube facturas y tickets en PDF o foto. Las extraemos automáticamente.
+
+      Sube tus documentos (facturas, tickets, etc.) en PDF o foto; extraeremos la información por ti.
+
     </p>
+
   </div>
-  {# El botón "Subir facturas" y el modal viven en el encabezado de la página,
-     no dentro del panel de tabla, para que estén siempre visibles aunque la
-     lista esté vacía o el panel se reemplace por HTMX. #}
-  {% include "components/upload_modal.html" %}
+
+  {# Filtro y subida fuera del panel HTMX para que persistan al ordenar/filtrar. #}
+
+  <div class="flex flex-wrap items-center gap-3 shrink-0">
+
+    {% include "components/document_type_filter.html" %}
+
+    {% include "components/upload_modal.html" %}
+
+  </div>
+
 </div>
 
-{# Panel principal: tabla de facturas o empty state. Es el fragmento que HTMX
+
+
+{# Panel principal: tabla de documentos o empty state. Es el fragmento que HTMX
+
    reemplaza tras una subida (hx-target="#invoices-table-container"). #}
+
 {% include "components/invoices_panel.html" %}
+
 {% endblock %}

@@ -4,7 +4,14 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.core.calendar_datetime import (
+    calendar_event_date_chip,
+    calendar_event_is_all_day,
+    format_calendar_event_time,
+    google_iso_to_local_input,
+)
 from app.core.datetime_display import local_datetime
+from app.core.document_processing_errors import format_user_processing_error
 
 # Instancia a nivel de módulo: Jinja2 cachea las plantillas compiladas en
 # memoria. Crear una nueva instancia por request recompilaria las plantillas
@@ -13,6 +20,17 @@ from app.core.datetime_display import local_datetime
 # donde se lanza uvicorn.
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["local_datetime"] = local_datetime
+templates.env.filters["calendar_event_time"] = format_calendar_event_time
+templates.env.filters["calendar_local_input"] = google_iso_to_local_input
+templates.env.filters["calendar_event_date_chip"] = calendar_event_date_chip
+templates.env.filters["calendar_event_is_all_day"] = calendar_event_is_all_day
+
+
+def _user_processing_error_filter(raw_error: str | None, filename: str | None = None) -> str:
+    return format_user_processing_error(raw_error, filename=filename)
+
+
+templates.env.filters["user_processing_error"] = _user_processing_error_filter
 
 
 def _inject_auth_context(request: Request) -> dict[str, Any]:

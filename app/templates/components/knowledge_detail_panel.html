@@ -1,0 +1,119 @@
+{# Panel de detalle de un documento de conocimiento.
+   Devuelto por GET /knowledge/{id} y cargado en #knowledge-detail-panel.
+   Requiere variable `document` (KnowledgeDocumentRead). #}
+{% set status = document.status | string %}
+{% set kind = document.kind | string %}
+
+{% set kind_labels = {
+  "contract": "Contrato", "terms": "Condiciones", "schedule": "Horarios",
+  "services": "Servicios", "policy": "Política", "faq": "FAQ",
+  "manual": "Manual", "other": "Otro"
+} %}
+
+<div class="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+
+  {# Cabecera #}
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-slate-900 truncate" title="{{ document.name }}">
+        {{ document.name }}
+      </h3>
+      <p class="text-xs text-slate-400 mt-0.5 truncate" title="{{ document.original_filename }}">
+        {{ document.original_filename }}
+      </p>
+    </div>
+    {% include "components/knowledge_kind_badge.html" %}
+  </div>
+
+  {# Metadatos en cuadrícula #}
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Estado</dt>
+      <dd class="mt-0.5">
+        {% if status == "pending" %}
+          <span class="text-slate-500">Pendiente</span>
+        {% elif status == "indexing" %}
+          <span class="text-blue-600">Indexando…</span>
+        {% elif status == "ready" %}
+          <span class="text-emerald-700 font-medium">Listo</span>
+        {% elif status == "failed" %}
+          <span class="text-red-700 font-medium">Error</span>
+        {% endif %}
+      </dd>
+    </div>
+
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Chunks</dt>
+      <dd class="mt-0.5 tabular-nums">
+        {% if status == "ready" %}{{ document.chunk_count }}{% else %}—{% endif %}
+      </dd>
+    </div>
+
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Tamaño</dt>
+      <dd class="mt-0.5 tabular-nums">{{ (document.file_size_bytes / 1024) | round(0) | int }} KB</dd>
+    </div>
+
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Tipo</dt>
+      <dd class="mt-0.5 font-mono text-xs">{{ document.source_mime }}</dd>
+    </div>
+
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Subido</dt>
+      <dd class="mt-0.5 text-xs">{{ document.created_at | local_datetime }}</dd>
+    </div>
+
+    {% if document.ingested_at %}
+    <div>
+      <dt class="text-xs font-medium text-slate-500">Indexado</dt>
+      <dd class="mt-0.5 text-xs">{{ document.ingested_at | local_datetime }}</dd>
+    </div>
+    {% endif %}
+
+  </dl>
+
+  {# Mensaje de error #}
+  {% if status == "failed" and document.error_message %}
+  <div class="rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-800">
+    <p class="font-medium mb-1">Detalle del error</p>
+    <p class="whitespace-pre-wrap break-words">{{ document.error_message }}</p>
+  </div>
+  {% endif %}
+
+  {# Acciones #}
+  <div class="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+
+    {% if document.download_url %}
+    <a
+      href="{{ document.download_url }}"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="btn-secondary text-xs px-3 py-1.5">
+      Descargar
+    </a>
+    {% endif %}
+
+    <button
+      type="button"
+      hx-post="/knowledge/{{ document.id }}/reindex"
+      hx-target="#knowledge-row-{{ document.id }}"
+      hx-swap="outerHTML"
+      hx-confirm="¿Re-indexar este documento? Los chunks actuales se eliminarán."
+      class="btn-secondary text-xs px-3 py-1.5">
+      Re-indexar
+    </button>
+
+    <button
+      type="button"
+      hx-delete="/knowledge/{{ document.id }}"
+      hx-target="#knowledge-row-{{ document.id }}"
+      hx-swap="outerHTML"
+      hx-confirm="¿Eliminar «{{ document.name }}»? Esta acción no se puede deshacer."
+      class="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
+      Eliminar
+    </button>
+
+  </div>
+</div>

@@ -1,0 +1,6 @@
+{% if document.kind == "invoice" and document.invoice %}
+  {% set invoice = document.invoice %}
+  {% include "components/invoice_lines_panel.html" %}
+{% elif document.kind == "ticket" and document.ticket %}
+  {% include "components/ticket_details_panel.html" %}
+{% endif %}

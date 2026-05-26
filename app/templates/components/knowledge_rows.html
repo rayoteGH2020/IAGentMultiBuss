@@ -1,0 +1,122 @@
+{# Fragmento tabla de base de conocimiento. Devuelto por:
+   - GET /knowledge (HX-Request)
+   - GET /knowledge/rows
+   - POST /knowledge/upload (tras subida exitosa)
+   El id="knowledge-table-container" es el hx-target del formulario de subida. #}
+{% set documents = documents | default([], true) %}
+{% set upload_errors = upload_errors | default([], true) %}
+{% set filters = filters | default(none) %}
+{% set kinds = kinds | default([], true) %}
+{% set statuses = statuses | default([], true) %}
+
+<div id="knowledge-table-container" class="space-y-4">
+
+  {# Errores de subida #}
+  {% if upload_errors %}
+  <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+    <p class="font-medium">Algunos ficheros no se han podido subir</p>
+    <ul class="mt-2 list-disc pl-5 space-y-1">
+      {% for err in upload_errors %}
+      <li><span class="font-mono text-xs">{{ err.filename }}</span>: {{ err.error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# Filtros de listado #}
+  <div class="flex flex-wrap items-center gap-3" hx-boost="false">
+    {# Filtro por categoría #}
+    <div class="flex items-center gap-2">
+      <label for="k-filter-kind" class="text-xs font-medium text-slate-600">Categoría</label>
+      <select
+        id="k-filter-kind"
+        name="kind"
+        class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        hx-get="/knowledge/rows"
+        hx-target="#knowledge-table-container"
+        hx-swap="outerHTML"
+        hx-include="[name='status']"
+        hx-trigger="change">
+        <option value="">Todas</option>
+        {% set kind_labels = {
+          "contract": "Contrato", "terms": "Condiciones", "schedule": "Horarios",
+          "services": "Servicios", "policy": "Política", "faq": "FAQ",
+          "manual": "Manual", "other": "Otro"
+        } %}
+        {% for k in kinds %}
+        <option value="{{ k }}"
+          {% if filters and filters.kind | string == k | string %}selected{% endif %}>
+          {{ kind_labels.get(k | string, k | string) }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Filtro por estado #}
+    <div class="flex items-center gap-2">
+      <label for="k-filter-status" class="text-xs font-medium text-slate-600">Estado</label>
+      <select
+        id="k-filter-status"
+        name="status"
+        class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        hx-get="/knowledge/rows"
+        hx-target="#knowledge-table-container"
+        hx-swap="outerHTML"
+        hx-include="[name='kind']"
+        hx-trigger="change">
+        <option value="">Todos</option>
+        {% set status_labels = {
+          "pending": "Pendiente", "indexing": "Indexando",
+          "ready": "Listo", "failed": "Error"
+        } %}
+        {% for s in statuses %}
+        <option value="{{ s }}"
+          {% if filters and filters.status | string == s | string %}selected{% endif %}>
+          {{ status_labels.get(s | string, s | string) }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% if total is defined %}
+    <span class="text-xs text-slate-400 ml-auto">{{ total }} documento{{ "s" if total != 1 else "" }}</span>
+    {% endif %}
+  </div>
+
+  {# Tabla o estado vacío #}
+  {% if documents %}
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="data-table" role="grid" aria-label="Base de conocimiento">
+      <thead>
+        <tr>
+          <th class="w-64">Nombre</th>
+          <th class="w-28">Categoría</th>
+          <th class="w-28">Estado</th>
+          <th class="w-16 text-right">Chunks</th>
+          <th class="w-32">Fecha</th>
+          <th class="w-32 text-right">Acciones</th>
+        </tr>
+      </thead>
+      {% for document in documents %}
+        {% include "components/knowledge_row.html" %}
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  <div class="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
+    <div class="flex flex-col items-center gap-3">
+      <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+      </svg>
+      <div>
+        <p class="text-sm font-medium text-slate-900">Sin documentos todavía</p>
+        <p class="mt-1 text-sm text-slate-500">
+          Sube contratos, FAQs, horarios u otros documentos para que el asistente los use.
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>

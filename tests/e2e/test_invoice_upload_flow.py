@@ -57,8 +57,8 @@ async def test_upload_invoice_and_see_result() -> None:
             ctx = await browser.new_context(storage_state=str(AUTH_STATE))
             page = await ctx.new_page()
 
-            # 1. Navegar a /invoices y verificar que la página cargó correctamente.
-            await page.goto(f"{BASE_URL}/invoices")
+            # 1. Navegar a /documents y verificar que la página cargó correctamente.
+            await page.goto(f"{BASE_URL}/documents")
             await expect(page.locator("h1")).to_contain_text("Facturas")
 
             # 2. Abrir el modal de subida. El botón activa el estado Alpine `open=true`.
@@ -76,7 +76,7 @@ async def test_upload_invoice_and_see_result() -> None:
             # 3b. Elegir tipo de documento (obligatorio).
             await page.select_option("#doc-type-code", "factura")
 
-            # 4. Enviar el formulario. HTMX hace POST multipart a /invoices/upload.
+            # 4. Enviar el formulario. HTMX hace POST multipart a /documents/upload.
             await page.click("button[type=submit]")
 
             # 5. Esperar a que la fila aparezca con estado "listo".

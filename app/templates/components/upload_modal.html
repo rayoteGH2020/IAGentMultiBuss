@@ -1,105 +1,261 @@
 {# Modal de subida de documentos administrativos. #}
+
 <div
-  x-data="{ open: false, files: [], dragging: false, docType: '' }"
+
+  x-data="{ open: false, files: [], dragging: false, docType: '', uploadInputKey: 0 }"
+
   @keydown.escape.window="open = false"
+
+  hx-boost="false"
+
   class="inline-block">
 
-  <button type="button" @click="open = true" class="btn-primary shrink-0">
+
+
+  <button
+
+    type="button"
+
+    @click="open = true; files = []; docType = ''; uploadInputKey++"
+
+    class="btn-primary shrink-0">
+
     Subir documentos
+
   </button>
 
+
+
   <div x-show="open" x-cloak
+
        class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
+
        @click.self="open = false">
+
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+
       <div class="flex items-center justify-between mb-4">
+
         <h2 class="text-lg font-semibold text-slate-900">Subir documentos</h2>
+
         <button type="button" @click="open = false"
+
                 class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="Cerrar">✕</button>
+
       </div>
 
+
+
       <form
-        hx-post="/invoices/upload"
+
+        id="document-upload-form"
+
+        hx-post="/documents/upload"
+
         hx-encoding="multipart/form-data"
+
         hx-target="#invoices-table-container"
+
         hx-swap="outerHTML"
+
         hx-indicator="#upload-spinner"
-        @htmx:after-request="open = false; files = []; docType = ''">
+
+        hx-boost="false"
+
+        hx-on::config-request="
+
+          if (files.length === 0 || !docType) {
+
+            event.preventDefault();
+
+            return;
+
+          }
+
+          const fd = event.detail.formData;
+
+          if (!fd) return;
+
+          fd.delete('files');
+
+          files.forEach(function (f) { fd.append('files', f, f.name); });"
+
+        @submit="
+
+          const dt = new DataTransfer();
+
+          files.forEach(function (f) { dt.items.add(f); });
+
+          if ($refs.input) $refs.input.files = dt.files;"
+
+        @htmx:after-request="
+
+          if ($event.detail.successful) {
+
+            open = false;
+
+            files = [];
+
+            docType = '';
+
+            uploadInputKey++;
+
+          }">
+
+
 
         <label
+
           class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition"
+
           :class="dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300'"
+
           @dragover.prevent="dragging = true"
+
           @dragleave.prevent="dragging = false"
+
           @drop.prevent="
+
             dragging = false;
+
             files = Array.from($event.dataTransfer.files);
+
             const dt = new DataTransfer();
+
             files.forEach(function (f) { dt.items.add(f); });
+
             $refs.input.files = dt.files;">
 
+
+
           <input
+
             type="file"
+
             name="files"
+
             x-ref="input"
+
+            :key="'upload-input-' + uploadInputKey"
+
             class="hidden"
+
             multiple
+
             accept=".pdf,.jpg,.jpeg,.png,.webp"
-            @change="files = Array.from($event.target.files)">
+
+            @change="files = Array.from($event.target.files || [])">
+
+
 
           <p class="text-sm text-slate-600">
+
             Arrastra aquí PDFs o fotos de facturas y tickets, o haz click para elegir.
+
           </p>
+
           <p class="text-xs text-slate-400 mt-1">
+
             Máximo 20 ficheros, 20 MB cada uno.
+
           </p>
+
         </label>
 
+
+
         <ul x-show="files.length" class="mt-4 space-y-1 max-h-40 overflow-y-auto">
-          <template x-for="f in files" :key="f.name">
+
+          <template x-for="(f, idx) in files" :key="uploadInputKey + '-' + idx + '-' + f.name + '-' + f.size">
+
             <li class="flex items-center justify-between text-sm text-slate-700">
+
               <span x-text="f.name" class="truncate"></span>
+
               <span class="text-xs text-slate-400"
+
                     x-text="(f.size / 1024).toFixed(0) + ' KB'"></span>
+
             </li>
+
           </template>
+
         </ul>
 
+
+
         <div x-show="files.length" x-cloak class="mt-4">
+
           <label for="doc-type-code" class="block text-sm font-medium text-slate-700 mb-1.5">
+
             Tipo de documento <span class="text-red-600" aria-hidden="true">*</span>
+
           </label>
+
           <select
+
             id="doc-type-code"
+
             name="doc_type_code"
+
             x-model="docType"
+
             required
+
             class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer">
-            <option value="" disabled selected>Selecciona un tipo…</option>
+
+            <option value="" disabled>Selecciona un tipo…</option>
+
             {% for doc_type in doc_types|default([], true) %}
+
             <option value="{{ doc_type.code }}">{{ doc_type.name }}</option>
+
             {% endfor %}
+
           </select>
+
           <p class="mt-1.5 text-xs text-slate-500">
+
             Obligatorio. Si subes varios ficheros a la vez, todos se tratarán como el mismo tipo.
+
           </p>
+
         </div>
 
+
+
         <div class="mt-6 flex items-center justify-end gap-2">
+
           <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">
+
             Subiendo…
+
           </span>
+
           <button type="button" @click="open = false"
+
                   class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900">
+
             Cancelar
+
           </button>
+
           <button type="submit"
+
                   :disabled="files.length === 0 || !docType"
+
                   class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-600">
+
             Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
+
           </button>
+
         </div>
+
       </form>
+
     </div>
+
   </div>
+
 </div>

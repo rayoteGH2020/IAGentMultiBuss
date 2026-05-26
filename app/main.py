@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.cache import close_redis
@@ -11,7 +12,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import AuthMiddleware
 from app.routes.api import health, metrics, webhooks
 from app.routes.web import auth as auth_routes
-from app.routes.web import chat, demo, home, invoices, jobs, settings
+from app.routes.web import chat, demo, documents, home, integrations, jobs, knowledge, settings
 
 
 @asynccontextmanager
@@ -67,13 +68,25 @@ def create_app() -> FastAPI:
     # --- Rutas web (devuelven HTML via Jinja2 + patrón página/fragmento HTMX) ---
     app.include_router(auth_routes.router)
     app.include_router(home.router)
-    # invoices: lista, subida y detalle de facturas (módulo 1).
-    app.include_router(invoices.router)
-    # jobs: endpoint de polling HTMX `/jobs/invoice/{id}/status`.
+    # documents: lista unificada, subida y panel de documentos (módulo 1).
+    app.include_router(documents.router)
+    # knowledge: base de conocimiento RAG (módulo 2, Paso 18).
+    app.include_router(knowledge.router)
+    # jobs: endpoint de polling HTMX `/jobs/{invoice,ticket,knowledge}/{id}/status`.
     app.include_router(jobs.router)
     app.include_router(chat.router)
     app.include_router(settings.router)
+    app.include_router(integrations.router)
+    app.include_router(integrations.auth_router)
     app.include_router(demo.router)
+
+    @app.get("/invoices", include_in_schema=False)
+    async def legacy_invoices_root() -> RedirectResponse:
+        return RedirectResponse(url="/documents", status_code=308)
+
+    @app.get("/invoices/{path:path}", include_in_schema=False)
+    async def legacy_invoices_path(path: str) -> RedirectResponse:
+        return RedirectResponse(url=f"/documents/{path}", status_code=308)
 
     return app
 

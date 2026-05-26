@@ -1,0 +1,149 @@
+<section id="calendar-events-panel" class="space-y-5"
+         {% if is_connected %}x-data="{ createOpen: false }" @keydown.escape.window="createOpen = false"{% endif %}>
+  {% if is_connected %}
+    <input type="hidden" id="calendar-week-start" name="week_start" value="{{ week_start }}">
+  {% endif %}
+  <div>
+    <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+      <h4 class="text-sm font-semibold text-slate-900 shrink-0">Eventos del calendario</h4>
+      {% if is_connected %}
+        <button type="button"
+                @click="createOpen = true"
+                class="inline-flex items-center rounded-lg border border-sky-200/90 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-white hover:text-primary-900 cursor-pointer shrink-0">
+          Crear evento
+        </button>
+        <button type="button"
+                class="inline-flex items-center rounded-lg border border-sky-200/90 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-white hover:text-primary-900 cursor-pointer shrink-0"
+                hx-get="/settings/integrations/google/events"
+                hx-target="#calendar-events-panel"
+                hx-swap="outerHTML"
+                hx-include="#calendar-week-start">
+          Actualizar
+        </button>
+      {% endif %}
+    </div>
+    {% if is_connected %}
+      <p class="text-xs text-slate-500 mt-1.5">
+        Ventana de 7 días: {{ week_range_label }}
+        {% if is_current_week %}
+          <span class="text-emerald-700">(semana actual)</span>
+        {% endif %}
+      </p>
+    {% endif %}
+  </div>
+
+  {% if success_message %}
+    <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" role="status">
+      {{ success_message }}
+    </p>
+  {% endif %}
+
+  {% if error_message %}
+    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" role="alert">
+      {{ error_message }}
+    </p>
+  {% endif %}
+
+  {% if not is_connected %}
+    <p class="text-sm text-slate-500">Conecta Google Calendar para ver y gestionar eventos.</p>
+  {% else %}
+    {# Modal crear evento #}
+    <div x-show="createOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+         @click.self="createOpen = false"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="calendar-create-title">
+      <div class="w-full max-w-lg rounded-xl bg-white shadow-xl border border-slate-200"
+           @click.outside="createOpen = false">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h4 id="calendar-create-title" class="text-base font-semibold text-slate-900">Crear evento</h4>
+          <button type="button"
+                  @click="createOpen = false"
+                  class="rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  aria-label="Cerrar">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <form class="px-5 py-4 space-y-3"
+              hx-post="/settings/integrations/google/events"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML"
+              hx-indicator="#calendar-create-spinner"
+              @submit="createOpen = false">
+          <input type="hidden" name="week_start" value="{{ week_start }}">
+          <div>
+            <label for="new-event-summary" class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+            <input id="new-event-summary" name="summary" type="text" required maxlength="500"
+                   class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label for="new-event-start" class="block text-xs font-medium text-slate-600 mb-1">Inicio</label>
+              <input id="new-event-start" name="start" type="datetime-local" required
+                     class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+            </div>
+            <div>
+              <label for="new-event-end" class="block text-xs font-medium text-slate-600 mb-1">Fin</label>
+              <input id="new-event-end" name="end" type="datetime-local" required
+                     class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+            </div>
+          </div>
+          <div>
+            <label for="new-event-description" class="block text-xs font-medium text-slate-600 mb-1">Descripción (opcional)</label>
+            <textarea id="new-event-description" name="description" rows="2" maxlength="8000"
+                      class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"></textarea>
+          </div>
+          <div class="flex items-center gap-3 pt-1">
+            <button type="submit" class="btn-primary cursor-pointer">Guardar evento</button>
+            <button type="button" @click="createOpen = false" class="btn-secondary cursor-pointer">Cancelar</button>
+            <span id="calendar-create-spinner" class="htmx-indicator text-sm text-slate-500">Guardando…</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if events %}
+      <div class="calendar-events-grid">
+        {% for event in events %}
+          {% include "components/calendar_event_row.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
+        No hay eventos entre {{ week_range_label }}.
+      </p>
+    {% endif %}
+
+    <nav class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4"
+         aria-label="Navegación semanal">
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm"
+              hx-get="/settings/integrations/google/events?week_start={{ week_start_prev }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML">
+        ← Semana anterior
+      </button>
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm {% if is_current_week %}opacity-50 cursor-not-allowed{% endif %}"
+              {% if not is_current_week %}
+              hx-get="/settings/integrations/google/events?week_start={{ today_week_start }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML"
+              {% else %}
+              disabled
+              {% endif %}>
+        Hoy
+      </button>
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm"
+              hx-get="/settings/integrations/google/events?week_start={{ week_start_next }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML">
+        Semana siguiente →
+      </button>
+    </nav>
+  {% endif %}
+</section>

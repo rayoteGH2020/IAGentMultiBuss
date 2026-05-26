@@ -2,7 +2,7 @@
    Se incluye dinámicamente desde sidebar.html con:
      {% include "components/icons/" ~ icon ~ ".html" ignore missing %}
    El nombre del fichero (invoice) debe coincidir con el tercer elemento
-   de la tupla nav_items en sidebar.html: ("/invoices", "Facturas", "invoice").
+   de la tupla nav_items en sidebar.html: ("/documents", "Documentos", "invoice").
    Sin aria-hidden aquí: el SVG está dentro de un <a> con texto ("Facturas")
    que ya describe el destino; el navegador ignora el SVG para accesibilidad. #}
 <svg class="h-5 w-5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">

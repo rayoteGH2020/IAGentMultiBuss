@@ -58,6 +58,7 @@ async def test_extract_invoice_calls_llm_with_correct_args(
             mime_type="application/pdf",
             tenant_id=tenant.id,
             db=db_session,
+            source_filename="mi-factura.pdf",
         )
 
     assert result.factura.proveedor == "Acme S.L."
@@ -77,6 +78,7 @@ async def test_extract_invoice_calls_llm_with_correct_args(
     # prompt_version se registra en llm_calls para correlacionar resultados
     # con la versión del prompt en el dashboard de métricas.
     assert kwargs["prompt_version"] == PROMPT_VERSION
+    assert kwargs["source_filename"] == "mi-factura.pdf"
 
     # Verificación de la estructura del mensaje multimodal:
     # [0] system: prompt versionado con instrucciones y schema

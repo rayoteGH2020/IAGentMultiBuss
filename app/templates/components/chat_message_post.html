@@ -38,10 +38,8 @@
       hx-on::htmx:sse-message="
         if (event.detail && event.detail.type === 'error') {
           errored = true; done = true;
-        } else {
-          $dispatch('chat-scroll-bottom');
         }
       "
-      hx-on::htmx:sse-close="done = true; $dispatch('chat-scroll-bottom')"></div>
+      hx-on::htmx:sse-close="done = true"></div>
   </div>
 </div>

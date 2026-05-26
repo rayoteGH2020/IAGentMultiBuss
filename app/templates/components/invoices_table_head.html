@@ -1,0 +1,43 @@
+{# Cabecera ordenable. Columnas fijas: fecha, tipo, subida, estado, detalles. #}
+{% macro sort_th(label, field, th_class="", align="") %}
+  {% set is_active = panel_list.sort == field %}
+  {% if is_active %}
+    {% set next_dir = "asc" if panel_list.dir == "desc" else "desc" %}
+  {% else %}
+    {% set next_dir = "asc" %}
+  {% endif %}
+  <th scope="col" class="invoices-th {{ th_class }} {{ align }}">
+    <button
+      type="button"
+      class="invoices-sort-btn{% if is_active %} is-active{% endif %}{% if align == 'text-right' %} justify-end w-full{% endif %}"
+      hx-get="/documents/rows?sort={{ field }}&dir={{ next_dir }}"
+      hx-target="#invoices-table-container"
+      hx-swap="outerHTML"
+      hx-include="#doc-type-filter"
+      aria-label="Ordenar por {{ label }}{% if is_active %} ({{ 'ascendente' if panel_list.dir == 'asc' else 'descendente' }}){% endif %}">
+      <span class="invoices-sort-label">{{ label }}</span>
+      <span class="invoices-sort-indicator" aria-hidden="true">
+        {% if is_active %}
+          {% if panel_list.dir == "asc" %}↑{% else %}↓{% endif %}
+        {% else %}
+          <span class="invoices-sort-indicator-idle">↕</span>
+        {% endif %}
+      </span>
+    </button>
+  </th>
+{% endmacro %}
+
+<thead>
+  <tr>
+    {{ sort_th("Fecha", "fecha", "invoices-th--fecha") }}
+    {{ sort_th("Tipo", "doc_type_label", "invoices-th--tipo") }}
+    {{ sort_th("Proveedor", "proveedor", "invoices-th--grow") }}
+    {{ sort_th("CIF/NIF", "cif_nif", "invoices-th--grow") }}
+    {{ sort_th("Total", "total", "invoices-th--grow invoices-th--amount", "text-right") }}
+    {{ sort_th("Subida", "created_at", "invoices-th--subida") }}
+    {{ sort_th("Estado", "status", "invoices-th--estado") }}
+    <th scope="col" class="invoices-th invoices-th--detalles text-center">
+      <span class="invoices-th-label">Detalles</span>
+    </th>
+  </tr>
+</thead>

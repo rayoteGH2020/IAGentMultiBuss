@@ -84,6 +84,25 @@ class Settings(BaseSettings):
     llm_model_classify: str | None = None
     llm_model_sql: str | None = None
 
+    # Knowledge / RAG ingesta (Paso 18)
+    knowledge_max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
+    knowledge_chunk_target_tokens: int = 600
+    knowledge_chunk_overlap_tokens: int = 100
+    knowledge_embedding_model: str = "voyage-3-lite"
+    knowledge_embedding_dimensions: int = 1536
+    knowledge_index_max_concurrent_per_tenant: int = 3
+    knowledge_max_uploads_per_day: int = 20
+    # MIME permitidos: PDF, texto plano, Markdown (dos tipos según cliente/SO).
+    knowledge_allowed_mimes: list[str] = [
+        "application/pdf",
+        "text/plain",
+        "text/markdown",
+        "text/x-markdown",
+    ]
+    # Sub-fase opcional: enriquece cada chunk con una línea de contexto vía LLM.
+    # Desactivado por defecto; activar solo cuando el pipeline base esté estable.
+    knowledge_contextual_retrieval_enabled: bool = False
+
     # Chat documental (Paso 16): tools de conocimiento vectorial desactivadas hasta módulo 2.
     knowledge_tools_enabled: bool = False
     chat_daily_message_limit: int = 60
@@ -102,6 +121,20 @@ class Settings(BaseSettings):
     # Espera máxima entre reintentos en segundos. El backoff exponencial empieza
     # en 1 s y duplica hasta este techo, con jitter para evitar tormentas.
     llm_retry_max_wait_seconds: float = 15.0
+
+    # Google Calendar OAuth (Paso 17)
+    # Defaults vacíos: la app arranca sin integración; /settings/integrations
+    # muestra «Conectar» deshabilitado o un aviso hasta que Infisical inyecte
+    # GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: SecretStr = SecretStr("")
+    # Scopes solicitados al usuario en el flujo OAuth (espacio-separated, RFC 6749).
+    # userinfo.email: necesario para resolver google_email tras el callback.
+    google_calendar_scopes: str = (
+        "https://www.googleapis.com/auth/calendar.readonly "
+        "https://www.googleapis.com/auth/calendar.events "
+        "https://www.googleapis.com/auth/userinfo.email"
+    )
 
     # Crypto
     # Clave para cifrar campos sensibles en BD (p. ej. conexiones de clientes

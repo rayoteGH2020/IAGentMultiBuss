@@ -1,0 +1,44 @@
+{# Detalle expandible de ticket (misma posición que líneas de factura). #}
+{% set ticket = document.ticket %}
+<div class="px-4 py-3">
+  <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Detalle del ticket
+  </p>
+  <table class="w-full text-xs text-slate-700 max-w-xl">
+    <tbody>
+      {% if ticket.forma_pago %}
+      <tr class="border-t border-slate-100">
+        <th class="px-2 py-2 text-left font-medium text-slate-500 w-40" scope="row">Forma de pago</th>
+        <td class="px-2 py-2">{{ ticket.forma_pago }}</td>
+      </tr>
+      {% endif %}
+      {% if ticket.base_imponible is not none %}
+      <tr class="border-t border-slate-100 bg-slate-50/70">
+        <th class="px-2 py-2 text-left font-medium text-slate-500" scope="row">Base imponible</th>
+        <td class="px-2 py-2 tabular-nums">{{ "%.2f"|format(ticket.base_imponible) }} €</td>
+      </tr>
+      {% endif %}
+      {% if ticket.iva_percent is not none %}
+      <tr class="border-t border-slate-100">
+        <th class="px-2 py-2 text-left font-medium text-slate-500" scope="row">IVA</th>
+        <td class="px-2 py-2 tabular-nums">{{ "%.2f"|format(ticket.iva_percent) }} %</td>
+      </tr>
+      {% endif %}
+      {% if ticket.iva_amount is not none %}
+      <tr class="border-t border-slate-100 bg-slate-50/70">
+        <th class="px-2 py-2 text-left font-medium text-slate-500" scope="row">Importe IVA</th>
+        <td class="px-2 py-2 tabular-nums">{{ "%.2f"|format(ticket.iva_amount) }} €</td>
+      </tr>
+      {% endif %}
+      {% if ticket.confidence is not none %}
+      <tr class="border-t border-slate-100">
+        <th class="px-2 py-2 text-left font-medium text-slate-500" scope="row">Confianza</th>
+        <td class="px-2 py-2 tabular-nums">{{ "%.0f"|format(ticket.confidence * 100) }} %</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% if not ticket.forma_pago and ticket.base_imponible is none and ticket.iva_percent is none %}
+  <p class="text-sm text-slate-500">No hay detalle adicional para este ticket.</p>
+  {% endif %}
+</div>

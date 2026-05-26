@@ -40,6 +40,7 @@ async def resolve_doc_type(
     mime_type: str,
     tenant_id: UUID,
     user_choice: DocTypeCode | None,
+    source_filename: str | None = None,
 ) -> DocTypeCode:
     """Resuelve el tipo documental: elección del usuario o detección automática."""
     if user_choice is not None:
@@ -66,6 +67,7 @@ async def resolve_doc_type(
         mime_type=mime_type,
         tenant_id=tenant_id,
         db=db,
+        source_filename=source_filename,
     )
     logger.info(
         "document_classification.llm",

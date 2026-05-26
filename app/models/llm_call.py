@@ -43,6 +43,8 @@ class LLMCall(Base):
     # Nullable: las llamadas de embedding no usan prompts versionados porque
     # no tienen un system prompt propio; solo los modelos de completado los usan.
     prompt_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Nombre original del fichero subido cuando la llamada procesa un documento.
+    source_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # server_default="0" en lugar de default Python: si la inserción ocurre
     # antes de tener los tokens (p. ej. el registro se crea al inicio de la

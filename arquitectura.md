@@ -450,7 +450,7 @@ Especificación de dominio (flujos, decisiones técnicas y guardrails). La imple
 
 ### Módulo 1 — Extracción de facturas
 
-**Flujo de usuario (resumen):** lista en `/invoices`, subida multipart → R2 → job ARQ por archivo → polling HTMX → filas editables inline → export CSV cuando exista la feature.
+**Flujo de usuario (resumen):** lista en `/documents`, subida multipart → R2 → job ARQ por archivo → polling HTMX → filas editables inline → export CSV cuando exista la feature.
 
 **Decisiones técnicas:**
 
@@ -881,8 +881,8 @@ Checklist histórico de alto nivel; el trabajo real se prioriza con **`PasoXX.md
 - [ ] `app/llm/client.py` con router básico (Anthropic + Google)
 - [ ] `app/llm/extraction.py` con prompt v1
 - [ ] Integración R2 (`boto3`) con URLs prefirmadas
-- [ ] Endpoint `/invoices` (lista vacía si no hay)
-- [ ] Endpoint `/invoices/upload` (dropzone HTMX + Alpine)
+- [ ] Endpoint `/documents` (lista vacía si no hay)
+- [ ] Endpoint `/documents/upload` (dropzone HTMX + Alpine)
 - [ ] Worker ARQ `process_invoice`
 - [ ] Endpoint `/jobs/{id}/status` con polling HTMX
 - [ ] Fila de factura procesada en tabla

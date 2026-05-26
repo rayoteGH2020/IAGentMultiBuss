@@ -5,10 +5,13 @@ from __future__ import annotations
 from functools import lru_cache
 from uuid import UUID
 
+import structlog
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
 from app.config import get_settings
+
+logger = structlog.get_logger(__name__)
 
 # Singleton del pool ARQ a nivel de módulo. No se gestiona con lru_cache
 # porque create_pool es una coroutine (async); lru_cache no soporta funciones
@@ -68,8 +71,12 @@ async def enqueue_invoice_processing(invoice_id: UUID, tenant_id: UUID) -> str:
     # botón tras la primera subida; se eleva RuntimeError para que sea visible
     # en logs si la deduplicación se activa de forma inesperada.
     if job is None:
-        msg = "enqueue_invoice_processing returned no job"
-        raise RuntimeError(msg)
+        logger.warning(
+            "arq.enqueue_invoice_duplicate",
+            invoice_id=str(invoice_id),
+            tenant_id=str(tenant_id),
+        )
+        return f"invoice:{invoice_id}"
     return str(job.job_id)
 
 
@@ -82,6 +89,28 @@ async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
         _job_id=f"ticket:{ticket_id}",
     )
     if job is None:
-        msg = "enqueue_ticket_processing returned no job"
-        raise RuntimeError(msg)
+        logger.warning(
+            "arq.enqueue_ticket_duplicate",
+            ticket_id=str(ticket_id),
+            tenant_id=str(tenant_id),
+        )
+        return f"ticket:{ticket_id}"
+    return str(job.job_id)
+
+
+async def enqueue_knowledge_indexing(document_id: UUID, tenant_id: UUID) -> str:
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "index_knowledge_document",
+        str(document_id),
+        str(tenant_id),
+        _job_id=f"knowledge:{document_id}",
+    )
+    if job is None:
+        logger.warning(
+            "arq.enqueue_knowledge_duplicate",
+            document_id=str(document_id),
+            tenant_id=str(tenant_id),
+        )
+        return f"knowledge:{document_id}"
     return str(job.job_id)

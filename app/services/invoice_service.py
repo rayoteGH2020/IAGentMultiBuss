@@ -13,10 +13,12 @@ from sqlalchemy import ColumnElement, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.datetime_display import display_today
+from app.core.document_processing_errors import format_user_processing_error
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import invoice_key
 from app.core.storage import get_storage
 from app.core.text_normalization import ilike_pattern, normalize_search_text
+from app.core.uploads import original_upload_filename
 from app.models import DocTypeCode, Invoice, InvoiceLine, InvoiceStatus
 from app.schemas.document_query import (
     AggregateGroupBy,
@@ -134,7 +136,11 @@ async def list_invoices(
         # función sirva tanto para "todas las facturas" (UI principal) como
         # para subconjuntos específicos (p. ej. solo pending en el worker).
         stmt = stmt.where(Invoice.status == status)
-    stmt = stmt.options(selectinload(Invoice.lines), selectinload(Invoice.llm_call))
+    stmt = stmt.options(
+        selectinload(Invoice.lines),
+        selectinload(Invoice.llm_call),
+        selectinload(Invoice.doc_type),
+    )
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -226,7 +232,7 @@ async def create_invoice_from_upload(
         db,
         tenant_id,
         source_file_key=key,
-        source_filename=filename[:300],
+        source_filename=original_upload_filename(filename),
         source_mime=mime_type,
         doc_type=doc_type,
     )
@@ -315,9 +321,17 @@ async def mark_failed(
     invoice.status = InvoiceStatus.failed
     if llm_call_id is not None:
         invoice.llm_call_id = llm_call_id
-    # Truncado a 2000 chars: el mensaje de error puede incluir trazas completas
-    # de Python. Se guarda suficiente contexto para diagnosticar sin llenar la BD.
-    invoice.error_message = error[:2000]
+    logger.warning(
+        "invoice.processing_failed",
+        invoice_id=str(invoice_id),
+        tenant_id=str(tenant_id),
+        source_filename=invoice.source_filename,
+        technical_error=error[:2000],
+    )
+    invoice.error_message = format_user_processing_error(
+        error,
+        filename=invoice.source_filename,
+    )[:2000]
     # updated_at explícito: SQLAlchemy no actualiza onupdate automáticamente en
     # todos los drivers async; se establece manualmente para coherencia.
     invoice.updated_at = datetime.now(tz=UTC)

@@ -54,6 +54,7 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
                 mime_type=mime,
                 tenant_id=tenant_uuid,
                 db=db,
+                source_filename=ticket_row.source_filename,
             )
 
             await ticket_service.apply_extraction_result(

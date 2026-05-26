@@ -1,5 +1,12 @@
-{# Detalle de una fila llm_calls. Requiere variable `call`. #}
+{# Detalle de una fila llm_calls. Requiere variable `call`; `source_filename` opcional (legacy). #}
+{% set display_filename = call.source_filename or source_filename|default(none) %}
 <dl class="llm-call-details">
+  <div class="llm-call-details-item llm-call-details-item--wide">
+    <dt>Fichero</dt>
+    <dd class="break-all font-medium text-slate-800" title="{{ display_filename or '' }}">
+      {{ display_filename or "—" }}
+    </dd>
+  </div>
   <div class="llm-call-details-item llm-call-details-item--wide">
     <dt>ID llamada</dt>
     <dd class="font-mono text-[11px] break-all">{{ call.id }}</dd>

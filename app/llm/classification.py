@@ -55,6 +55,7 @@ async def classify_document_with_llm(
     mime_type: str,
     tenant_id: UUID,
     db: AsyncSession,
+    source_filename: str | None = None,
 ) -> DocumentTypeClassification:
     """Clasifica un documento cuando las heurísticas de texto no aplican."""
     if len(file_bytes) > 20 * 1024 * 1024:
@@ -73,6 +74,7 @@ async def classify_document_with_llm(
         tenant_id=tenant_id,
         db=db,
         prompt_version=PROMPT_VERSION,
+        source_filename=source_filename,
         max_retries=1,
     )
     result = completion.result

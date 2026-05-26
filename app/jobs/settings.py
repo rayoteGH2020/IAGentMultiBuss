@@ -7,10 +7,12 @@ Todos los atributos son leídos como atributos de clase, no de instancia.
 
 from typing import ClassVar
 
+from arq import func as arq_func
 from arq.connections import RedisSettings
 
 from app.config import get_settings
 from app.jobs.invoice_jobs import process_invoice
+from app.jobs.knowledge_jobs import index_knowledge_document
 from app.jobs.ticket_jobs import process_ticket
 
 
@@ -20,10 +22,15 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
 
     # Registro de funciones que el worker puede ejecutar. ARQ enruta cada job
-    # por el nombre de la función ("process_invoice"); si una función no aparece
-    # aquí, los jobs encolados con ese nombre se ignorarán silenciosamente.
-    # Cada nuevo tipo de job debe añadirse a esta lista.
-    functions: ClassVar[list[object]] = [process_invoice, process_ticket]
+    # por el nombre de la función; si una función no aparece aquí, los jobs
+    # encolados con ese nombre se ignorarán silenciosamente.
+    # index_knowledge_document usa arq_func() para sobreescribir el timeout
+    # global (180 s) con 600 s: los embeddings de documentos largos son lentos.
+    functions: ClassVar[list[object]] = [
+        process_invoice,
+        process_ticket,
+        arq_func(index_knowledge_document, timeout=600),
+    ]
 
     # Máximo de jobs ejecutándose simultáneamente en ESTE proceso worker.
     # No es el límite por tenant (eso lo gestiona invoice_slots.py con el

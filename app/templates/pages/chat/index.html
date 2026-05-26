@@ -11,7 +11,7 @@
     </div>
   </aside>
 
-  <section id="chat-main" class="chat-main" aria-label="Conversación">
+  <section id="chat-main" class="chat-main min-h-0" aria-label="Conversación">
     {% if active_thread %}
       {% set thread = active_thread %}
       {% include "components/chat_thread_panel.html" %}

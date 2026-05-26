@@ -18,9 +18,12 @@ logger = structlog.get_logger(__name__)
 
 ACTION_CHAT_MESSAGE_SENT = "chat.message_sent"
 ACTION_CHAT_TOOL_EXECUTED = "chat.tool_executed"
+ACTION_CALENDAR_INTEGRATION_LINKED = "calendar.integration_linked"
+ACTION_CALENDAR_INTEGRATION_UNLINKED = "calendar.integration_unlinked"
 
 RESOURCE_CHAT_MESSAGE = "chat_message"
 RESOURCE_CHAT_THREAD = "chat_thread"
+RESOURCE_CALENDAR_INTEGRATION = "calendar_integration"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +127,58 @@ async def log_chat_tool_executed(
         resource_type=RESOURCE_CHAT_THREAD,
         resource_id=thread_id,
         metadata=meta,
+    )
+
+
+async def log_calendar_integration_linked(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    integration_id: UUID,
+    google_email: str | None,
+    provider: str = "google",
+    request_ctx: AuditRequestContext | None = None,
+) -> AuditLog:
+    """Audita vinculación de calendario externo (OAuth completado)."""
+    meta: dict[str, Any] = {"provider": provider}
+    if google_email:
+        meta["google_email"] = google_email
+    return await log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_CALENDAR_INTEGRATION_LINKED,
+        resource_type=RESOURCE_CALENDAR_INTEGRATION,
+        resource_id=integration_id,
+        metadata=meta,
+        request_ctx=request_ctx,
+    )
+
+
+async def log_calendar_integration_unlinked(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    integration_id: UUID,
+    google_email: str | None,
+    provider: str = "google",
+    request_ctx: AuditRequestContext | None = None,
+) -> AuditLog:
+    """Audita desvinculación de calendario externo."""
+    meta: dict[str, Any] = {"provider": provider}
+    if google_email:
+        meta["google_email"] = google_email
+    return await log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_CALENDAR_INTEGRATION_UNLINKED,
+        resource_type=RESOURCE_CALENDAR_INTEGRATION,
+        resource_id=integration_id,
+        metadata=meta,
+        request_ctx=request_ctx,
     )
 
 

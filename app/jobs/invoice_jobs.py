@@ -87,6 +87,7 @@ async def process_invoice(ctx: dict[str, Any], invoice_id: str, tenant_id: str) 
                 mime_type=mime,
                 tenant_id=t_uuid,
                 db=db,
+                source_filename=invoice_row.source_filename,
             )
 
             await invoice_service.apply_extraction_result(

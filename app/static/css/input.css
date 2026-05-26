@@ -35,7 +35,7 @@
   .card {
     @apply rounded-xl bg-white shadow-sm border border-slate-200 p-6;
   }
-  /* Tabla genérica (reutilizable fuera de /invoices). */
+  /* Tabla genérica (reutilizable fuera de /documents). */
   .data-table {
     @apply w-full text-sm border-collapse;
   }
@@ -56,16 +56,83 @@
     @apply border-b-0;
   }
 
-  /* /invoices — grid minimalista: cabecera sombreada + filas alternas. */
+  /* /documents — grid: columnas fijas + flex al ancho del contenedor. */
   .invoices-table-shell {
-    @apply rounded-lg border border-slate-200 bg-white overflow-hidden;
+    @apply rounded-lg border border-slate-200 bg-white w-full overflow-hidden;
   }
   .invoices-table {
     @apply w-full text-sm border-collapse table-fixed;
   }
+  /* Anchos fijos (según contenido típico actual). */
+  .invoices-col-fecha,
+  .invoices-th--fecha,
+  .invoices-td--fecha {
+    width: 6.5rem;
+  }
+  .invoices-col-tipo,
+  .invoices-th--tipo,
+  .invoices-td--tipo {
+    width: 7.5rem;
+  }
+  .invoices-col-subida,
+  .invoices-th--subida,
+  .invoices-td--subida {
+    width: 8.75rem;
+  }
+  .invoices-col-estado,
+  .invoices-th--estado,
+  .invoices-td--estado {
+    width: 5.75rem;
+  }
+  .invoices-col-detalles,
+  .invoices-th--detalles,
+  .invoices-td--detalles {
+    width: 5.25rem;
+  }
+  /* Proveedor, CIF/NIF y Total reparten el espacio restante. */
+  .invoices-col-grow {
+    width: auto;
+  }
+  .invoices-th--grow,
+  .invoices-td--grow {
+    width: auto;
+    max-width: 0;
+  }
   .invoices-table thead th {
-    @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider;
-    @apply text-slate-600 bg-slate-100 border-b border-slate-200;
+    @apply px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider;
+    @apply text-slate-600 bg-slate-100 border-b border-slate-200 align-middle;
+  }
+  .invoices-th-label {
+    @apply block text-[11px] font-semibold uppercase tracking-wider text-slate-600;
+  }
+  .invoices-th--detalles .invoices-th-label {
+    @apply text-center;
+  }
+  .invoices-cell-inner {
+    @apply block min-w-0 truncate;
+  }
+  .invoices-td--grow .invoices-cell-inner {
+    @apply min-w-0;
+  }
+  .invoices-sort-btn {
+    @apply inline-flex items-center gap-1 text-left uppercase tracking-wider;
+    @apply text-[11px] font-semibold text-slate-600 cursor-pointer;
+    @apply hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 rounded;
+  }
+  .invoices-sort-btn.is-active {
+    @apply text-slate-900;
+  }
+  .invoices-sort-indicator {
+    @apply text-[10px] leading-none text-slate-500 tabular-nums;
+  }
+  .invoices-sort-btn.is-active .invoices-sort-indicator {
+    @apply text-blue-600;
+  }
+  .invoices-sort-indicator-idle {
+    @apply opacity-40;
+  }
+  .invoices-table thead th.invoices-th--amount .invoices-sort-btn {
+    justify-content: flex-end;
   }
   .invoices-table thead th:not(:last-child) {
     @apply border-r border-slate-200/80;
@@ -94,6 +161,9 @@
   .invoices-table tbody.invoice-group.is-pending > tr:first-child td {
     @apply text-slate-500;
   }
+  .invoices-table tbody.invoice-group > tr.invoice-lines-row[hidden] {
+    display: none;
+  }
   .invoices-table tbody.invoice-group > tr.invoice-lines-row td {
     @apply bg-slate-50/90 border-b border-slate-200 p-0;
   }
@@ -101,7 +171,8 @@
     @apply border-b-0;
   }
   .invoices-table .col-amount {
-    @apply text-right tabular-nums;
+    text-align: right;
+    @apply tabular-nums;
   }
   .invoices-table .col-muted {
     @apply text-slate-600 text-[13px];
@@ -124,7 +195,7 @@
     @apply text-amber-600/90 hover:bg-amber-50 hover:text-amber-800 transition-colors;
   }
 
-  /* Modal de métricas LLM (/invoices). */
+  /* Modal de métricas LLM (/documents). */
   .llm-call-dialog {
     @apply bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col;
     @apply ring-1 ring-slate-200/80;
@@ -197,7 +268,7 @@
     @apply text-slate-700 hover:bg-white/70;
   }
   .chat-messages {
-    @apply flex-1 space-y-5 overflow-y-auto scroll-smooth px-5 py-5 md:px-8;
+    @apply min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 md:px-8;
   }
   .chat-bubble-user {
     @apply max-w-[min(85%,32rem)] rounded-2xl rounded-br-sm bg-primary-600 px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm;
@@ -227,6 +298,92 @@
   .chat-empty-hero {
     @apply mx-auto max-w-md text-center;
   }
+
+  /* Google Calendar — fichas de evento (tonos azules) */
+  .calendar-events-grid {
+    @apply grid gap-3 sm:gap-4;
+  }
+  .calendar-event-card {
+    @apply relative overflow-hidden rounded-2xl border border-sky-200/80
+           bg-gradient-to-br from-sky-50 via-primary-50/90 to-blue-100/50
+           shadow-[0_1px_2px_rgba(14,165,233,0.1),0_6px_20px_rgba(2,132,199,0.08)]
+           transition-[transform,box-shadow,border-color] duration-300 ease-out
+           hover:border-sky-300 hover:shadow-[0_8px_28px_rgba(2,132,199,0.14)]
+           hover:-translate-y-0.5;
+    animation: calendar-card-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .calendar-event-card::before {
+    content: "";
+    @apply pointer-events-none absolute inset-y-0 left-0 w-1
+           bg-gradient-to-b from-sky-400 via-primary-500 to-primary-700;
+  }
+  .calendar-event-card::after {
+    content: "";
+    @apply pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full
+           bg-sky-300/20 blur-2xl;
+  }
+  .calendar-event-card__inner {
+    @apply relative z-[1] p-4 sm:p-5;
+  }
+  .calendar-event-card__view {
+    @apply flex gap-4;
+  }
+  .calendar-event-card__date {
+    @apply flex shrink-0 flex-col items-center justify-center
+           rounded-xl border border-sky-200/90 bg-white/70 px-3 py-2.5
+           shadow-sm backdrop-blur-sm min-w-[3.25rem];
+  }
+  .calendar-event-card__day {
+    @apply text-xl leading-none font-semibold text-primary-700 tabular-nums tracking-tight;
+  }
+  .calendar-event-card__month {
+    @apply mt-1 text-[0.65rem] font-semibold tracking-[0.12em] text-sky-600;
+  }
+  .calendar-event-card__content {
+    @apply min-w-0 flex-1;
+  }
+  .calendar-event-card__header {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between;
+  }
+  .calendar-event-card__title {
+    @apply font-medium text-slate-900 break-words leading-snug;
+  }
+  .calendar-event-card__actions {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .calendar-event-card__link {
+    @apply inline-flex items-center rounded-md border border-sky-200/90 bg-white/80
+           px-2.5 py-1 text-xs font-medium text-primary-700
+           transition-colors hover:border-sky-300 hover:bg-white hover:text-primary-900;
+  }
+  .calendar-event-card__edit {
+    @apply inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium
+           text-sky-800/80 transition-colors hover:bg-sky-100/80 hover:text-primary-900;
+  }
+  .calendar-event-card__time {
+    @apply mt-2 flex flex-wrap items-center gap-1.5 text-sm font-medium text-primary-700 tabular-nums;
+  }
+  .calendar-event-card__time-sep {
+    @apply text-sky-400/90;
+  }
+  .calendar-event-card__badge {
+    @apply inline-flex items-center rounded-full border border-sky-200 bg-sky-100/80
+           px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary-700;
+  }
+  .calendar-event-card__desc {
+    @apply mt-2.5 text-sm leading-relaxed text-slate-600/95 break-words line-clamp-3;
+  }
+  .calendar-event-card__form {
+    @apply space-y-3 rounded-xl border border-sky-200/90 bg-white/90 p-4 backdrop-blur-sm;
+  }
+  .calendar-event-card__label {
+    @apply mb-1 block text-xs font-medium text-sky-900/70;
+  }
+  .calendar-event-card__input {
+    @apply w-full rounded-lg border border-sky-200/90 bg-white px-3 py-2 text-sm
+           text-slate-800 shadow-sm transition-shadow
+           focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
+  }
 }
 
 @keyframes chat-typing {
@@ -239,5 +396,16 @@
   40% {
     opacity: 1;
     transform: translateY(-3px);
+  }
+}
+
+@keyframes calendar-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

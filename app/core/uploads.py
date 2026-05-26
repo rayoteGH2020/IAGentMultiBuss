@@ -35,6 +35,15 @@ ALLOWED_MIMES = frozenset(
 )
 
 
+def original_upload_filename(filename: str | None) -> str:
+    """Nombre original del fichero para persistir en BD (sin rutas, máx. 300 chars)."""
+    raw = (filename or "").strip()
+    if not raw:
+        return "sin-nombre"
+    basename = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return basename[:300] if basename else "sin-nombre"
+
+
 class UploadValidationError(Exception):
     """Fallo de validación antes de persistir ni subir a R2.
 

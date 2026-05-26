@@ -30,9 +30,10 @@ from tenacity import (
 )
 
 from app.config import Settings, get_settings
-from app.core.errors import LLMCompleteError
+from app.core.errors import ExternalServiceError, LLMCompleteError
 from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
+from app.llm.embeddings import VoyageEmbedder
 from app.llm.pricing import compute_cost_eur
 from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
@@ -49,7 +50,8 @@ _ANTHROPIC_TASKS = frozenset({"classify", "sql"})
 
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
-TaskType = Literal["extraction", "chat", "sql", "classify"]
+# "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
+TaskType = Literal["extraction", "chat", "sql", "classify", "embedding"]
 
 # Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
 # 529 es específico de Anthropic ("overloaded"); el resto son estándar.
@@ -156,12 +158,14 @@ def _log_transient_retry(
 # - extraction / chat: Gemini Flash (GOOGLE_API_KEY); mismo proveedor que extracción.
 # - classify: Haiku es el modelo más económico de Anthropic para tareas simples.
 # - sql: Sonnet (ANTHROPIC_API_KEY) cuando exista módulo analytics.
-DEFAULT_MODELS: dict[TaskType, str] = {
+DEFAULT_MODELS: dict[str, str] = {
     "extraction": "gemini-2.5-flash",
     "classify": "claude-haiku-4-5-20251001",
     "chat": "gemini-2.5-flash",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
     "sql": "claude-sonnet-4-6",
+    # "embedding" usa Voyage vía embed(); model_override en settings.knowledge_embedding_model.
+    "embedding": "voyage-3-lite",
 }
 
 # TypeVar acotado a BaseModel: permite que complete() sea genérico y devuelva
@@ -232,6 +236,10 @@ class LLMClient:
             use_async=True,
         )
         self._langfuse = get_langfuse()
+        # Embedder Voyage: se instancia la primera vez que se llama a embed().
+        # No se crea aquí para no requerir VOYAGE_API_KEY al arrancar la app
+        # cuando el módulo de conocimiento aún no está activo.
+        self._voyage_embedder: VoyageEmbedder | None = None
         if not _anthropic_api_key_configured(self._settings):
             logger.warning(
                 "llm.anthropic_not_configured",
@@ -249,17 +257,23 @@ class LLMClient:
     def _resolve_model(self, task: TaskType) -> tuple[str, str]:
         # Overrides de entorno tienen prioridad sobre DEFAULT_MODELS.
         # Devuelve (model_id, provider) para que complete() sepa qué SDK usar.
-        overrides: dict[TaskType, str | None] = {
+        # "embedding" nunca llega aquí en producción: usa embed() → Voyage directamente.
+        overrides: dict[str, str | None] = {
             "extraction": self._settings.llm_model_extraction,
             "chat": self._settings.llm_model_chat,
             "classify": self._settings.llm_model_classify,
             "sql": self._settings.llm_model_sql,
+            "embedding": None,
         }
-        model = overrides[task] or DEFAULT_MODELS[task]
-        # Heurística de routing: todos los modelos Claude empiezan por "claude";
-        # el resto (gemini-*, voyage-*) van al proveedor Google.
+        model = overrides.get(task) or DEFAULT_MODELS[task]
+        # Heurística de routing por prefijo de modelo:
+        # - "claude-*"  → Anthropic SDK
+        # - "voyage-*"  → Voyage (solo llega aquí si alguien llama complete(task="embedding"))
+        # - resto       → Google GenAI SDK (gemini-*, etc.)
         if model.startswith("claude"):
             return model, "anthropic"
+        if model.startswith("voyage"):
+            return model, "voyage"
         return model, "google"
 
     async def _call_sdk_once(
@@ -363,6 +377,7 @@ class LLMClient:
         tenant_id: UUID,
         db: AsyncSession,
         prompt_version: str | None = None,
+        source_filename: str | None = None,
         max_retries: int = 2,
     ) -> LLMCompleteResult[T]:
         model, provider = self._resolve_model(task)
@@ -462,12 +477,14 @@ class LLMClient:
             latency_ms = int((time.perf_counter() - started) * 1000)
             cost = compute_cost_eur(model, input_tokens, output_tokens)
 
+            stored_filename = source_filename[:300] if source_filename else None
             llm_call = LLMCall(
                 tenant_id=tenant_id,
                 task=task,
                 model=model,
                 provider=provider,
                 prompt_version=prompt_version,
+                source_filename=stored_filename,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cost_eur=cost,
@@ -535,6 +552,122 @@ class LLMClient:
             anthropic_client=self._anthropic_raw,
             google_client=self._google_raw,
         )
+
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        tenant_id: UUID,
+        db: AsyncSession,
+    ) -> list[list[float]]:
+        """Embebe una lista de textos con Voyage AI y audita cada batch en ``llm_calls``.
+
+        Procesa los textos en lotes de ``VOYAGE_BATCH_SIZE`` y persiste un registro
+        ``LLMCall`` por lote para trazabilidad de coste y latencia por tenant.
+
+        Args:
+            texts: Textos a embeber (chunks de un documento de conocimiento).
+            tenant_id: Tenant al que pertenece la llamada (para RLS y coste).
+            db: Sesión async activa; se hace flush tras cada lote (sin commit).
+
+        Returns:
+            Lista de vectores L2-normalizados, en el mismo orden que ``texts``.
+
+        Raises:
+            ExternalServiceError: si ``VOYAGE_API_KEY`` no está configurada.
+        """
+        if not texts:
+            return []
+
+        # Inicialización lazy: solo se crea el cliente Voyage cuando se necesita.
+        if self._voyage_embedder is None:
+            api_key = self._settings.voyage_api_key.get_secret_value().strip()
+            if not api_key:
+                raise ExternalServiceError(
+                    "VOYAGE_API_KEY is not configured. "
+                    "Add it in Infisical and restart the worker."
+                )
+            model = self._settings.knowledge_embedding_model
+            self._voyage_embedder = VoyageEmbedder(api_key=api_key, model=model)
+
+        model = self._settings.knowledge_embedding_model
+
+        # Un trace_id compartido por todos los batches del mismo embed() call
+        # agrupa los spans en Langfuse bajo un solo artefacto de observabilidad.
+        trace_uuid = self._langfuse.create_trace_id()
+        trace_id_str = str(trace_uuid)
+        trace_ctx = TraceContext(trace_id=trace_id_str)
+
+        all_embeddings: list[list[float]] = []
+
+        for batch_idx, batch in enumerate(self._voyage_embedder.batch_iterator(texts)):
+            obs = self._langfuse.start_observation(
+                trace_context=trace_ctx,
+                name=f"llm.embedding.batch_{batch_idx}",
+                as_type="generation",
+                metadata={
+                    "tenant_id": str(tenant_id),
+                    "batch_idx": batch_idx,
+                    "batch_size": len(batch),
+                },
+                model=model,
+                input={"texts_count": len(batch)},
+            )
+
+            started = time.perf_counter()
+            status = "ok"
+            error: str | None = None
+            batch_result = None
+
+            try:
+                batch_result = await self._voyage_embedder.embed_batch(batch)
+                all_embeddings.extend(batch_result.embeddings)
+            except Exception as exc:
+                status = "error"
+                error = str(exc)[:1000]
+                logger.exception(
+                    "llm.embed_batch_failed",
+                    batch_idx=batch_idx,
+                    batch_size=len(batch),
+                    tenant_id=str(tenant_id),
+                )
+                raise
+            finally:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                tokens_in = batch_result.total_tokens if batch_result else 0
+                cost = compute_cost_eur(model, tokens_in, 0)
+
+                db.add(
+                    LLMCall(
+                        tenant_id=tenant_id,
+                        task="embedding",
+                        model=model,
+                        provider="voyage",
+                        input_tokens=tokens_in,
+                        output_tokens=0,
+                        cost_eur=cost,
+                        latency_ms=latency_ms,
+                        status=status,
+                        error=error,
+                        langfuse_trace_id=trace_id_str,
+                    )
+                )
+                await db.flush()
+
+                obs.update(
+                    output={
+                        "embeddings_count": len(batch_result.embeddings) if batch_result else 0
+                    },
+                    metadata={"latency_ms": latency_ms, "status": status},
+                    usage_details={"input": tokens_in, "output": 0},
+                    cost_details={"total": float(cost)},
+                    level=None if status == "ok" else "ERROR",
+                    status_message=error,
+                )
+                obs.end()
+                self._langfuse.flush()
+
+        return all_embeddings
 
 
 _client: LLMClient | None = None

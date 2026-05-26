@@ -34,10 +34,11 @@
           <h2 id="llm-dialog-title-{{ record_id }}" class="text-base font-semibold text-slate-900 mt-0.5">
             {{ dialog_title }}
           </h2>
-          {% if source_filename %}
+          {% set display_filename = call.source_filename or source_filename|default(none) %}
+          {% if display_filename %}
           <p class="text-xs text-slate-500 mt-1 truncate max-w-[18rem]"
-             title="{{ source_filename }}">
-            {{ source_filename }}
+             title="{{ display_filename }}">
+            {{ display_filename }}
           </p>
           {% endif %}
         </div>

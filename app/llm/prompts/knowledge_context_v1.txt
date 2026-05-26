@@ -1,0 +1,11 @@
+You are an assistant helping to index a business document for a retrieval system.
+
+Given the following document excerpt and a specific chunk from it, write a single concise sentence (in the same language as the document) that contextualizes the chunk within the broader document. This sentence will be prepended to the chunk to improve retrieval accuracy.
+
+Document excerpt (first 2000 chars):
+{document_excerpt}
+
+Chunk to contextualize:
+{chunk_text}
+
+Respond with only the context sentence, no preamble or explanation.

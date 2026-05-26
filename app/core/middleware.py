@@ -24,6 +24,7 @@ PUBLIC_PATHS = frozenset(
         "/login",
         "/signup",
         "/auth/organization",
+        "/auth/google/callback",
         "/health",
         "/health/db",
         "/health/redis",
@@ -77,10 +78,12 @@ async def try_resolve_clerk_session(request: Request) -> None:
     """Rellena user/tenant/membership desde JWT, o marca auth_missing_organization."""
     token = _extract_token(request)
     if not token:
+        log.debug("auth.no_token", path=request.url.path)
         return
     try:
         claims = verify_clerk_jwt(token)
-    except AuthError:
+    except AuthError as e:
+        log.warning("auth.jwt_invalid", path=request.url.path, error=str(e))
         return
 
     clerk_user_id = claims.get("sub")

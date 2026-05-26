@@ -1,0 +1,26 @@
+{# Filtro por tipo de documento (panel /documents). Vive fuera del fragmento HTMX
+   intercambiado para conservar el valor al ordenar. #}
+{% set panel_list = panel_list|default(none) %}
+<select
+  id="doc-type-filter"
+  name="doc_type_code"
+  aria-label="Filtrar por tipo de documento"
+  hx-get="/documents/rows"
+  hx-target="#invoices-table-container"
+  hx-swap="outerHTML"
+  hx-trigger="change"
+  {% if panel_list %}
+  hx-vals='{"sort": "{{ panel_list.sort }}", "dir": "{{ panel_list.dir }}"}'
+  {% endif %}
+  class="min-w-[11rem] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer">
+  <option value="" {% if not panel_list or not panel_list.doc_type_code %}selected{% endif %}>
+    Todos los tipos
+  </option>
+  {% for doc_type in doc_types|default([], true) %}
+  <option
+    value="{{ doc_type.code }}"
+    {% if panel_list and panel_list.doc_type_code == doc_type.code %}selected{% endif %}>
+    {{ doc_type.name }}
+  </option>
+  {% endfor %}
+</select>

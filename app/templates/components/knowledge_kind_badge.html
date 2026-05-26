@@ -1,0 +1,31 @@
+{# Badge de categoría de documento de conocimiento.
+   Requiere variable `kind` (string: contract, terms, schedule, services,
+   policy, faq, manual, other). Se incluye desde knowledge_row.html y otros. #}
+{% set kind_labels = {
+  "contract": "Contrato",
+  "terms": "Condiciones",
+  "schedule": "Horarios",
+  "services": "Servicios",
+  "policy": "Política",
+  "faq": "FAQ",
+  "manual": "Manual",
+  "other": "Otro"
+} %}
+{% set label = kind_labels.get(kind|string, kind|string) %}
+{% if kind == "contract" %}
+  <span class="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-200">{{ label }}</span>
+{% elif kind == "terms" %}
+  <span class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">{{ label }}</span>
+{% elif kind == "schedule" %}
+  <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">{{ label }}</span>
+{% elif kind == "services" %}
+  <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200">{{ label }}</span>
+{% elif kind == "policy" %}
+  <span class="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-200">{{ label }}</span>
+{% elif kind == "faq" %}
+  <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">{{ label }}</span>
+{% elif kind == "manual" %}
+  <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">{{ label }}</span>
+{% else %}
+  <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">{{ label }}</span>
+{% endif %}

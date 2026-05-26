@@ -1,0 +1,86 @@
+{% set event_slug = event.id | replace('/', '-') | replace('@', '-') %}
+{% set date_chip = event.start | calendar_event_date_chip %}
+
+<article id="calendar-event-{{ event_slug }}"
+         class="calendar-event-card"
+         {% if loop is defined %}style="animation-delay: {{ loop.index0 * 55 }}ms"{% endif %}>
+  <div x-data="{ editing: false }" class="calendar-event-card__inner">
+    <div x-show="!editing" class="calendar-event-card__view">
+      <div class="calendar-event-card__date" aria-hidden="true">
+        <span class="calendar-event-card__day">{{ date_chip.day }}</span>
+        <span class="calendar-event-card__month">{{ date_chip.month }}</span>
+      </div>
+
+      <div class="calendar-event-card__content">
+        <header class="calendar-event-card__header">
+          <h5 class="calendar-event-card__title">{{ event.summary or "(Sin título)" }}</h5>
+          <div class="calendar-event-card__actions">
+            {% if event.html_link %}
+              <a href="{{ event.html_link }}" target="_blank" rel="noopener noreferrer"
+                 class="calendar-event-card__link cursor-pointer">
+                Google
+              </a>
+            {% endif %}
+            <button type="button" @click="editing = true"
+                    class="calendar-event-card__edit cursor-pointer">
+              Editar
+            </button>
+          </div>
+        </header>
+
+        <p class="calendar-event-card__time">
+          {% if event.start | calendar_event_is_all_day %}
+            <span class="calendar-event-card__badge">Todo el día</span>
+          {% else %}
+            <time datetime="{{ event.start }}">{{ event.start | calendar_event_time("%H:%M") }}</time>
+            <span class="calendar-event-card__time-sep" aria-hidden="true">→</span>
+            <time datetime="{{ event.end }}">{{ event.end | calendar_event_time("%H:%M") }}</time>
+          {% endif %}
+        </p>
+
+        {% if event.description %}
+          <p class="calendar-event-card__desc">{{ event.description }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <form x-show="editing" x-cloak
+          class="calendar-event-card__form"
+          hx-post="/settings/integrations/google/events/{{ event.id }}"
+          hx-target="#calendar-events-panel"
+          hx-swap="outerHTML"
+          hx-indicator="#calendar-edit-spinner-{{ event_slug }}">
+      <input type="hidden" name="week_start" value="{{ week_start }}">
+      <div>
+        <label class="calendar-event-card__label">Título</label>
+        <input name="summary" type="text" required maxlength="500" value="{{ event.summary or '' }}"
+               class="calendar-event-card__input">
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label class="calendar-event-card__label">Inicio</label>
+          <input name="start" type="datetime-local" required
+                 value="{{ event.start | calendar_local_input }}"
+                 class="calendar-event-card__input">
+        </div>
+        <div>
+          <label class="calendar-event-card__label">Fin</label>
+          <input name="end" type="datetime-local" required
+                 value="{{ event.end | calendar_local_input }}"
+                 class="calendar-event-card__input">
+        </div>
+      </div>
+      <div>
+        <label class="calendar-event-card__label">Descripción</label>
+        <textarea name="description" rows="2" maxlength="8000"
+                  class="calendar-event-card__input">{{ event.description or '' }}</textarea>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 pt-1">
+        <button type="submit" class="btn-primary cursor-pointer text-sm">Guardar cambios</button>
+        <button type="button" @click="editing = false" class="btn-secondary cursor-pointer text-sm">Cancelar</button>
+        <span id="calendar-edit-spinner-{{ event_slug }}"
+              class="htmx-indicator text-sm text-primary-700/70">Guardando…</span>
+      </div>
+    </form>
+  </div>
+</article>

@@ -1,3 +1,4 @@
+import datetime
 from typing import Any, cast
 
 import httpx
@@ -30,6 +31,7 @@ def verify_clerk_jwt(token: str) -> dict[str, Any]:
             signing_key.key,
             algorithms=["RS256"],
             options={"verify_aud": False},
+            leeway=datetime.timedelta(seconds=30),
         )
         if not isinstance(decoded, dict):
             raise AuthError("Invalid token structure")

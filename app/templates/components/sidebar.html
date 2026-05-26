@@ -12,18 +12,27 @@
        (icon) es el nombre del fichero SVG en components/icons/{icon}.html. #}
     {% set nav_items = [
       ("/", "Inicio", "home"),
-      ("/invoices", "Documentos", "invoice"),
+      ("/documents", "Documentos", "invoice"),
+      ("/knowledge", "Conocimiento", "book"),
       ("/chat", "Chat", "chat"),
-      ("/settings", "Ajustes", "settings"),
+      ("/settings/integrations", "Integraciones", "integrations"),
+      ("/settings/profile", "Ajustes", "settings"),
     ] %}
 
     {% for href, label, icon in nav_items %}
       {# Lógica de ítem activo:
          - Para "/" (inicio): comparación exacta. Sin ella, "/" matchearía
            cualquier ruta porque todas empiezan con "/".
-         - Para el resto: startswith() detecta subrutas activas, p. ej.
-           /invoices/123 marca "Facturas" como activo. #}
-      {% set active = request.url.path == href or (href != "/" and request.url.path.startswith(href)) %}
+         - Integraciones: solo rutas bajo /settings/integrations.
+         - Ajustes: resto de /settings/* excepto integraciones.
+         - Para el resto: startswith() detecta subrutas activas. #}
+      {% if href == "/settings/integrations" %}
+        {% set active = request.url.path.startswith("/settings/integrations") %}
+      {% elif href == "/settings/profile" %}
+        {% set active = request.url.path.startswith("/settings") and not request.url.path.startswith("/settings/integrations") %}
+      {% else %}
+        {% set active = request.url.path == href or (href != "/" and request.url.path.startswith(href)) %}
+      {% endif %}
       <a href="{{ href }}"
          {# hx-boost="true": convierte este enlace en una navegación HTMX.
             En lugar de una recarga completa de página, HTMX hace un GET y

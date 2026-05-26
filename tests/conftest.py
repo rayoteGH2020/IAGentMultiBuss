@@ -144,3 +144,16 @@ async def llm_calls_schema_ready(db_session: AsyncSession) -> None:
     )
     if result.scalar_one_or_none() is None:
         pytest.skip("Run Paso10 migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def knowledge_schema_ready(db_session: AsyncSession) -> None:
+    for table in ("knowledge_documents", "knowledge_chunks"):
+        result = await db_session.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                f"WHERE table_schema = 'public' AND table_name = '{table}'"
+            ),
+        )
+        if result.scalar_one_or_none() is None:
+            pytest.skip("Run Paso18 migration (`uv run alembic upgrade head`).")

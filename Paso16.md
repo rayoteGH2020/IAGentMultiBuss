@@ -594,4 +594,4 @@ docker exec saas-postgres psql -U saas -d saas -c \
 
 **Paso 20+** — Activar familia `knowledge` en el mismo `ToolRegistry`: `knowledge_chat.py`, `knowledge_search_service`, prompt `chat_unified_v1.txt`, flag `knowledge_tools_enabled=True`.
 
-Alternativa paralela si priorizas producto sobre chat: **Paso 17** — export CSV, búsqueda/filtros en `/invoices`, edición inline (items del antiguo roadmap post-MVP).
+Alternativa paralela si priorizas producto sobre chat: **Paso 17** — export CSV, búsqueda/filtros en `/documents`, edición inline (items del antiguo roadmap post-MVP).

@@ -1,7 +1,9 @@
-{# Panel unificado de facturas y tickets. #}
+{# Panel unificado de documentos (facturas, tickets y futuros tipos). #}
 {% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
-{% set just_uploaded_ticket_ids = just_uploaded_ticket_ids|default([], true) %}
 {% set upload_notices = upload_notices|default([], true) %}
+{% set documents = documents|default([], true) %}
+{% set panel_list = panel_list|default(none) %}
+{% set panel_filtered_empty = panel_filtered_empty|default(false, true) %}
 
 <div id="invoices-table-container" class="space-y-6">
 
@@ -27,77 +29,36 @@
   </div>
   {% endif %}
 
-  {% if invoices %}
+  {% if documents %}
   <section class="space-y-2">
-    <h2 class="text-sm font-semibold text-slate-800">Facturas</h2>
+    <h2 class="text-sm font-semibold text-slate-800">Documentos</h2>
     <div class="invoices-table-shell">
-      <table class="invoices-table" role="grid" aria-label="Listado de facturas">
+      <table class="invoices-table" role="grid" aria-label="Listado de documentos">
         <colgroup>
-          <col class="w-[7rem]">
-          <col>
-          <col class="w-[6.5rem]">
-          <col class="w-[6.5rem]">
-          <col class="w-[9.5rem]">
-          <col class="w-[5.5rem]">
-          <col class="w-[4.5rem]">
+          <col class="invoices-col-fecha">
+          <col class="invoices-col-tipo">
+          <col class="invoices-col-grow">
+          <col class="invoices-col-grow">
+          <col class="invoices-col-grow">
+          <col class="invoices-col-subida">
+          <col class="invoices-col-estado">
+          <col class="invoices-col-detalles">
         </colgroup>
-        <thead>
-          <tr>
-            <th scope="col">Fecha</th>
-            <th scope="col">Proveedor</th>
-            <th scope="col">CIF/NIF</th>
-            <th class="text-right" scope="col">Total</th>
-            <th scope="col">Subida</th>
-            <th scope="col">Estado</th>
-            <th class="text-center" scope="col">
-              <span class="sr-only">Acciones</span>
-            </th>
-          </tr>
-        </thead>
-        {% for invoice in invoices %}
-          {% include "components/invoice_row.html" %}
+        {% include "components/invoices_table_head.html" %}
+        {% for document in documents %}
+          {% include "components/document_row.html" %}
         {% endfor %}
       </table>
     </div>
   </section>
-  {% endif %}
-
-  {% if tickets %}
-  <section class="space-y-2">
-    <h2 class="text-sm font-semibold text-slate-800">Tickets</h2>
-    <div class="invoices-table-shell">
-      <table class="invoices-table" role="grid" aria-label="Listado de tickets">
-        <colgroup>
-          <col class="w-[7rem]">
-          <col>
-          <col class="w-[6.5rem]">
-          <col class="w-[6.5rem]">
-          <col class="w-[9.5rem]">
-          <col class="w-[5.5rem]">
-          <col class="w-[4.5rem]">
-        </colgroup>
-        <thead>
-          <tr>
-            <th scope="col">Fecha</th>
-            <th scope="col">Comercio</th>
-            <th scope="col">Nº ticket</th>
-            <th class="text-right" scope="col">Total</th>
-            <th scope="col">Subida</th>
-            <th scope="col">Estado</th>
-            <th class="text-center" scope="col">
-              <span class="sr-only">Acciones</span>
-            </th>
-          </tr>
-        </thead>
-        {% for ticket in tickets %}
-          {% include "components/ticket_row.html" %}
-        {% endfor %}
-      </table>
-    </div>
-  </section>
-  {% endif %}
-
-  {% if not invoices and not tickets %}
+  {% elif panel_filtered_empty %}
+  <div class="bg-white border border-dashed border-slate-300 rounded-lg p-12 text-center">
+    <h3 class="text-sm font-medium text-slate-900">Ningún documento con este filtro</h3>
+    <p class="mt-1 text-sm text-slate-500">
+      Prueba otro tipo en el desplegable o elige «Todos los tipos».
+    </p>
+  </div>
+  {% else %}
     {% include "components/empty_state.html" %}
   {% endif %}
 </div>

@@ -117,7 +117,7 @@ invoices = session.query(Invoice).filter_by(tenant_id=tenant.id).all()
 ### Endpoints FastAPI
 
 ```python
-@router.post("/invoices", response_class=HTMLResponse)
+@router.post("/documents", response_class=HTMLResponse)
 async def create_invoice(
     request: Request,
     archivo: UploadFile,
@@ -128,7 +128,7 @@ async def create_invoice(
     invoice = await invoice_service.create(archivo, tenant, user, db)
     return render(
         request,
-        full="pages/invoices/detail.html",
+        full="pages/documents/detail.html",
         partial="components/invoice_row.html",
         ctx={"invoice": invoice},
     )
@@ -153,7 +153,7 @@ async def create_invoice(
 
 ```html
 <button
-  hx-post="/invoices/{{ inv.id }}/approve"
+  hx-post="/documents/{{ inv.id }}/approve"
   hx-target="#invoice-row-{{ inv.id }}"
   hx-swap="outerHTML"
   hx-confirm="¿Aprobar?"

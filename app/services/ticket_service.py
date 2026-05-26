@@ -10,10 +10,12 @@ import structlog
 from sqlalchemy import ColumnElement, String, cast, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
+from app.core.document_processing_errors import format_user_processing_error
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import ticket_key
 from app.core.storage import get_storage
 from app.core.text_normalization import ilike_pattern, normalize_search_text
+from app.core.uploads import original_upload_filename
 from app.models import DocTypeCode, Ticket, TicketStatus
 from app.schemas.document_query import (
     AggregateGroupBy,
@@ -54,7 +56,7 @@ async def list_tickets(
     )
     if status is not None:
         stmt = stmt.where(Ticket.status == status)
-    stmt = stmt.options(selectinload(Ticket.llm_call))
+    stmt = stmt.options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -116,7 +118,7 @@ async def create_ticket_from_upload(
         db,
         tenant_id,
         source_file_key=key,
-        source_filename=filename[:300],
+        source_filename=original_upload_filename(filename),
         source_mime=mime_type,
         doc_type=doc_type,
     )
@@ -163,7 +165,17 @@ async def mark_failed(
     ticket.status = TicketStatus.failed
     if llm_call_id is not None:
         ticket.llm_call_id = llm_call_id
-    ticket.error_message = error[:2000]
+    logger.warning(
+        "ticket.processing_failed",
+        ticket_id=str(ticket_id),
+        tenant_id=str(tenant_id),
+        source_filename=ticket.source_filename,
+        technical_error=error[:2000],
+    )
+    ticket.error_message = format_user_processing_error(
+        error,
+        filename=ticket.source_filename,
+    )[:2000]
     ticket.updated_at = datetime.now(tz=UTC)
 
 

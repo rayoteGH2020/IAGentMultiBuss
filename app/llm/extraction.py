@@ -96,6 +96,7 @@ async def extract_invoice(
     mime_type: str,
     tenant_id: UUID,
     db: AsyncSession,
+    source_filename: str | None = None,
 ) -> ExtractionResult:
     """Extrae datos estructurados de una factura usando el router LLM (`task='extraction'`)."""
     # Límite de 20 MB: Anthropic rechaza payloads multimodales mayores. Se
@@ -121,6 +122,7 @@ async def extract_invoice(
         tenant_id=tenant_id,
         db=db,
         prompt_version=PROMPT_VERSION,
+        source_filename=source_filename,
         # max_retries=2: Instructor reintenta si el LLM no devuelve JSON
         # válido conforme al schema Factura. 2 reintentos = hasta 3 intentos
         # totales. Más reintentos aumentarían el coste sin mejora significativa.
@@ -146,6 +148,7 @@ async def extract_ticket(
     mime_type: str,
     tenant_id: UUID,
     db: AsyncSession,
+    source_filename: str | None = None,
 ) -> TicketExtractionResult:
     """Extrae datos estructurados de un ticket usando el router LLM (`task='extraction'`)."""
     if len(file_bytes) > 20 * 1024 * 1024:
@@ -167,6 +170,7 @@ async def extract_ticket(
         tenant_id=tenant_id,
         db=db,
         prompt_version=TICKET_PROMPT_VERSION,
+        source_filename=source_filename,
         max_retries=2,
     )
     ticket = completion.result

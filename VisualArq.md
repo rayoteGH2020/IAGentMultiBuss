@@ -22,7 +22,7 @@
 │  ┌──────────────┐                   │  │  Routers                 │    │   │
 │  │  ngrok       │◄── túnel HTTP ──► │  │  /login  /signup         │    │   │
 │  │  (opcional   │                   │  │  /logout /              │    │   │
-│  │   para       │                   │  │  /invoices /chat ...     │    │   │
+│  │   para       │                   │  │  /documents /chat ...    │    │   │
 │  │   webhooks)  │                   │  └──────────────────────────┘    │   │
 │  └──────┬───────┘                   └──────────────────────────────────┘   │
 │         │                                    │              │               │
@@ -267,7 +267,7 @@ Clerk Cloud                  ngrok túnel               FastAPI
 | `/static/*` | GET | No | StaticFiles |
 | `/demo*` | GET/POST | No | `routes/web/demo.py` |
 | `/` | GET | Sí (`current_user`) | `routes/web/home.py` |
-| `/invoices*` | GET | Sí | `routes/web/invoices.py` |
+| `/documents*` | GET | Sí | `routes/web/documents.py` |
 | `/chat*` | GET | Sí | `routes/web/chat.py` |
 | `/settings*` | GET | Sí | `routes/web/settings.py` |
 
