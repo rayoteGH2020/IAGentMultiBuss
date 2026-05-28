@@ -40,6 +40,14 @@
           errored = true; done = true;
         }
       "
-      hx-on::htmx:sse-close="done = true"></div>
+      hx-on::htmx:sse-close="
+        done = true;
+        if (!errored) {
+          htmx.ajax('GET', '/chat/threads/{{ thread.id }}/messages/{{ user_message.id }}/assistant', {
+            target: '#chat-assistant-pending-{{ user_message.id }}',
+            swap: 'outerHTML'
+          });
+        }
+      "></div>
   </div>
 </div>

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+import hashlib
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -10,11 +11,10 @@ from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.core.errors import ForbiddenError, NotFoundError, RateLimitError, ValidationError
+from app.llm.chat_prompts import build_chat_system_prompt, resolve_chat_prompt_version
 from app.llm.client import get_llm_client
-from app.llm.prompts_loader import load_prompt
-from app.llm.tools.document_chat import PROMPT_VERSION
 from app.llm.tools.registry import ToolContext
-from app.models import ChatMessage, ChatMessageRole, ChatThread
+from app.models import ChatMessage, ChatMessageRole, ChatThread, Tenant
 from app.schemas.chat import (
     ChatMessageListFilters,
     ChatMessageRead,
@@ -219,6 +219,25 @@ async def _load_history(
     return rows
 
 
+async def _next_message_created_at(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    thread_id: UUID,
+) -> datetime:
+    """Marca temporal estrictamente posterior al último mensaje del hilo."""
+    stmt = select(func.max(ChatMessage.created_at)).where(
+        ChatMessage.tenant_id == tenant_id,
+        ChatMessage.thread_id == thread_id,
+    )
+    last = (await db.execute(stmt)).scalar_one_or_none()
+    tick = datetime.now(UTC)
+    if last is None:
+        return tick
+    candidate = last + timedelta(microseconds=1)
+    return candidate if candidate > tick else tick
+
+
 async def _persist_turn_messages(
     db: AsyncSession,
     *,
@@ -228,7 +247,8 @@ async def _persist_turn_messages(
 ) -> ChatMessage | None:
     """Persiste mensajes assistant/tool del turno; devuelve el assistant final."""
     last_assistant: ChatMessage | None = None
-    for record in records:
+    base_ts = await _next_message_created_at(db, tenant_id=tenant_id, thread_id=thread_id)
+    for index, record in enumerate(records):
         role = ChatMessageRole(record.role)
         message = ChatMessage(
             tenant_id=tenant_id,
@@ -237,7 +257,9 @@ async def _persist_turn_messages(
             content=record.content,
             tool_call=record.tool_call,
             tool_result=record.tool_result,
+            citations=record.citations,
             llm_call_id=record.llm_call_id,
+            created_at=base_ts + timedelta(microseconds=index),
         )
         db.add(message)
         if role == ChatMessageRole.assistant:
@@ -252,6 +274,93 @@ def _chunk_text(text: str, *, chunk_size: int) -> list[str]:
     return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
+async def _tenant_company_name(db: AsyncSession, tenant_id: UUID) -> str:
+    result = await db.execute(select(Tenant.name).where(Tenant.id == tenant_id))
+    name = result.scalar_one_or_none()
+    return name if name else "tu empresa"
+
+
+async def _first_assistant_after_user_message(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    thread_id: UUID,
+    user_message: ChatMessage,
+) -> ChatMessage | None:
+    """Primer mensaje assistant tras el user en orden de hilo (created_at, id)."""
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.tenant_id == tenant_id,
+            ChatMessage.thread_id == thread_id,
+        )
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+    )
+    rows = list((await db.execute(stmt)).scalars().all())
+    seen_user = False
+    for row in rows:
+        if row.id == user_message.id:
+            seen_user = True
+            continue
+        if seen_user and row.role == ChatMessageRole.assistant:
+            return row
+    return None
+
+
+async def _has_messages_after_user(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    thread_id: UUID,
+    user_message: ChatMessage,
+) -> bool:
+    stmt = (
+        select(ChatMessage.id)
+        .where(
+            ChatMessage.tenant_id == tenant_id,
+            ChatMessage.thread_id == thread_id,
+        )
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+    )
+    ids = list((await db.execute(stmt)).scalars().all())
+    try:
+        idx = ids.index(user_message.id)
+    except ValueError:
+        return False
+    return idx + 1 < len(ids)
+
+
+async def get_assistant_message_after_user(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    thread_id: UUID,
+    user_message_id: UUID,
+) -> ChatMessageRead | None:
+    """Devuelve el mensaje assistant inmediatamente posterior al mensaje usuario."""
+    await get_thread(db, tenant_id=tenant_id, user_id=user_id, thread_id=thread_id)
+    user_stmt = select(ChatMessage).where(
+        ChatMessage.tenant_id == tenant_id,
+        ChatMessage.thread_id == thread_id,
+        ChatMessage.id == user_message_id,
+        ChatMessage.role == ChatMessageRole.user,
+    )
+    user_row = (await db.execute(user_stmt)).scalar_one_or_none()
+    if user_row is None:
+        return None
+
+    assistant = await _first_assistant_after_user_message(
+        db,
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        user_message=user_row,
+    )
+    if assistant is None:
+        return None
+    return ChatMessageRead.model_validate(assistant)
+
+
 async def _run_assistant_turn(
     db: AsyncSession,
     *,
@@ -260,10 +369,13 @@ async def _run_assistant_turn(
     thread_id: UUID,
 ) -> AsyncIterator[str]:
     """Ejecuta el loop LLM y persiste assistant/tool; asume historial ya en BD."""
+    settings = get_settings()
     thread = await get_thread(db, tenant_id=tenant_id, user_id=user_id, thread_id=thread_id)
     history = await _load_history(db, tenant_id=tenant_id, thread_id=thread_id)
-    system_prompt = load_prompt(PROMPT_VERSION)
+    company_name = await _tenant_company_name(db, tenant_id)
+    system_prompt = build_chat_system_prompt(company_name=company_name, settings=settings)
     llm_messages = _history_to_llm_messages(history, system_prompt=system_prompt)
+    prompt_version = resolve_chat_prompt_version(settings)
 
     registry = chat_tool_runner.get_chat_registry()
     ctx = ToolContext(db=db, tenant_id=tenant_id, user_id=user_id, thread_id=thread_id)
@@ -273,7 +385,7 @@ async def _run_assistant_turn(
         ctx=ctx,
         tenant_id=tenant_id,
         db=db,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=prompt_version,
     )
 
     await _persist_turn_messages(
@@ -285,12 +397,33 @@ async def _run_assistant_turn(
     thread.updated_at = datetime.now(tz=UTC)
     await db.flush()
 
+    if loop_result.knowledge_tools_used:
+        last_user = next(
+            (m for m in reversed(history) if m.role == ChatMessageRole.user),
+            None,
+        )
+        query_hash = (
+            hashlib.sha256((last_user.content or "").encode()).hexdigest()
+            if last_user and last_user.content
+            else None
+        )
+        await audit_service.log_knowledge_chat_search(
+            db,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            query_hash=query_hash,
+            citations_count=len(loop_result.citations),
+        )
+
     logger.info(
         "chat.turn_completed",
         thread_id=str(thread_id),
         tenant_id=str(tenant_id),
         tools=loop_result.tool_calls_executed,
         llm_calls=len(loop_result.llm_call_ids),
+        knowledge_tools=loop_result.knowledge_tools_used,
+        citations=len(loop_result.citations),
     )
 
     chunk_size = get_settings().chat_stream_chunk_chars
@@ -319,6 +452,7 @@ async def post_user_message(
         thread_id=thread_id,
         role=ChatMessageRole.user,
         content=text,
+        created_at=await _next_message_created_at(db, tenant_id=tenant_id, thread_id=thread_id),
     )
     db.add(user_message)
     if not thread.title:
@@ -386,17 +520,12 @@ async def stream_reply(
     if user_message is None:
         raise NotFoundError(f"User message {user_message_id} not found")
 
-    later_stmt = (
-        select(func.count())
-        .select_from(ChatMessage)
-        .where(
-            ChatMessage.tenant_id == tenant_id,
-            ChatMessage.thread_id == thread_id,
-            ChatMessage.created_at > user_message.created_at,
-        )
-    )
-    later_count = int((await db.execute(later_stmt)).scalar_one())
-    if later_count > 0:
+    if await _has_messages_after_user(
+        db,
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        user_message=user_message,
+    ):
         raise ValidationError("This message was already processed")
 
     async for chunk in _run_assistant_turn(

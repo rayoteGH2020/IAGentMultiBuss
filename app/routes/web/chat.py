@@ -275,3 +275,30 @@ async def chat_stream_assistant(
             yield {"event": "close", "data": ""}
 
     return EventSourceResponse(event_generator())
+
+
+@router.get("/threads/{thread_id}/messages/{user_message_id}/assistant")
+async def chat_assistant_message_fragment(
+    request: Request,
+    thread_id: UUID,
+    user_message_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Fragmento HTMX: burbuja assistant con citas tras completar el SSE."""
+    message = await chat_service.get_assistant_message_after_user(
+        db,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        thread_id=thread_id,
+        user_message_id=user_message_id,
+    )
+    if message is None:
+        return HTMLResponse(content="", status_code=204)
+    return render(
+        request,
+        full="components/chat_message_assistant.html",
+        partial="components/chat_message_assistant.html",
+        ctx={"message": message},
+    )

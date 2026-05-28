@@ -20,6 +20,12 @@ from app.llm.pricing import compute_cost_eur
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
 from app.llm.tracing import get_langfuse
 from app.models import LLMCall
+from app.schemas.chat import ChatCitation
+from app.services.chat_citations import (
+    citations_to_json,
+    extract_citations_from_tool_result,
+    merge_citation_lists,
+)
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
@@ -42,6 +48,7 @@ class TurnMessageRecord:
     content: str | None = None
     tool_call: dict[str, Any] | None = None
     tool_result: dict[str, Any] | None = None
+    citations: list[dict[str, Any]] | None = None
     llm_call_id: UUID | None = None
 
 
@@ -51,6 +58,8 @@ class ToolLoopResult:
     llm_call_ids: list[UUID]
     tool_calls_executed: list[str]
     turn_messages: tuple[TurnMessageRecord, ...] = ()
+    citations: tuple[ChatCitation, ...] = ()
+    knowledge_tools_used: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +97,20 @@ async def run_tool_loop(
     llm_call_ids: list[UUID] = []
     tool_calls_executed: list[str] = []
     turn_messages: list[TurnMessageRecord] = []
+    citation_batches: list[list[ChatCitation]] = []
     final_text: str | None = None
+    knowledge_tools_used = False
+
+    rag_obs = langfuse.start_observation(
+        trace_context=trace_ctx,
+        name="chat_rag_turn",
+        as_type="span",
+        metadata={
+            "tenant_id": str(tenant_id),
+            "thread_id": str(ctx.thread_id) if ctx.thread_id else None,
+            "prompt_version": prompt_version,
+        },
+    )
 
     for iteration in range(max_iters):
         obs = langfuse.start_observation(
@@ -144,6 +166,19 @@ async def run_tool_loop(
                     tool_calls_executed.append(call["name"])
                     result = await registry.execute(call["name"], call["arguments"], ctx)
                     tools_this_turn.append((call["name"], result))
+                    if call["name"] in {
+                        "search_knowledge",
+                        "list_knowledge_sources",
+                        "get_knowledge_chunk",
+                    }:
+                        knowledge_tools_used = True
+                    if call["name"] == "search_knowledge" and result.ok:
+                        citation_batches.append(
+                            extract_citations_from_tool_result(
+                                result.data,
+                                settings=settings,
+                            ),
+                        )
                     tool_payload = result.to_tool_message_content()
                     conversation.append(
                         {
@@ -226,6 +261,7 @@ async def run_tool_loop(
                             content=record.content,
                             tool_call=record.tool_call,
                             tool_result=record.tool_result,
+                            citations=record.citations,
                             llm_call_id=llm_call.id,
                         ),
                     )
@@ -249,11 +285,51 @@ async def run_tool_loop(
     if final_text is None:
         final_text = _EXHAUSTED_MESSAGE
 
+    final_citations = merge_citation_lists(*citation_batches, settings=settings)
+    citations_json = citations_to_json(final_citations) if final_citations else None
+
+    if turn_messages:
+        updated: list[TurnMessageRecord] = []
+        attached = False
+        for record in reversed(turn_messages):
+            if (
+                not attached
+                and record.role == "assistant"
+                and record.content
+                and record.tool_call is None
+            ):
+                updated.append(
+                    TurnMessageRecord(
+                        role=record.role,
+                        content=record.content,
+                        tool_call=record.tool_call,
+                        tool_result=record.tool_result,
+                        citations=citations_json,
+                        llm_call_id=record.llm_call_id,
+                    ),
+                )
+                attached = True
+            else:
+                updated.append(record)
+        turn_messages = list(reversed(updated))
+
+    rag_obs.update(
+        output={
+            "knowledge_tools_used": knowledge_tools_used,
+            "citations_count": len(final_citations),
+            "tools_executed": tool_calls_executed,
+        },
+    )
+    rag_obs.end()
+    langfuse.flush()
+
     return ToolLoopResult(
         final_text=final_text,
         llm_call_ids=llm_call_ids,
         tool_calls_executed=tool_calls_executed,
         turn_messages=tuple(turn_messages),
+        citations=tuple(final_citations),
+        knowledge_tools_used=knowledge_tools_used,
     )
 
 

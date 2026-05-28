@@ -86,6 +86,8 @@ class ChatMessage(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_call: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     tool_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Citas RAG del turno (fragmentos de search_knowledge usados en la respuesta).
+    citations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     llm_call_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

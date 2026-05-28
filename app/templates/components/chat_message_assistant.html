@@ -1,0 +1,59 @@
+{# message: ChatMessageRead — respuesta del asistente con citas opcionales #}
+<div
+  class="flex justify-start gap-2.5"
+  id="chat-msg-{{ message.id }}"
+  x-data="{ openCitation: null }">
+  <div
+    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700"
+    aria-hidden="true">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+    </svg>
+  </div>
+  <div class="min-w-0 max-w-[min(85%,36rem)]">
+    <div class="chat-bubble-assistant whitespace-pre-wrap">{{ message.content }}</div>
+
+    {% if message.citations %}
+    <div class="citations-block mt-3 border-l-2 border-zinc-300 pl-3 dark:border-zinc-600">
+      <p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">Fuentes</p>
+      <div class="flex flex-wrap gap-2">
+        {% for cite in message.citations %}
+        <button
+          type="button"
+          @click="openCitation = openCitation === {{ cite.ref }} ? null : {{ cite.ref }}"
+          class="inline-flex cursor-pointer items-center gap-1 rounded-md bg-zinc-100 px-2 py-1 text-xs text-sky-800 ring-1 ring-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-sky-300 dark:ring-zinc-700">
+          <span class="font-semibold">[{{ cite.ref }}]</span>
+          <span class="max-w-[12rem] truncate">{{ cite.document_name }}</span>
+          {% set kind = cite.kind %}
+          {% include "components/knowledge_kind_badge.html" %}
+        </button>
+        {% endfor %}
+      </div>
+
+      {% for cite in message.citations %}
+      <div
+        x-show="openCitation === {{ cite.ref }}"
+        x-transition
+        x-cloak
+        class="citation-panel mt-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+        <p class="font-medium text-zinc-900 dark:text-zinc-100">
+          {{ cite.document_name }}
+          <span class="text-zinc-500">· fragmento {{ cite.position }}</span>
+        </p>
+        <p class="mt-2 text-zinc-700 dark:text-zinc-300">{{ cite.content_snippet }}</p>
+        {% if cite.document_id %}
+        <a
+          href="/knowledge"
+          hx-get="/knowledge"
+          hx-target="#main-content"
+          hx-push-url="true"
+          class="mt-2 inline-block cursor-pointer text-xs text-sky-600 hover:underline dark:text-sky-400">
+          Ver base de conocimiento →
+        </a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>

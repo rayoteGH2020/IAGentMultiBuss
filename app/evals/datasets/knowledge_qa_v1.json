@@ -1,0 +1,56 @@
+{
+  "version": "1",
+  "description": "Eval QA del chat RAG unificado (Paso 20).",
+  "targets": {
+    "retrieval_recall_at_5_min": 0.8,
+    "answer_grounded_min": 0.85,
+    "citation_present_min": 0.9
+  },
+  "cases": [
+    {
+      "id": "qa_001",
+      "question": "¿Cuál es el horario de atención al cliente los sábados?",
+      "expected_answer_contains": ["sábado", "horario"],
+      "expected_sources_kind": ["schedule"],
+      "relevant_content_substrings": ["Sábados", "9:00"],
+      "difficulty": "easy",
+      "skip_live": true
+    },
+    {
+      "id": "qa_002",
+      "question": "¿Cuáles son las condiciones de cancelación?",
+      "expected_answer_contains": ["cancelación", "24 horas"],
+      "expected_sources_kind": ["contract", "terms", "faq"],
+      "relevant_content_substrings": ["24 horas"],
+      "difficulty": "medium",
+      "skip_live": true
+    },
+    {
+      "id": "qa_003",
+      "question": "formas de pago efectivo tarjeta bizum",
+      "expected_answer_contains": ["Bizum", "tarjeta"],
+      "expected_sources_kind": ["faq"],
+      "relevant_content_substrings": ["Bizum"],
+      "difficulty": "easy",
+      "skip_live": true
+    },
+    {
+      "id": "qa_004",
+      "question": "política de vestimenta uniforme",
+      "expected_answer_contains": ["uniforme"],
+      "expected_sources_kind": ["policy"],
+      "relevant_content_substrings": ["uniforme"],
+      "difficulty": "easy",
+      "skip_live": true
+    },
+    {
+      "id": "qa_005",
+      "question": "CODIGOCONTRATO4242 facturación",
+      "expected_answer_contains": ["contrato"],
+      "expected_sources_kind": ["contract"],
+      "relevant_content_substrings": ["CODIGOCONTRATO4242"],
+      "difficulty": "medium",
+      "skip_live": true
+    }
+  ]
+}

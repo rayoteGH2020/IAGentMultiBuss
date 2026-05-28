@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import ChatMessageRole
 from app.schemas.pagination import Page
@@ -24,6 +24,21 @@ class DocTypeRead(BaseModel):
     is_active: bool = True
 
 
+class ChatCitation(BaseModel):
+    """Cita de un fragmento de conocimiento en respuesta del asistente."""
+
+    model_config = ConfigDict(from_attributes=False)
+
+    ref: int = Field(ge=1, description="Número de referencia inline [N]")
+    chunk_id: UUID
+    document_id: UUID | None = None
+    document_name: str
+    kind: str
+    position: int = Field(ge=0)
+    content_snippet: str = Field(max_length=500)
+    score: float = Field(ge=0.0)
+
+
 class ChatMessageRead(BaseModel):
     """Mensaje de hilo para UI y serialización de historial."""
 
@@ -36,8 +51,18 @@ class ChatMessageRead(BaseModel):
     content: str | None = None
     tool_call: dict[str, Any] | None = None
     tool_result: dict[str, Any] | None = None
+    citations: list[ChatCitation] | None = None
     llm_call_id: UUID | None = None
     created_at: datetime
+
+    @field_validator("citations", mode="before")
+    @classmethod
+    def _coerce_citations(
+        cls, v: list[ChatCitation | dict[str, object]] | None
+    ) -> list[ChatCitation] | None:
+        if v is None:
+            return None
+        return [ChatCitation.model_validate(item) if isinstance(item, dict) else item for item in v]
 
 
 class ChatThreadRead(BaseModel):
