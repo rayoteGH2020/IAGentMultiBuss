@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from collections.abc import Generator
 from dataclasses import dataclass
+from typing import Any
 
 import voyageai
 
@@ -45,10 +46,11 @@ def _l2_normalize(vector: list[float]) -> list[float]:
 class VoyageEmbedder:
     """Cliente Voyage async con batching y normalización L2."""
 
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, *, output_dimension: int | None = None) -> None:
         # AsyncClient: usa httpx.AsyncClient internamente; no bloquea el event loop.
-        self._client: voyageai.AsyncClient = voyageai.AsyncClient(api_key=api_key)
+        self._client: Any = voyageai.AsyncClient(api_key=api_key)
         self._model: str = model
+        self._output_dimension: int | None = output_dimension
 
     def batch_iterator(self, texts: list[str]) -> Generator[list[str], None, None]:
         """Divide la lista de textos en lotes de VOYAGE_BATCH_SIZE."""
@@ -69,7 +71,13 @@ class VoyageEmbedder:
         # input_type="document": indica a Voyage que los textos son fragmentos
         # de documentos a indexar (no queries de búsqueda). Afecta levemente a
         # la representación vectorial en algunos modelos.
-        result = await self._client.embed(texts, model=self._model, input_type="document")
+        embed_kwargs: dict[str, object] = {
+            "model": self._model,
+            "input_type": "document",
+        }
+        if self._output_dimension is not None:
+            embed_kwargs["output_dimension"] = self._output_dimension
+        result = await self._client.embed(texts, **embed_kwargs)
         normalized = [_l2_normalize(emb) for emb in result.embeddings]
         return EmbedBatchResult(
             embeddings=normalized,

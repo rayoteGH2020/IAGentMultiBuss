@@ -35,8 +35,8 @@ _TXT_BYTES = (
     b"Cl\xc3\xa1usula 3: el precio mensual es de 99 EUR m\xc3\xa1s IVA."
 )
 
-# Embedding falso: lista de 1536 floats, normalizada en L2.
-_FAKE_EMBEDDING = [1.0 / (1536**0.5)] * 1536
+# Embedding falso: lista de 512 floats (voyage-3-lite), normalizada en L2.
+_FAKE_EMBEDDING = [1.0 / (512**0.5)] * 512
 
 
 class _FakeStorage:
@@ -67,11 +67,9 @@ async def test_index_knowledge_document_worker_full_flow(
     tenant: Tenant = await tenant_factory()
     await set_tenant_context(db_session, str(tenant.id))
 
-    # Parchear storage (evita R2) y LLMClient.embed (evita Voyage AI).
+    # Parchear storage en knowledge_index_service, que es quien llama a get_storage.
+    # knowledge_jobs no importa get_storage directamente (solo delega en run_index_pipeline).
     fake_storage = _FakeStorage(_TXT_BYTES)
-    monkeypatch.setattr(knowledge_jobs, "get_storage", lambda: fake_storage)
-
-    # También parchear en knowledge_index_service porque es quien llama a get_storage.
     import app.services.knowledge_index_service as kis
 
     monkeypatch.setattr(kis, "get_storage", lambda: fake_storage)

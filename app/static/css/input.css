@@ -56,6 +56,64 @@
     @apply border-b-0;
   }
 
+  /* /knowledge — tabla a ancho completo con columnas visibles. */
+  .knowledge-table-shell {
+    @apply w-full min-w-0 rounded-lg border border-slate-200 bg-white overflow-x-auto;
+  }
+  .knowledge-table {
+    @apply w-full min-w-[52rem] text-sm border-collapse table-fixed;
+  }
+  .knowledge-th,
+  .knowledge-td {
+    @apply px-3 py-3 align-middle border-b border-slate-100;
+  }
+  .knowledge-th {
+    @apply bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600;
+  }
+  .knowledge-th:not(:last-child),
+  .knowledge-td:not(:last-child) {
+    @apply border-r border-slate-100;
+  }
+  .knowledge-th--detail,
+  .knowledge-td--detail {
+    width: 3rem;
+    @apply text-center;
+  }
+  .knowledge-th--name,
+  .knowledge-td--name {
+    width: 28%;
+  }
+  .knowledge-th--kind,
+  .knowledge-td--kind {
+    width: 10%;
+  }
+  .knowledge-th--status,
+  .knowledge-td--status {
+    width: 11%;
+  }
+  .knowledge-th--chunks,
+  .knowledge-td--chunks {
+    width: 6%;
+    text-align: right;
+  }
+  .knowledge-th--fecha,
+  .knowledge-td--fecha {
+    width: 14%;
+  }
+  .knowledge-th--actions,
+  .knowledge-td--actions {
+    width: 9rem;
+  }
+  .knowledge-td--name {
+    @apply min-w-0;
+  }
+  .knowledge-td--name p {
+    @apply truncate;
+  }
+  .knowledge-table tbody:last-child tr:last-child .knowledge-td {
+    @apply border-b-0;
+  }
+
   /* /documents — grid: columnas fijas + flex al ancho del contenedor. */
   .invoices-table-shell {
     @apply rounded-lg border border-slate-200 bg-white w-full overflow-hidden;

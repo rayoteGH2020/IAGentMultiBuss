@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app.llm.tools.registry import (
     ToolCitation,
@@ -249,26 +249,7 @@ def build_document_chat_registry() -> ToolRegistry:
             executor=execute_list_document_parties,
         ),
     )
+    from app.llm.tools.knowledge_tools import register_knowledge_tools
+
+    register_knowledge_tools(registry)
     return registry
-
-
-def register_knowledge_tool_stubs(registry: ToolRegistry) -> None:
-    """Stubs deshabilitados para tests y futuro módulo RAG (Paso 20+)."""
-
-    class SearchKnowledgeArgs(BaseModel):
-        model_config = ConfigDict(extra="forbid")
-        query: str
-
-    async def _stub_knowledge(_ctx: ToolContext, _args: SearchKnowledgeArgs) -> ToolResult:
-        return ToolResult(ok=False, data={}, citations=[], error="not_implemented")
-
-    registry.register(
-        ToolDefinition(
-            name="search_knowledge",
-            family=ToolFamily.knowledge,
-            description="Búsqueda semántica en base de conocimiento (no disponible en MVP).",
-            parameters_model=SearchKnowledgeArgs,
-            executor=_stub_knowledge,
-            enabled=False,
-        ),
-    )

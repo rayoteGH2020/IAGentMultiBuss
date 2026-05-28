@@ -156,7 +156,7 @@ knowledge_max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
 knowledge_chunk_target_tokens: int = 600
 knowledge_chunk_overlap_tokens: int = 100
 knowledge_embedding_model: str = "voyage-3-lite"
-knowledge_embedding_dimensions: int = 1536
+knowledge_embedding_dimensions: int = 512  # voyage-3-lite: 512d (no 1536)
 knowledge_index_max_concurrent_per_tenant: int = 3
 knowledge_allowed_mimes: ...  # ver Fase D
 knowledge_contextual_retrieval_enabled: bool = False  # sub-fase opcional
@@ -171,7 +171,7 @@ knowledge_contextual_retrieval_enabled: bool = False  # sub-fase opcional
 - [x] Migración Alembic `p18_knowledge_01`:
   - [x] Tabla `knowledge_documents` con RLS + `FORCE ROW LEVEL SECURITY`.
   - [x] Tabla `knowledge_chunks` con RLS.
-  - [x] Columna `embedding vector(1536)` en chunks (tipo pgvector).
+  - [x] Columna `embedding vector(512)` en chunks (tipo pgvector — voyage-3-lite usa 512d).
   - [x] Columna `search_vector tsvector` **generada** desde `content` (config `spanish` — castellano; documentado en cabecera de la migración).
   - [x] Índice **HNSW** sobre `embedding` (`vector_cosine_ops`).
   - [x] Índice **GIN** sobre `search_vector`.
@@ -208,7 +208,7 @@ knowledge_chunks (
   document_id uuid fk -> knowledge_documents on delete cascade,
   content text not null,
   context text null,               -- contextual retrieval (opcional)
-  embedding vector(1536) not null,
+  embedding vector(512) not null,          -- voyage-3-lite: 512d
   search_vector tsvector generated always as (to_tsvector('spanish', content)) stored,
   metadata jsonb default '{}',     -- page_no, char_start, token_estimate
   position int not null,
@@ -318,7 +318,7 @@ knowledge_chunks (
 - [x] Integración: PDF escaneado → `failed` con mensaje UI comprensible → `tests/integration/test_knowledge_rls.py`.
 - [x] Eval stub: `app/evals/datasets/knowledge_chunking_v1.json` + runner `app/evals/runners/knowledge_chunking.py`.
 - [X] `mypy --strict` y `ruff check` verdes.
-- [ ] Commit: `feat: knowledge document ingestion pipeline with pgvector indexing`.
+- [x] Commit: `feat: knowledge document ingestion pipeline with pgvector indexing`.
 
 ## Detalles técnicos
 
@@ -425,34 +425,34 @@ app/evals/
 
 ## Verificación manual (checklist)
 
-1. [ ] `infisical run -- uv run alembic upgrade head`
-2. [ ] `infisical run -- uv run uvicorn app.main:app --reload` (terminal 1)
-3. [ ] `infisical run -- uv run arq app.jobs.settings.WorkerSettings` (terminal 2)
-4. [ ] Abrir `/knowledge` — página carga, sidebar marca activo.
-5. [ ] Subir PDF de contrato con categoría **Contrato** → fila `pending` → polling → `ready`.
-6. [ ] Inspeccionar BD:
+1. [x] `infisical run -- uv run alembic upgrade head`
+2. [x] `infisical run -- uv run uvicorn app.main:app --reload` (terminal 1)
+3. [x] `infisical run -- uv run arq app.jobs.settings.WorkerSettings` (terminal 2)
+4. [x] Abrir `/knowledge` — página carga, sidebar marca activo.
+5. [x] Subir PDF de contrato con categoría **Contrato** → fila `pending` → polling → `ready`.
+6. [x] Inspeccionar BD:
    `SELECT id, name, status, chunk_count FROM knowledge_documents ORDER BY created_at DESC LIMIT 5;`
    `SELECT COUNT(*) FROM knowledge_chunks WHERE document_id = '<uuid>';`
-7. [ ] Subir `.md` FAQ → `ready` con chunks > 0.
-8. [ ] Subir PDF escaneado → `failed` con mensaje visible en UI.
-9. [ ] Probar **Reindexar** en documento `ready` → pasa por `indexing` y vuelve a `ready`.
-10. [ ] Probar **Eliminar** (como admin) → desaparece de listado; chunks eliminados en BD.
-11. [ ] Verificar Langfuse: spans de embedding bajo traza de indexación.
-12. [ ] Verificar `llm_calls`: filas con `task='embedding'`.
-13. [ ] Verificar RLS: segundo tenant no ve documentos del primero.
-14. [ ] Ejecutar tests:
-    `infisical run -- uv run pytest tests/unit/test_text_chunking.py tests/integration/test_knowledge_ingest.py -q`
+7. [x] Subir `.md` FAQ → `ready` con chunks > 0.
+8. [x] Subir PDF escaneado → `failed` con mensaje visible en UI.
+9. [x] Probar **Reindexar** en documento `ready` → pasa por `indexing` y vuelve a `ready`.
+10. [X] Probar **Eliminar** (como admin) → desaparece de listado; chunks eliminados en BD.
+11. [x] Verificar Langfuse: spans de embedding bajo traza de indexación.
+12. [x] Verificar `llm_calls`: filas con `task='embedding'`.
+13. [x] Verificar RLS: segundo tenant no ve documentos del primero.
+14. [x] Ejecutar tests:
+    `infisical run -- uv run pytest tests/unit/test_text_chunking.py tests/unit/test_knowledge_index_service.py tests/integration/test_knowledge_worker.py tests/integration/test_knowledge_rls.py -q`
 
 ## Criterios de aceptación
 
-- [ ] `/knowledge` permite subir PDF y TXT/MD con categoría obligatoria.
-- [ ] Cada subida crea fila en `knowledge_documents`, objeto en R2 y job ARQ.
-- [ ] Worker indexa: texto extraído → chunks → embeddings 1536d → `ready`.
-- [ ] Polling HTMX detiene solo al llegar a `ready` o `failed`.
-- [ ] PDF sin capa de texto falla con mensaje accionable (no 500 genérico).
+- [x] `/knowledge` permite subir PDF y TXT/MD con categoría obligatoria.
+- [x] Cada subida crea fila en `knowledge_documents`, objeto en R2 y job ARQ.
+- [x] Worker indexa: texto extraído → chunks → embeddings 1536d → `ready`.
+- [x] Polling HTMX detiene solo al llegar a `ready` o `failed`.
+- [x] PDF sin capa de texto falla con mensaje accionable (no 500 genérico).
 - [ ] RLS aísla datos por tenant; audit log registra operaciones sensibles.
 - [ ] `knowledge_tools_enabled` sigue en `False`; chat no expone búsqueda vectorial aún.
-- [ ] Tests automatizados pasan; lint y mypy pasan.
+- [x] Tests automatizados pasan; lint y mypy pasan.
 
 ## Comandos útiles
 
@@ -464,8 +464,13 @@ infisical run -- uv run alembic upgrade head
 infisical run -- uv run uvicorn app.main:app --reload
 infisical run -- uv run arq app.jobs.settings.WorkerSettings
 
-# Tests ingesta
-infisical run -- uv run pytest tests/integration/test_knowledge_ingest.py -q
+# Tests ingesta (unit + integración)
+infisical run -- uv run pytest \
+  tests/unit/test_text_chunking.py \
+  tests/unit/test_knowledge_index_service.py \
+  tests/integration/test_knowledge_worker.py \
+  tests/integration/test_knowledge_rls.py \
+  -q
 
 # Inspeccionar chunks
 docker exec saas-postgres psql -U saas -d saas -c \

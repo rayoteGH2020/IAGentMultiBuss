@@ -15,10 +15,31 @@
   {% endif %}
   class="{% if is_busy %}opacity-75{% endif %}">
 
-  <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+  <tr class="knowledge-tr hover:bg-slate-50/80 transition-colors">
 
-    {# Nombre + nombre de fichero original #}
-    <td class="px-4 py-3 max-w-[16rem]">
+    {# Ver detalle (modal) #}
+    <td class="knowledge-td knowledge-td--detail">
+      <button
+        type="button"
+        class="btn-ghost-icon cursor-pointer text-primary-600 hover:text-primary-800 hover:bg-primary-50"
+        title="Ver detalle"
+        aria-label="Ver detalle de {{ document.name }}"
+        @click="detailOpen = true"
+        hx-get="/knowledge/{{ document.id }}"
+        hx-target="#knowledge-detail-modal-body"
+        hx-swap="innerHTML"
+        hx-indicator="#k-spinner-{{ document.id }}">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+      </button>
+    </td>
+
+    {# Nombre + fichero original #}
+    <td class="knowledge-td knowledge-td--name">
       <p class="truncate text-sm font-medium text-slate-900" title="{{ document.name }}">
         {{ document.name }}
       </p>
@@ -28,13 +49,13 @@
     </td>
 
     {# Categoría #}
-    <td class="px-4 py-3 whitespace-nowrap">
+    <td class="knowledge-td knowledge-td--kind">
       {% set kind = document.kind | string %}
       {% include "components/knowledge_kind_badge.html" %}
     </td>
 
     {# Estado #}
-    <td class="px-4 py-3 whitespace-nowrap">
+    <td class="knowledge-td knowledge-td--status">
       {% if status == "pending" %}
         <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
           <svg class="animate-spin h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -65,18 +86,18 @@
     </td>
 
     {# Chunks #}
-    <td class="px-4 py-3 text-right tabular-nums text-sm text-slate-700">
+    <td class="knowledge-td knowledge-td--chunks tabular-nums text-sm text-slate-700">
       {% if status == "ready" %}{{ document.chunk_count }}{% else %}—{% endif %}
     </td>
 
     {# Fecha de subida #}
-    <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+    <td class="knowledge-td knowledge-td--fecha text-xs text-slate-500">
       {{ document.created_at | local_datetime }}
     </td>
 
     {# Acciones #}
-    <td class="px-4 py-3">
-      <div class="flex items-center justify-end gap-2">
+    <td class="knowledge-td knowledge-td--actions">
+      <div class="flex items-center justify-end gap-1">
         <span id="k-spinner-{{ document.id }}" class="htmx-indicator" aria-hidden="true">
           <svg class="animate-spin h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
@@ -84,7 +105,6 @@
           </svg>
         </span>
 
-        {# Reintentar (solo en failed) #}
         {% if status == "failed" %}
         <button
           type="button"
@@ -93,12 +113,16 @@
           hx-swap="outerHTML"
           hx-confirm="¿Reintentar la indexación de este documento?"
           hx-indicator="#k-spinner-{{ document.id }}"
-          class="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
-          Reintentar
+          class="btn-ghost-icon cursor-pointer text-blue-600 hover:text-blue-800"
+          title="Reintentar">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span class="sr-only">Reintentar</span>
         </button>
         {% endif %}
 
-        {# Re-indexar (solo en ready) #}
         {% if status == "ready" %}
         <button
           type="button"
@@ -107,8 +131,8 @@
           hx-swap="outerHTML"
           hx-confirm="¿Re-indexar «{{ document.name }}»? Los chunks actuales se eliminarán y se re-generarán."
           hx-indicator="#k-spinner-{{ document.id }}"
-          class="btn-ghost-icon"
-          title="Re-indexar documento">
+          class="btn-ghost-icon cursor-pointer"
+          title="Re-indexar">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -117,23 +141,6 @@
         </button>
         {% endif %}
 
-        {# Ver detalle: carga panel lateral #}
-        <button
-          type="button"
-          hx-get="/knowledge/{{ document.id }}"
-          hx-target="#knowledge-detail-panel"
-          hx-swap="innerHTML"
-          hx-indicator="#k-spinner-{{ document.id }}"
-          class="btn-ghost-icon"
-          title="Ver detalle">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="sr-only">Ver detalle</span>
-        </button>
-
-        {# Eliminar #}
         <button
           type="button"
           hx-delete="/knowledge/{{ document.id }}"
@@ -141,8 +148,8 @@
           hx-swap="outerHTML"
           hx-confirm="¿Eliminar «{{ document.name }}»? Esta acción no se puede deshacer."
           hx-indicator="#k-spinner-{{ document.id }}"
-          class="btn-ghost-icon text-red-400 hover:text-red-600 transition-colors"
-          title="Eliminar documento">
+          class="btn-ghost-icon cursor-pointer text-red-400 hover:text-red-600"
+          title="Eliminar">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -153,10 +160,9 @@
     </td>
   </tr>
 
-  {# Fila de error expandida (solo si failed y hay mensaje) #}
   {% if status == "failed" and document.error_message %}
   <tr class="bg-red-50 border-b border-red-100">
-    <td colspan="6" class="px-4 py-2 text-xs text-red-700">
+    <td colspan="7" class="px-4 py-2 text-xs text-red-700">
       {{ document.error_message }}
     </td>
   </tr>

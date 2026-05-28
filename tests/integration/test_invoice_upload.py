@@ -10,7 +10,6 @@ Por qué _FakeStorage en lugar de moto:
 - moto requiere configurar región y endpoint compatibles; FakeStorage no.
 """
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from io import BytesIO
@@ -26,16 +25,17 @@ from app.main import create_app
 from app.models import DocTypeCode, Invoice, InvoiceStatus, Membership, Tenant, User
 from app.services import invoice_service
 from fastapi import Request
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 pytestmark = pytest.mark.integration
 
 # PDF real leído una vez a nivel de módulo para que todos los tests compartan
 # los mismos bytes sin releer el disco en cada caso.
 _PDF_BYTES = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "invoices" / "ejemplo_01.pdf"
+    Path(__file__).resolve().parents[1] / "fixtures" / "invoices" / "ejemplo_12.pdf"
 ).read_bytes()
 
 
@@ -74,7 +74,7 @@ async def _seed_tenant_bundle(
     # Motor propio: este helper corre fuera del ciclo de vida de conftest
     # (que gestiona db_session). Crear y disponer el motor aquí evita
     # interferir con las sesiones de otros tests.
-    engine = create_async_engine(rls_database_url, pool_pre_ping=True)
+    engine = create_async_engine(rls_database_url, poolclass=NullPool)
     sm = async_sessionmaker(engine, expire_on_commit=False)
     async with sm() as session:
         tenant = Tenant(
@@ -161,7 +161,7 @@ async def _list_invoices(
     tenant_id: UUID,
 ) -> list[Invoice]:
     """Lee invoices con RLS activo para verificar lo que el test creó."""
-    engine = create_async_engine(rls_database_url, pool_pre_ping=True)
+    engine = create_async_engine(rls_database_url, poolclass=NullPool)
     sm = async_sessionmaker(engine, expire_on_commit=False)
     async with sm() as session:
         await set_tenant_context(session, str(tenant_id))
@@ -171,92 +171,61 @@ async def _list_invoices(
     return list(rows)
 
 
-def test_upload_invoice_creates_row(
-    # invoices_migration_applied_sync: garantiza que la tabla invoices existe
-    # antes del test. Es síncrono para poder usarse en tests síncronos (TestClient).
-    invoices_migration_applied_sync: None,
-    # rls_database_url: URL de la BD de test inyectada por conftest.py.
+async def test_upload_invoice_creates_row(
+    invoices_migration_applied: None,
     rls_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # UUIDs únicos por test: evitan colisiones si los tests se ejecutan en paralelo
-    # o si la BD no se limpia entre ejecuciones.
     user_sub = f"u_upload_{uuid4().hex[:12]}"
     org_id = f"o_upload_{uuid4().hex[:12]}"
 
-    # asyncio.run(): el test es síncrono (TestClient) pero el seed es async.
-    # asyncio.run() crea un event loop temporal solo para el seed.
-    tid, uid = asyncio.run(
-        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
-    )
+    tid, uid = await _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id)
 
-    # Patch de storage en el service (no en el módulo storage): el service importa
-    # get_storage de app.core.storage; parchear allí afectaría a todos los módulos.
-    # Parchear en invoice_service afecta solo a las llamadas desde ese módulo.
     monkeypatch.setattr(invoice_service, "get_storage", _fake_get_storage)
-
     monkeypatch.setattr(
         "app.services.document_upload_service.enqueue_invoice_processing",
         AsyncMock(return_value="job-test"),
     )
-    # Reemplaza la resolución de Clerk JWT por el fake que inyecta los objetos
-    # de auth directamente en request.state.
     monkeypatch.setattr(
         "app.core.middleware.try_resolve_clerk_session",
         _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
     )
 
     try:
-        # create_app(): instancia fresca de la app para cada test, evitando
-        # que el estado de singletons del módulo app contamine otros tests.
-        # raise_server_exceptions=True: propaga excepciones del servidor al test
-        # en lugar de devolverlas como respuestas 500 silenciosas.
-        with TestClient(create_app(), raise_server_exceptions=True) as client:
-            files = [
-                ("files", ("ejemplo.pdf", BytesIO(_PDF_BYTES), "application/pdf")),
-            ]
-            response = client.post(
+        app = create_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
                 "/documents/upload",
-                files=files,
+                files=[("files", ("ejemplo.pdf", BytesIO(_PDF_BYTES), "application/pdf"))],
                 data={"doc_type_code": DocTypeCode.factura.value},
                 headers={
                     "Authorization": "Bearer fake-jwt-upload",
-                    # HX-Request: activa la rama de respuesta de fragmento HTML.
-                    # El test verifica el flujo HTMX completo.
                     "HX-Request": "true",
                 },
             )
         assert response.status_code == 200
-        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        rows = await _list_invoices(rls_database_url, tid)
         assert len(rows) == 1
-        # El status debe ser "processing" (no "pending"): create_invoice_from_upload
-        # avanza el estado justo después de subir a R2.
         assert rows[0].status == InvoiceStatus.processing
         assert rows[0].source_file_key is not None
-        # Verificación de la estructura de la key: debe seguir el formato de invoice_key().
         assert str(rows[0].source_file_key).startswith("invoices/")
-        # Verificación de aislamiento por tenant: el registro pertenece al tenant correcto.
         assert rows[0].tenant_id == tid
     finally:
-        # Limpiar singletons para que el siguiente test empiece con estado fresco.
-        # Sin esto, un singleton con configuración de test contaminaría otros tests.
         reset_storage_for_tests()
         reset_arq_pool_for_tests()
 
 
-def test_upload_invoice_rejects_invalid_type(
-    invoices_migration_applied_sync: None,
+async def test_upload_invoice_rejects_invalid_type(
+    invoices_migration_applied: None,
     rls_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_sub = f"u_bad_{uuid4().hex[:12]}"
     org_id = f"o_bad_{uuid4().hex[:12]}"
-    tid, uid = asyncio.run(
-        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
-    )
+    tid, uid = await _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id)
 
     monkeypatch.setattr(
-        "app.routes.web.invoices.enqueue_invoice_processing",
+        "app.services.document_upload_service.enqueue_invoice_processing",
         AsyncMock(return_value="job-test"),
     )
     monkeypatch.setattr(
@@ -265,12 +234,11 @@ def test_upload_invoice_rejects_invalid_type(
     )
 
     try:
-        with TestClient(create_app(), raise_server_exceptions=True) as client:
-            response = client.post(
+        app = create_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
                 "/documents/upload",
                 files=[
-                    # Texto plano: tipo no permitido. Los magic bytes de "This is
-                    # plain text." no coinciden con ninguna firma válida.
                     ("files", ("evil.txt", BytesIO(b"This is plain text."), "text/plain")),
                 ],
                 data={"doc_type_code": DocTypeCode.factura.value},
@@ -279,32 +247,25 @@ def test_upload_invoice_rejects_invalid_type(
                     "HX-Request": "true",
                 },
             )
-        # El endpoint devuelve 200 con HTML de error (no 4xx): el patrón HTMX
-        # usa fragmentos HTML para comunicar errores por fichero. Un 4xx rompería
-        # el swap de HTMX y no mostraría el mensaje al usuario.
         assert response.status_code == 200
-        # El error debe aparecer en el HTML devuelto (fragmento de panel).
         assert "unsupported" in response.text.lower()
 
-        # El fichero inválido no debe haber creado ningún registro en BD.
-        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        rows = await _list_invoices(rls_database_url, tid)
         assert len(rows) == 0
     finally:
         reset_storage_for_tests()
         reset_arq_pool_for_tests()
 
 
-def test_upload_two_sequential_htmx_requests(
-    invoices_migration_applied_sync: None,
+async def test_upload_two_sequential_htmx_requests(
+    invoices_migration_applied: None,
     rls_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dos subidas seguidas deben devolver HTML 200 (no JSON 422 ni redirect)."""
     user_sub = f"u_seq_{uuid4().hex[:12]}"
     org_id = f"o_seq_{uuid4().hex[:12]}"
-    tid, uid = asyncio.run(
-        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
-    )
+    tid, uid = await _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id)
 
     monkeypatch.setattr(invoice_service, "get_storage", _fake_get_storage)
     monkeypatch.setattr(
@@ -323,19 +284,24 @@ def test_upload_two_sequential_htmx_requests(
     payload = {"doc_type_code": DocTypeCode.factura.value}
 
     try:
-        with TestClient(create_app(), raise_server_exceptions=True) as client:
-            for name in ("primera.pdf", "segunda.pdf"):
-                response = client.post(
+        # Cada request usa su propio AsyncClient (y por tanto su propio ciclo de
+        # vida ASGI + engine singleton). Así se evita la contaminación de estado
+        # asyncpg entre peticiones cuando el event loop es function-scoped.
+        for name in ("primera.pdf", "segunda.pdf"):
+            async with AsyncClient(
+                transport=ASGITransport(app=create_app()), base_url="http://test"
+            ) as client:
+                response = await client.post(
                     "/documents/upload",
                     files=[("files", (name, BytesIO(_PDF_BYTES), "application/pdf"))],
                     data=payload,
                     headers=headers,
                 )
-                assert response.status_code == 200
-                assert "invoices-table-container" in response.text
-                assert "application/json" not in response.headers.get("content-type", "")
+            assert response.status_code == 200
+            assert "invoices-table-container" in response.text
+            assert "application/json" not in response.headers.get("content-type", "")
 
-        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        rows = await _list_invoices(rls_database_url, tid)
         assert len(rows) == 2
         assert all(row.status == InvoiceStatus.processing for row in rows)
     finally:
@@ -343,17 +309,15 @@ def test_upload_two_sequential_htmx_requests(
         reset_arq_pool_for_tests()
 
 
-def test_upload_without_files_field_returns_html_panel(
-    invoices_migration_applied_sync: None,
+async def test_upload_without_files_field_returns_html_panel(
+    invoices_migration_applied: None,
     rls_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sin campo files en multipart: HTML 200 con aviso, no JSON 422."""
     user_sub = f"u_nof_{uuid4().hex[:12]}"
     org_id = f"o_nof_{uuid4().hex[:12]}"
-    tid, uid = asyncio.run(
-        _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id),
-    )
+    tid, uid = await _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id)
 
     monkeypatch.setattr(
         "app.core.middleware.try_resolve_clerk_session",
@@ -366,8 +330,9 @@ def test_upload_without_files_field_returns_html_panel(
     }
 
     try:
-        with TestClient(create_app(), raise_server_exceptions=True) as client:
-            response = client.post(
+        app = create_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
                 "/documents/upload",
                 data={"doc_type_code": DocTypeCode.factura.value},
                 headers=headers,
@@ -376,7 +341,7 @@ def test_upload_without_files_field_returns_html_panel(
         assert "text/html" in response.headers.get("content-type", "")
         assert "invoices-table-container" in response.text
         assert "No se ha seleccionado ningún fichero" in response.text
-        rows = asyncio.run(_list_invoices(rls_database_url, tid))
+        rows = await _list_invoices(rls_database_url, tid)
         assert len(rows) == 0
     finally:
         reset_storage_for_tests()

@@ -44,6 +44,7 @@ dependencies = [
     "svix>=1.42.0",
     "jsonref>=1.1.0",
     "pypdf>=5.1.0",
+    "python-magic-bin>=0.4.14",
 ]
 
 [dependency-groups]
@@ -60,6 +61,7 @@ dev = [
     "respx>=0.21.0",
     "types-boto3>=1.35.0",
     "moto[s3]>=5.0.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -128,6 +130,7 @@ ignore = [
 "app/core/rate_limiter.py" = ["TCH003"]
 "app/models/knowledge.py" = ["TCH003", "RUF002"]
 "app/schemas/knowledge.py" = ["TCH"]
+"app/schemas/knowledge_search.py" = ["TCH"]
 "app/services/knowledge_document_service.py" = ["TCH"]
 "app/services/knowledge_index_service.py" = ["TCH"]
 
@@ -142,7 +145,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["migrations", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*"]
+module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*", "pgvector.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

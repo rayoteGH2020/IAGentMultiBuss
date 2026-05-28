@@ -25,32 +25,59 @@ class Base(DeclarativeBase):
 # el pool de conexiones); se instancian una vez por proceso y se reutilizan.
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+# En Python 3.14 + Windows, asyncpg QueuePool.dispose() puede dejar el
+# ProactorEventLoop en estado inválido. Los tests activan NullPool para evitarlo.
+_use_null_pool: bool = False
+
+
+def use_null_pool_for_tests() -> None:
+    """Fuerza NullPool en el engine singleton para tests.
+
+    En Python 3.14 + Windows, asyncpg QueuePool.dispose() puede dejar el
+    ProactorEventLoop en estado inválido para conexiones posteriores en el mismo
+    event loop. NullPool crea una conexión fresca por sesión y la cierra
+    inmediatamente, evitando contaminación entre tests function-scoped.
+    Llamar desde pytest_configure() para que aplique antes de cualquier test.
+    """
+    global _use_null_pool, _engine, _sessionmaker
+    _use_null_pool = True
+    _engine = None
+    _sessionmaker = None
 
 
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            # echo=False: deshabilita el log SQL en producción, que sería
-            # extremadamente verboso (una línea por query en cada request).
-            echo=False,
-            # pool_size=10: conexiones persistentes en el pool. Con N workers
-            # de uvicorn, el total de conexiones a Postgres = N x 10.
-            pool_size=10,
-            # max_overflow=20: conexiones adicionales permitidas cuando el pool
-            # está lleno. Máximo total = pool_size + max_overflow = 30.
-            max_overflow=20,
-            # pool_pre_ping=True: antes de ceder una conexión del pool envía
-            # un SELECT 1 para verificar que sigue activa. Previene errores de
-            # "stale connection" tras reinicios de Postgres o timeouts de red.
-            pool_pre_ping=True,
-            # pool_recycle=3600: fuerza el reciclado de conexiones cada hora.
-            # Algunos firewalls y load balancers cortan conexiones TCP inactivas
-            # sin notificar; reciclar periódicamente evita ese problema.
-            pool_recycle=3600,
-        )
+        if _use_null_pool:
+            from sqlalchemy.pool import NullPool
+
+            _engine = create_async_engine(
+                settings.database_url,
+                echo=False,
+                poolclass=NullPool,
+            )
+        else:
+            _engine = create_async_engine(
+                settings.database_url,
+                # echo=False: deshabilita el log SQL en producción, que sería
+                # extremadamente verboso (una línea por query en cada request).
+                echo=False,
+                # pool_size=10: conexiones persistentes en el pool. Con N workers
+                # de uvicorn, el total de conexiones a Postgres = N x 10.
+                pool_size=10,
+                # max_overflow=20: conexiones adicionales permitidas cuando el pool
+                # está lleno. Máximo total = pool_size + max_overflow = 30.
+                max_overflow=20,
+                # pool_pre_ping=True: antes de ceder una conexión del pool envía
+                # un SELECT 1 para verificar que sigue activa. Previene errores de
+                # "stale connection" tras reinicios de Postgres o timeouts de red.
+                pool_pre_ping=True,
+                # pool_recycle=3600: fuerza el reciclado de conexiones cada hora.
+                # Algunos firewalls y load balancers cortan conexiones TCP inactivas
+                # sin notificar; reciclar periódicamente evita ese problema.
+                pool_recycle=3600,
+            )
     return _engine
 
 

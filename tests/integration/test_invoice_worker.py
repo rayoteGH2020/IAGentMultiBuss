@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = pytest.mark.integration
 
 _PDF_BYTES = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "invoices" / "ejemplo_01.pdf"
+    Path(__file__).resolve().parents[1] / "fixtures" / "invoices" / "ejemplo_12.pdf"
 ).read_bytes()
 
 

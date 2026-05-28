@@ -59,7 +59,7 @@ def _make_db_mock() -> MagicMock:
 @pytest.mark.asyncio
 async def test_run_index_pipeline_success() -> None:
     db = _make_db_mock()
-    fake_embeddings = [[0.1] * 1536, [0.2] * 1536]
+    fake_embeddings = [[0.1] * 512, [0.2] * 512]
 
     with (
         patch("app.services.knowledge_index_service.get_storage") as mock_storage,

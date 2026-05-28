@@ -29,7 +29,7 @@ async def _seed_invoice_for_tenant(db: object, tenant_id: UUID) -> None:
     factura = Factura(
         fecha=date(2025, 6, 1),
         proveedor="Tenant Secret Corp",
-        cif_nif="A-TEST-001",  # pragma: allowlist secret
+        cif_nif="ATEST00001",  # pragma: allowlist secret
         base_imponible=Decimal("100"),
         iva_percent=Decimal("21"),
         iva_amount=Decimal("21"),

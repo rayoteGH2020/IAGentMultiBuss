@@ -112,7 +112,7 @@ def test_chunk_text_raises_too_many_chunks() -> None:
     # Forzar muchos chunks con max_chunks muy bajo.
     text = "\n\n".join(["párrafo corto"] * 10)
     with pytest.raises(TooManyChunksError) as exc_info:
-        chunk_text(text, target_tokens=1, max_chunks=3)
+        chunk_text(text, target_tokens=1, min_tokens=1, max_chunks=3)
     assert exc_info.value.max_chunks == 3
     assert exc_info.value.count > 3
 

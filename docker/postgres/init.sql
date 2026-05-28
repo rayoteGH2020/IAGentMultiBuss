@@ -27,7 +27,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- vector (pgvector): añade el tipo de dato VECTOR y los operadores de
 -- similitud coseno/L2/inner-product. Imprescindible para:
---   - La columna chunks.embedding vector(1536) del módulo 2 RAG.
+--   - La columna chunks.embedding vector(512) del módulo 2 RAG (voyage-3-lite).
 --   - El índice HNSW sobre esa columna (búsqueda de vecinos aproximados).
 -- Sin esta extensión, la migración que crea la tabla chunks fallaría con
 -- "type 'vector' does not exist".

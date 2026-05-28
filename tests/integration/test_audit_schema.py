@@ -20,6 +20,6 @@ async def test_audit_log_table_exists(audit_schema_ready: None, db_session) -> N
 @pytest.mark.asyncio
 async def test_audit_log_rls_enabled(audit_schema_ready: None, db_session) -> None:
     result = await db_session.execute(
-        text("SELECT relrowsecurity FROM pg_class " "WHERE relname = 'audit_log'"),
+        text("SELECT relrowsecurity FROM pg_class WHERE relname = 'audit_log'"),
     )
     assert result.scalar_one() is True

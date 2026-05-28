@@ -1,9 +1,9 @@
-"""Validación de subidas de documentos de conocimiento RAG (Paso 18).
+"""Validación de subidas de documentos de conocimiento RAG (Paso 18 + Paso 22).
 
 Sigue el mismo patrón que uploads.py (facturas) pero adaptado para los tipos
-de fichero del pipeline RAG: PDF digital, texto plano y Markdown.
-Las imágenes no están soportadas porque el pipeline extrae texto, no los pasa
-al LLM como contenido multimodal.
+de fichero del pipeline RAG: PDF digital, texto plano, Markdown e imágenes.
+Las imágenes (JPEG, PNG, WebP) se procesan con OCR vía LLM multimodal antes
+de ser chunkificadas — mismo modelo que la extracción de facturas (Paso 22).
 
 Detección de tipo en dos capas (igual que uploads.py):
   1. python-magic (libmagic): análisis profundo del contenido binario.
@@ -28,8 +28,11 @@ __all__ = [
 def _mime_from_signatures(data: bytes) -> str | None:
     """Detecta tipo por firmas de fichero sin dependencias externas.
 
-    Para documentos de conocimiento solo hay dos casos relevantes:
+    Casos soportados:
     - PDF: firma `%PDF` en los primeros 4 bytes.
+    - JPEG: marcador SOI 0xFF 0xD8 0xFF.
+    - PNG: firma de 8 bytes 0x89 PNG \\r\\n 0x1A \\n.
+    - WebP: contenedor RIFF con identificador "WEBP" en bytes 8-11.
     - Texto (plain / markdown): ausencia de bytes nulos + decodificable UTF-8.
       Markdown no tiene firma propia; su MIME se resuelve como text/plain y es
       aceptado porque text/plain está en ALLOWED_MIMES de settings.
@@ -37,9 +40,17 @@ def _mime_from_signatures(data: bytes) -> str | None:
     # PDF: cabecera "%PDF" (0x25 0x50 0x44 0x46), definida en PDF spec §7.5.2.
     if len(data) >= 4 and data[:4] == b"%PDF":
         return "application/pdf"
+    # JPEG: marcador SOI (Start of Image) 0xFF 0xD8 seguido de 0xFF.
+    if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    # PNG: firma de 8 bytes definida en PNG spec §5.2.
+    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    # WebP: contenedor RIFF con identificador "WEBP" en bytes 8-11.
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
     # Texto: sin bytes nulos en los primeros 512 bytes y decodificable como UTF-8.
-    # Los ficheros binarios (.exe, .zip, imágenes) casi siempre contienen bytes
-    # nulos, por lo que esta heurística es suficientemente selectiva para MVP.
+    # Los ficheros binarios (.exe, .zip) casi siempre contienen bytes nulos.
     if len(data) >= 1 and b"\x00" not in data[:512]:
         try:
             data[:512].decode("utf-8")

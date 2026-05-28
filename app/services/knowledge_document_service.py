@@ -312,7 +312,7 @@ async def request_reindex(
         request_ctx=request_ctx,
     )
 
-    await enqueue_knowledge_indexing(document_id, tenant_id)
+    await enqueue_knowledge_indexing(document_id, tenant_id, replace_existing=True)
     logger.info(
         "knowledge.document.reindex_requested",
         document_id=str(document_id),

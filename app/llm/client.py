@@ -584,13 +584,18 @@ class LLMClient:
             api_key = self._settings.voyage_api_key.get_secret_value().strip()
             if not api_key:
                 raise ExternalServiceError(
-                    "VOYAGE_API_KEY is not configured. "
-                    "Add it in Infisical and restart the worker."
+                    "VOYAGE_API_KEY is not configured. Add it in Infisical and restart the worker."
                 )
             model = self._settings.knowledge_embedding_model
-            self._voyage_embedder = VoyageEmbedder(api_key=api_key, model=model)
+            dims = self._settings.knowledge_embedding_dimensions
+            self._voyage_embedder = VoyageEmbedder(
+                api_key=api_key,
+                model=model,
+                output_dimension=dims,
+            )
 
         model = self._settings.knowledge_embedding_model
+        expected_dims = self._settings.knowledge_embedding_dimensions
 
         # Un trace_id compartido por todos los batches del mismo embed() call
         # agrupa los spans en Langfuse bajo un solo artefacto de observabilidad.
@@ -621,6 +626,13 @@ class LLMClient:
 
             try:
                 batch_result = await self._voyage_embedder.embed_batch(batch)
+                for vector in batch_result.embeddings:
+                    if len(vector) != expected_dims:
+                        raise ExternalServiceError(
+                            f"Embedding dimension mismatch: got {len(vector)}, "
+                            f"expected {expected_dims} for model {model}. "
+                            "Align KNOWLEDGE_EMBEDDING_DIMENSIONS with the Voyage model."
+                        )
                 all_embeddings.extend(batch_result.embeddings)
             except Exception as exc:
                 status = "error"

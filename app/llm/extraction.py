@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 import structlog
 from instructor.processing.multimodal import PDF, Image
+from pydantic import BaseModel, Field
 
 from app.llm.client import get_llm_client
 from app.llm.prompts_loader import load_prompt
@@ -183,3 +184,74 @@ async def extract_ticket(
         confidence=ticket.confidence,
     )
     return TicketExtractionResult(ticket=ticket, llm_call_id=completion.llm_call_id)
+
+
+# ---------------------------------------------------------------------------
+# OCR de imágenes para base de conocimiento (Paso 22)
+# ---------------------------------------------------------------------------
+
+KNOWLEDGE_OCR_PROMPT_VERSION = "knowledge_image_ocr_v1"
+
+# MIME de imagen soportados para OCR (mismos que uploads.py + knowledge_uploads.py).
+KNOWLEDGE_IMAGE_MIMES: frozenset[str] = frozenset({"image/jpeg", "image/png", "image/webp"})
+
+
+class _ImageOCRResult(BaseModel):
+    """Schema interno: el LLM devuelve todo el texto visible en la imagen."""
+
+    text: str = Field(description="Todo el texto visible en la imagen, transcrito fielmente")
+
+
+async def extract_text_from_image(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+) -> str:
+    """Extrae texto plano de una imagen mediante OCR vía LLM multimodal.
+
+    Usa el mismo modelo que la extracción de facturas (gemini-2.5-flash) y el
+    mismo punto de entrada LLMClient.complete() para garantizar trazabilidad en
+    llm_calls y Langfuse.
+
+    Args:
+        file_bytes: Bytes completos de la imagen (JPEG, PNG o WebP).
+        mime_type: MIME ya validado; debe estar en KNOWLEDGE_IMAGE_MIMES.
+        tenant_id: Tenant propietario (para RLS y trazabilidad).
+        db: Sesión async activa (necesaria para persistir llm_calls).
+
+    Returns:
+        Texto extraído de la imagen como cadena UTF-8. Puede ser vacío si la
+        imagen no contiene texto legible; el pipeline de indexación detectará
+        este caso y marcará el documento como failed.
+    """
+    if mime_type not in KNOWLEDGE_IMAGE_MIMES:
+        msg = f"extract_text_from_image: mime_type no soportado: {mime_type}"
+        raise ValueError(msg)
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(KNOWLEDGE_OCR_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction="Extrae todo el texto visible en la imagen.",
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=_ImageOCRResult,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=KNOWLEDGE_OCR_PROMPT_VERSION,
+        max_retries=2,
+    )
+    text = completion.result.text
+    logger.info(
+        "knowledge.image_ocr.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        mime_type=mime_type,
+        char_count=len(text),
+    )
+    return text

@@ -16,7 +16,6 @@ import pytest
 from app.core.db import set_tenant_context
 from app.core.errors import NotFoundError
 from app.core.storage import reset_storage_for_tests
-from app.jobs import knowledge_jobs
 from app.models import Tenant
 from app.models.knowledge import KnowledgeDocument, KnowledgeDocumentKind, KnowledgeDocumentStatus
 from app.services import knowledge_document_service
@@ -25,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.integration
 
-_FAKE_EMBEDDING = [1.0 / (1536**0.5)] * 1536
+_FAKE_EMBEDDING = [1.0 / (512**0.5)] * 512
 
 # Bytes de un "PDF" escaneado simulado: cabecera PDF válida pero pypdf no
 # puede extraer texto (todas las páginas devuelven cadena vacía).
@@ -129,18 +128,14 @@ async def test_scanned_pdf_marks_document_failed(
     tenant: Tenant = await tenant_factory()
     await set_tenant_context(db_session, str(tenant.id))
 
-    # Storage falso que devuelve el "PDF escaneado".
-    fake_storage = _FakeStorage(_SCANNED_PDF_BYTES)
-    monkeypatch.setattr(knowledge_jobs, "get_storage", lambda: fake_storage)
-
+    # Llamamos a run_index_pipeline directamente con el db_session del test,
+    # evitando session_factory_for_worker (que crea un engine singleton que puede
+    # entrar en conflicto con el event loop reemplazado entre tests en Windows).
+    import app.services.audit_service as audit_mod
     import app.services.knowledge_index_service as kis
 
+    fake_storage = _FakeStorage(_SCANNED_PDF_BYTES)
     monkeypatch.setattr(kis, "get_storage", lambda: fake_storage)
-
-    monkeypatch.setattr(knowledge_jobs, "tenant_knowledge_indexing_slot", _noop_slot)
-
-    import app.services.audit_service as audit_mod
-
     monkeypatch.setattr(audit_mod, "log_action", _noop_audit)
 
     # Simular pypdf.PdfReader devolviendo páginas sin texto (PDF escaneado).
@@ -167,11 +162,23 @@ async def test_scanned_pdf_marks_document_failed(
     doc_id = doc.id
     tenant_id = tenant.id
 
+    # Re-setear contexto de tenant: SET LOCAL se limpia al hacer commit.
+    await set_tenant_context(db_session, str(tenant_id))
+
+    # Ejecutar el pipeline directamente (sin el job wrapper de ARQ).
+    # El test verifica el comportamiento de run_index_pipeline con PDF escaneado,
+    # no la orquestación del job.
     with patch("pypdf.PdfReader", return_value=mock_reader):
-        result = await knowledge_jobs.index_knowledge_document({}, str(doc_id), str(tenant_id))
+        await kis.run_index_pipeline(
+            db_session,
+            tenant_id=tenant_id,
+            document_id=doc_id,
+            source_file_key=doc.source_file_key,
+            source_mime=doc.source_mime,
+        )
+    await db_session.commit()
 
-    assert result["status"] == "ok", f"Worker retornó: {result}"
-
+    # Re-setear contexto tras el segundo commit (SET LOCAL se limpia con cada commit).
     await set_tenant_context(db_session, str(tenant_id))
     db_session.expire_all()
 

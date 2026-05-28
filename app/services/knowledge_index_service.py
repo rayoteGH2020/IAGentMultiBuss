@@ -22,10 +22,11 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.document_text import extract_knowledge_text
+from app.core.document_text import ExtractedTextResult, extract_knowledge_text
 from app.core.storage import get_storage
 from app.core.text_chunking import TooManyChunksError, chunk_text
 from app.llm.client import get_llm_client
+from app.llm.extraction import KNOWLEDGE_IMAGE_MIMES, extract_text_from_image
 from app.models.knowledge import KnowledgeChunk
 from app.services.knowledge_document_service import (
     apply_index_result,
@@ -70,31 +71,68 @@ async def run_index_pipeline(
     file_bytes = await storage.download_bytes(source_file_key)
 
     # --- Paso 2: Extracción de texto ---
-    try:
-        extracted = extract_knowledge_text(file_bytes, source_mime)
-    except Exception as exc:
-        logger.warning(
-            "knowledge.index.extract_failed",
-            document_id=str(document_id),
-            tenant_id=str(tenant_id),
-            error=str(exc),
-        )
-        await mark_failed(
-            db,
-            tenant_id=tenant_id,
-            document_id=document_id,
-            error_message=f"{_ERR_EXTRACT}: {exc}",
-        )
-        return
+    # Bifurcación: imágenes → OCR via LLM multimodal; texto/PDF → extracción clásica.
+    if source_mime in KNOWLEDGE_IMAGE_MIMES:
+        try:
+            ocr_text = await extract_text_from_image(
+                file_bytes=file_bytes,
+                mime_type=source_mime,
+                tenant_id=tenant_id,
+                db=db,
+            )
+            extracted = ExtractedTextResult(
+                text=ocr_text,
+                char_count=len(ocr_text),
+                page_count=None,
+                warnings=[],
+            )
+        except Exception as exc:
+            logger.warning(
+                "knowledge.index.ocr_failed",
+                document_id=str(document_id),
+                tenant_id=str(tenant_id),
+                mime_type=source_mime,
+                error=str(exc),
+            )
+            await mark_failed(
+                db,
+                tenant_id=tenant_id,
+                document_id=document_id,
+                error_message=f"{_ERR_EXTRACT}: OCR falló — {exc}",
+            )
+            return
+    else:
+        try:
+            extracted = extract_knowledge_text(file_bytes, source_mime)
+        except Exception as exc:
+            logger.warning(
+                "knowledge.index.extract_failed",
+                document_id=str(document_id),
+                tenant_id=str(tenant_id),
+                error=str(exc),
+            )
+            await mark_failed(
+                db,
+                tenant_id=tenant_id,
+                document_id=document_id,
+                error_message=f"{_ERR_EXTRACT}: {exc}",
+            )
+            return
 
     # --- Paso 3: Validación de texto no vacío ---
     if not extracted.text.strip():
-        hint = (
-            "El PDF no contiene texto extraíble (posible escaneado). "
-            "Sube una versión con capa de texto o contacta con soporte."
-            if source_mime == "application/pdf"
-            else "El documento está vacío."
-        )
+        if source_mime == "application/pdf":
+            hint = (
+                "El PDF no contiene texto extraíble (posible escaneado). "
+                "Sube una versión con capa de texto o contacta con soporte."
+            )
+        elif source_mime in KNOWLEDGE_IMAGE_MIMES:
+            hint = (
+                "El OCR no detectó texto en la imagen. "
+                "Verifica que la imagen sea legible y contenga texto."
+            )
+        else:
+            hint = "El documento está vacío."
         await mark_failed(
             db,
             tenant_id=tenant_id,

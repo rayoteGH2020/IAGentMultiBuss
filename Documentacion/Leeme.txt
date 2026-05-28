@@ -8,6 +8,16 @@ Arrancar App
 >> http://localhost:8000
 
 
+para que sea visible desde el movil en la misma wifi
+
+Resumen
+Paso	Qué hacer
+1	Abre terminal como Administrador y ejecuta el netsh siguiente (solo una vez) > netsh advfirewall firewall add rule name="FastAPI Dev 8000" dir=in action=allow protocol=TCP localport=8000
+
+2	En tu terminal normal: infisical run -- uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+3	En el móvil abre http://192.168.0.23:8000
+Cuando abras /documents o /knowledge en el móvil verás el botón "Foto" junto al botón "Subir documentos" — en desktop no aparece.
+
 
 ## visible desde internet
 >> ngrok http --domain=evergreen-enable-repose.ngrok-free.dev 8000

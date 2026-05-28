@@ -18,11 +18,13 @@ logger = structlog.get_logger(__name__)
 
 ACTION_CHAT_MESSAGE_SENT = "chat.message_sent"
 ACTION_CHAT_TOOL_EXECUTED = "chat.tool_executed"
+ACTION_KNOWLEDGE_CHAT_SEARCH = "knowledge.chat_search"
 ACTION_CALENDAR_INTEGRATION_LINKED = "calendar.integration_linked"
 ACTION_CALENDAR_INTEGRATION_UNLINKED = "calendar.integration_unlinked"
 
 RESOURCE_CHAT_MESSAGE = "chat_message"
 RESOURCE_CHAT_THREAD = "chat_thread"
+RESOURCE_KNOWLEDGE = "knowledge"
 RESOURCE_CALENDAR_INTEGRATION = "calendar_integration"
 
 
@@ -125,6 +127,33 @@ async def log_chat_tool_executed(
         user_id=user_id,
         action=ACTION_CHAT_TOOL_EXECUTED,
         resource_type=RESOURCE_CHAT_THREAD,
+        resource_id=thread_id,
+        metadata=meta,
+    )
+
+
+async def log_knowledge_chat_search(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID | None,
+    thread_id: UUID,
+    query_hash: str | None,
+    citations_count: int,
+) -> AuditLog:
+    """Audita un turno de chat que usó búsqueda en base de conocimiento."""
+    meta: dict[str, Any] = {
+        "thread_id": str(thread_id),
+        "citations_count": citations_count,
+    }
+    if query_hash:
+        meta["query_hash"] = query_hash
+    return await log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_CHAT_SEARCH,
+        resource_type=RESOURCE_KNOWLEDGE,
         resource_id=thread_id,
         metadata=meta,
     )

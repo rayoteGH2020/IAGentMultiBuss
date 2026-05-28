@@ -8,6 +8,7 @@ from uuid import UUID
 import structlog
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.constants import default_queue_name, job_key_prefix, result_key_prefix
 
 from app.config import get_settings
 
@@ -98,19 +99,42 @@ async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
     return str(job.job_id)
 
 
-async def enqueue_knowledge_indexing(document_id: UUID, tenant_id: UUID) -> str:
+async def _purge_arq_job(job_id: str) -> None:
+    """Elimina job/resultado ARQ en Redis para permitir re-encolar (p. ej. reindex)."""
+    pool = await get_arq_pool()
+    await pool.delete(job_key_prefix + job_id, result_key_prefix + job_id)
+    await pool.zrem(default_queue_name, job_id)
+
+
+async def enqueue_knowledge_indexing(
+    document_id: UUID,
+    tenant_id: UUID,
+    *,
+    replace_existing: bool = False,
+) -> str:
+    """Encola indexación de conocimiento.
+
+    Args:
+        replace_existing: Si True, borra el job ARQ previo con el mismo id
+            (necesario en reindex: ARQ no re-encola si existe arq:job:/arq:result:).
+    """
+    job_id = f"knowledge:{document_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
     pool = await get_arq_pool()
     job = await pool.enqueue_job(
         "index_knowledge_document",
         str(document_id),
         str(tenant_id),
-        _job_id=f"knowledge:{document_id}",
+        _job_id=job_id,
     )
     if job is None:
         logger.warning(
             "arq.enqueue_knowledge_duplicate",
             document_id=str(document_id),
             tenant_id=str(tenant_id),
+            replace_existing=replace_existing,
         )
-        return f"knowledge:{document_id}"
+        return job_id
     return str(job.job_id)

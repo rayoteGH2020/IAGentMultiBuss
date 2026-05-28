@@ -104,8 +104,7 @@ def format_user_processing_error(
     display_name = (filename or "").strip() or "documento"
     if not raw_error or not raw_error.strip():
         return (
-            f'Error al procesar el documento "{display_name}". '
-            "No se pudo completar la extracción."
+            f'Error al procesar el documento "{display_name}". No se pudo completar la extracción.'
         )
 
     if raw_error.startswith('Error al procesar el documento "'):

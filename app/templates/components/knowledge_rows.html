@@ -83,18 +83,21 @@
     {% endif %}
   </div>
 
-  {# Tabla o estado vacío #}
+  {# Tabla o estado vacío — ancho completo del contenedor #}
   {% if documents %}
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-    <table class="data-table" role="grid" aria-label="Base de conocimiento">
+  <div class="knowledge-table-shell">
+    <table class="knowledge-table" role="grid" aria-label="Base de conocimiento">
       <thead>
         <tr>
-          <th class="w-64">Nombre</th>
-          <th class="w-28">Categoría</th>
-          <th class="w-28">Estado</th>
-          <th class="w-16 text-right">Chunks</th>
-          <th class="w-32">Fecha</th>
-          <th class="w-32 text-right">Acciones</th>
+          <th class="knowledge-th knowledge-th--detail" scope="col">
+            <span class="sr-only">Detalle</span>
+          </th>
+          <th class="knowledge-th knowledge-th--name" scope="col">Nombre</th>
+          <th class="knowledge-th knowledge-th--kind" scope="col">Categoría</th>
+          <th class="knowledge-th knowledge-th--status" scope="col">Estado</th>
+          <th class="knowledge-th knowledge-th--chunks" scope="col">Chunks</th>
+          <th class="knowledge-th knowledge-th--fecha" scope="col">Fecha</th>
+          <th class="knowledge-th knowledge-th--actions" scope="col">Acciones</th>
         </tr>
       </thead>
       {% for document in documents %}

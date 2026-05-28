@@ -89,22 +89,43 @@ class Settings(BaseSettings):
     knowledge_chunk_target_tokens: int = 600
     knowledge_chunk_overlap_tokens: int = 100
     knowledge_embedding_model: str = "voyage-3-lite"
-    knowledge_embedding_dimensions: int = 1536
+    # voyage-3-lite solo admite 512 dimensiones; debe coincidir con vector(N) en BD.
+    knowledge_embedding_dimensions: int = 512
     knowledge_index_max_concurrent_per_tenant: int = 3
     knowledge_max_uploads_per_day: int = 20
-    # MIME permitidos: PDF, texto plano, Markdown (dos tipos según cliente/SO).
+    # MIME permitidos: PDF, texto plano, Markdown y fotos (JPEG/PNG/WebP).
+    # Las imágenes pasan por OCR vía LLM antes de ser chunkificadas (Paso 22).
     knowledge_allowed_mimes: list[str] = [
         "application/pdf",
         "text/plain",
         "text/markdown",
         "text/x-markdown",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
     ]
     # Sub-fase opcional: enriquece cada chunk con una línea de contexto vía LLM.
     # Desactivado por defecto; activar solo cuando el pipeline base esté estable.
     knowledge_contextual_retrieval_enabled: bool = False
 
-    # Chat documental (Paso 16): tools de conocimiento vectorial desactivadas hasta módulo 2.
+    # Knowledge retrieval — búsqueda híbrida (Paso 19)
+    # RRF: Reciprocal Rank Fusion — k estándar de la literatura; ajustar solo si se evalúa.
+    knowledge_rrf_k: int = 60
+    # Candidatos previos al merge: cuántos resultados trae cada rama antes de fusionar.
+    knowledge_dense_candidates: int = 60  # LIMIT de la query vectorial HNSW
+    knowledge_sparse_candidates: int = 60  # LIMIT de la query BM25 tsvector
+    # Chunks devueltos al LLM tras el merge. top_k ≤ max_top_k siempre.
+    knowledge_default_top_k: int = 10
+    knowledge_max_top_k: int = 25  # techo para evitar saturar el contexto LLM
+    # Rate-limit de búsqueda por tenant (peticiones/minuto); ventana deslizante en Redis.
+    knowledge_search_rpm_limit: int = 120
+
+    # Chat unificado (Paso 20): expone tools RAG al LLM cuando True.
+    # Mantener False hasta completar Paso 20 (prompt unificado + citas en UI).
     knowledge_tools_enabled: bool = False
+    # Citas en UI del chat: máximo por mensaje y umbral RRF mínimo.
+    knowledge_chat_max_citations: int = 5
+    knowledge_chat_min_score_threshold: float = 0.35
     chat_daily_message_limit: int = 60
     chat_max_message_bytes: int = 4096
     chat_history_message_limit: int = 20

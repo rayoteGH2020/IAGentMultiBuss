@@ -2,37 +2,39 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from app.llm.tools.document_chat import (
-    build_document_chat_registry,
-    register_knowledge_tool_stubs,
-)
+from app.llm.tools.document_chat import build_document_chat_registry
+from app.llm.tools.knowledge_tools import register_knowledge_tools
 from app.llm.tools.registry import ToolContext, ToolRegistry
 
 
 @pytest.mark.asyncio
 async def test_search_knowledge_returns_not_available_when_disabled() -> None:
     registry = ToolRegistry()
-    register_knowledge_tool_stubs(registry)
+    register_knowledge_tools(registry)
     ctx = ToolContext(
         db=AsyncMock(),
         tenant_id=uuid4(),
         user_id=uuid4(),
     )
-    result = await registry.execute(
-        "search_knowledge",
-        {"query": "política de gastos"},
-        ctx,
-    )
+    with patch(
+        "app.llm.tools.registry.get_settings",
+        return_value=MagicMock(knowledge_tools_enabled=False),
+    ):
+        result = await registry.execute(
+            "search_knowledge",
+            {"query": "política de gastos"},
+            ctx,
+        )
     assert result.ok is False
     assert result.error == "knowledge_not_available"
     assert result.data.get("error") == "knowledge_not_available"
 
 
-def test_document_registry_exposes_five_tools() -> None:
+def test_document_registry_exposes_unified_tools() -> None:
     registry = build_document_chat_registry()
     names = {t.name for t in registry.list_for_llm()}
     assert names == {
@@ -41,6 +43,9 @@ def test_document_registry_exposes_five_tools() -> None:
         "get_document",
         "aggregate_documents",
         "list_document_parties",
+        "list_knowledge_sources",
+        "search_knowledge",
+        "get_knowledge_chunk",
     }
 
 
@@ -48,7 +53,7 @@ def test_registry_gemini_and_anthropic_schemas() -> None:
     registry = build_document_chat_registry()
     anthropic = registry.to_anthropic_tools()
     gemini = registry.to_gemini_tools()
-    assert len(anthropic) == 5
+    assert len(anthropic) == 8
     assert len(gemini) == 1
     assert anthropic[0]["name"] == "list_doc_types"
     assert "input_schema" in anthropic[0]

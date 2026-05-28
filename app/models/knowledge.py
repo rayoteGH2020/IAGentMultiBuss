@@ -133,9 +133,9 @@ class KnowledgeChunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # context: línea de contexto generada por contextual retrieval (sub-fase opcional).
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # embedding: vector coseno 1536-dimensional — modelo voyage-3-lite (arquitectura §8).
+    # embedding: vector coseno 512d — voyage-3-lite (única dimensión soportada por el modelo).
     # La app NUNCA lee este campo directamente; lo usa Postgres para búsqueda vectorial.
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(512), nullable=False)
     # search_vector: columna generada por Postgres; la app nunca escribe aquí.
     # Usada en búsqueda BM25/full-text en Paso 19 vía índice GIN.
     # 'spanish': configuración con stop-words en castellano, adecuada para contenido de pymes españolas.
