@@ -12,9 +12,9 @@ from __future__ import annotations
 import math
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
-import voyageai
+from voyageai.client_async import AsyncClient as VoyageAsyncClient
 
 # Voyage recomienda lotes de hasta 128 textos, pero 64 es más seguro para
 # documentos de texto largo (el límite real es de tokens, no de textos).
@@ -47,8 +47,7 @@ class VoyageEmbedder:
     """Cliente Voyage async con batching y normalización L2."""
 
     def __init__(self, api_key: str, model: str, *, output_dimension: int | None = None) -> None:
-        # AsyncClient: usa httpx.AsyncClient internamente; no bloquea el event loop.
-        self._client: Any = voyageai.AsyncClient(api_key=api_key)
+        self._client: VoyageAsyncClient = VoyageAsyncClient(api_key=api_key)
         self._model: str = model
         self._output_dimension: int | None = output_dimension
 
@@ -71,14 +70,13 @@ class VoyageEmbedder:
         # input_type="document": indica a Voyage que los textos son fragmentos
         # de documentos a indexar (no queries de búsqueda). Afecta levemente a
         # la representación vectorial en algunos modelos.
-        embed_kwargs: dict[str, object] = {
-            "model": self._model,
-            "input_type": "document",
-        }
-        if self._output_dimension is not None:
-            embed_kwargs["output_dimension"] = self._output_dimension
-        result = await self._client.embed(texts, **embed_kwargs)
-        normalized = [_l2_normalize(emb) for emb in result.embeddings]
+        result = await self._client.embed(
+            texts,
+            model=self._model,
+            input_type="document",
+            output_dimension=self._output_dimension,
+        )
+        normalized = [_l2_normalize(cast(list[float], emb)) for emb in result.embeddings]
         return EmbedBatchResult(
             embeddings=normalized,
             total_tokens=result.total_tokens,

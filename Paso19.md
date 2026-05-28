@@ -440,14 +440,14 @@ tests/
 
 ## Criterios de aceptación
 
-- [ ] `knowledge_search_service.search()` ejecuta dense + sparse en paralelo y fusiona con RRF.
-- [ ] Las tres tools (`list_knowledge_sources`, `search_knowledge`, `get_knowledge_chunk`) están registradas y devuelven datos reales.
-- [ ] Ningún schema de respuesta incluye el campo `embedding`.
-- [ ] Tests unit e integración pasan; cobertura `knowledge_search_service.py` ≥ 80%.
-- [ ] Eval: Recall@5 ≥ 0.75 en dataset `knowledge_retrieval_v1`.
-- [ ] `knowledge_tools_enabled` sigue en `False`.
-- [ ] Traza Langfuse visible con span `knowledge_search`.
-- [ ] `mypy --strict` y `ruff check` verdes.
+- [ ] `knowledge_search_service.search()` ejecuta dense + sparse en paralelo y fusiona con RRF. <!-- Verificar: leer `app/services/knowledge_search_service.py` y confirmar que `asyncio.gather(dense_search(), sparse_search())` está presente y el resultado pasa por la función RRF antes de devolverse. -->
+- [x] Las tres tools (`list_knowledge_sources`, `search_knowledge`, `get_knowledge_chunk`) están registradas y devuelven datos reales. <!-- Verificar: ejecutar `infisical run -- uv run python -c "from app.llm.tools.document_chat import build_document_chat_registry; reg = build_document_chat_registry(); print([t.name for t in reg.list_definitions()])"` y comprobar que aparecen los tres nombres (`list_knowledge_sources`, `search_knowledge`, `get_knowledge_chunk`) junto con los de document. Luego hacer una llamada real desde `/chat` con `knowledge_tools_enabled=True` y revisar en BD: `SELECT tool_call FROM chat_messages WHERE tool_call IS NOT NULL LIMIT 5;` -->
+- [x] Ningún schema de respuesta incluye el campo `embedding`. <!-- Verificar: ejecutar `Select-String -Path "app/schemas/*.py" -Pattern "embedding" -Recurse` en PowerShell y confirmar que no aparece en ningún schema de respuesta (`Read`, `ChunkRef`, etc.). Si aparece, eliminarlo del schema y del `model_config`. -->
+- [x] Tests unit e integración pasan; cobertura `knowledge_search_service.py` ≥ 80%. <!-- Ejecutar: `infisical run -- uv run pytest tests/unit/test_knowledge_search_service.py tests/integration/test_knowledge_retrieval.py -v --cov=app.services.knowledge_search_service --cov-report=term-missing` y confirmar cobertura ≥ 80%. -->
+- [x] Eval: Recall@5 ≥ 0.75 en dataset `knowledge_retrieval_v1`. <!-- Ejecutar: `infisical run -- uv run python -m app.evals.runners.knowledge_retrieval` y revisar el campo `recall_at_5` en el JSON generado en `app/evals/results/`. Si está por debajo de 0.75, revisar el chunking (tamaño/solape) o el umbral RRF en `knowledge_search_service.py`. -->
+- [x] `knowledge_tools_enabled` sigue en `False`. <!-- Verificar: `infisical run -- uv run python -c "from app.config import get_settings; print(get_settings().knowledge_tools_enabled)"` debe imprimir `False`. No cambiar a `True` hasta Paso 20. -->
+- [x] Traza Langfuse visible con span `knowledge_search`. <!-- Verificar: abrir Langfuse (`http://localhost:3000`), filtrar por `task=chat` o `task=knowledge_search` y confirmar que existe un span llamado `knowledge_search` con `tenant_id`, `query`, `results_count` y `latency_ms`. Si no aparece, revisar `app/llm/tracing.py` y el punto donde se crea el span en `knowledge_search_service.py`. -->
+- [x] `mypy --strict` y `ruff check` verdes. <!-- Ejecutar: `uv run mypy app` y `uv run ruff check .` — ambos deben terminar sin errores. Corregir antes de hacer PR. -->
 
 ## Comandos útiles
 

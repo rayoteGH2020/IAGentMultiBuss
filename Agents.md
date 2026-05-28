@@ -273,6 +273,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 - ✅ Migraciones revisadas a mano antes de commit.
 - ✅ Cifrar credenciales de cliente.
 - ✅ Aplicar RLS en toda tabla con `tenant_id`.
+- ✅ En cada linea PasoXX.md que el usuario tenga que hacer validaciones/comprobaciones, añadir descripcion y comandos CLI si es necesario.
 
 ### DON'T
 
