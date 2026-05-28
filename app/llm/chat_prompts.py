@@ -1,4 +1,4 @@
-"""Versión de prompt y construcción del system prompt del chat."""
+"""Versión de prompt y construcción del system prompt del chat (Paso 20 Fase B)."""
 
 from __future__ import annotations
 

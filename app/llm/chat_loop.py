@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -109,8 +109,11 @@ async def run_tool_loop(
             "tenant_id": str(tenant_id),
             "thread_id": str(ctx.thread_id) if ctx.thread_id else None,
             "prompt_version": prompt_version,
+            "knowledge_tools_used": False,
+            "citations_count": 0,
         },
     )
+    ctx = replace(ctx, langfuse_trace_id=trace_id_str)
 
     for iteration in range(max_iters):
         obs = langfuse.start_observation(
@@ -314,6 +317,13 @@ async def run_tool_loop(
         turn_messages = list(reversed(updated))
 
     rag_obs.update(
+        metadata={
+            "tenant_id": str(tenant_id),
+            "thread_id": str(ctx.thread_id) if ctx.thread_id else None,
+            "prompt_version": prompt_version,
+            "knowledge_tools_used": knowledge_tools_used,
+            "citations_count": len(final_citations),
+        },
         output={
             "knowledge_tools_used": knowledge_tools_used,
             "citations_count": len(final_citations),

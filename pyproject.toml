@@ -119,6 +119,7 @@ ignore = [
 "app/services/chat_tool_runner.py" = ["TCH"]
 "app/services/knowledge_search_service.py" = ["S608"]
 "app/evals/seed_knowledge_eval.py" = ["S608"]
+"app/models/usage_meter.py" = ["TCH003"]
 "app/services/document_query_service.py" = ["TCH"]
 "app/services/audit_service.py" = ["TCH"]
 "app/services/document_classification.py" = ["TCH"]

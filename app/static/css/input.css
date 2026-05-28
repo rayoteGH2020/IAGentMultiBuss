@@ -122,32 +122,37 @@
     @apply w-full text-sm border-collapse table-fixed;
   }
   /* Anchos fijos (según contenido típico actual). */
-  .invoices-col-fecha,
-  .invoices-th--fecha,
-  .invoices-td--fecha {
-    width: 6.5rem;
-  }
   .invoices-col-tipo,
   .invoices-th--tipo,
   .invoices-td--tipo {
     width: 7.5rem;
+  }
+  .invoices-col-fecha,
+  .invoices-th--fecha,
+  .invoices-td--fecha {
+    width: 6.5rem;
   }
   .invoices-col-subida,
   .invoices-th--subida,
   .invoices-td--subida {
     width: 8.75rem;
   }
-  .invoices-col-estado,
-  .invoices-th--estado,
-  .invoices-td--estado {
-    width: 5.75rem;
+  .invoices-col-iva-pct,
+  .invoices-th--iva-pct,
+  .invoices-td--iva-pct {
+    width: 4.5rem;
+  }
+  .invoices-col-num,
+  .invoices-th--num,
+  .invoices-td--num {
+    width: 6.75rem;
   }
   .invoices-col-detalles,
   .invoices-th--detalles,
   .invoices-td--detalles {
     width: 5.25rem;
   }
-  /* Proveedor, CIF/NIF y Total reparten el espacio restante. */
+  /* Proveedor (CIF/NIF) reparte el espacio flexible restante. */
   .invoices-col-grow {
     width: auto;
   }
@@ -340,6 +345,27 @@
   .chat-bubble-assistant--error {
     @apply border-red-200 bg-red-50/90 text-red-800;
   }
+
+  /* Citas RAG en respuestas del chat (Paso 20 E) */
+  .chat-cite-ref {
+    @apply align-super text-[0.7em] font-semibold leading-none text-sky-700 underline decoration-sky-400/50 underline-offset-2 transition-colors hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-200;
+  }
+  .citations-block {
+    @apply rounded-r-md bg-zinc-50/90 py-0.5 dark:bg-zinc-900/40;
+  }
+  .citation-chip {
+    @apply rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-800 ring-1 ring-zinc-200/90 transition hover:bg-zinc-200/90 dark:bg-zinc-800 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-700;
+  }
+  .citation-details > summary.citation-chip {
+    @apply select-none;
+  }
+  .citation-details[open] > summary.citation-chip {
+    @apply ring-2 ring-sky-400/60;
+  }
+  .citation-panel {
+    @apply shadow-sm;
+  }
+
   .chat-typing-dots span {
     @apply inline-block h-1.5 w-1.5 rounded-full bg-slate-400;
     animation: chat-typing 1.2s ease-in-out infinite;

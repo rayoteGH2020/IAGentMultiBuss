@@ -6,8 +6,7 @@
 
 <div
   class="flex justify-start gap-2.5"
-  id="chat-assistant-pending-{{ user_message.id }}"
-  x-data="{ done: false, errored: false }">
+  id="chat-assistant-pending-{{ user_message.id }}">
   <div
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700"
     aria-hidden="true">
@@ -16,38 +15,49 @@
     </svg>
   </div>
   <div
+    id="chat-assistant-bubble-{{ user_message.id }}"
     class="chat-bubble-assistant chat-bubble-assistant--pending w-full max-w-[min(85%,36rem)]"
-    :class="errored ? 'chat-bubble-assistant--error' : ''"
-    :aria-busy="!done && !errored">
+    aria-busy="true">
     <div
       id="assistant-content-{{ user_message.id }}"
       class="whitespace-pre-wrap min-h-[1.25rem]">
-      <span x-show="!done && !errored" class="chat-typing-dots inline-flex gap-1 py-0.5" aria-label="Generando respuesta">
+      <span class="chat-typing-dots inline-flex gap-1 py-0.5" aria-label="Generando respuesta">
         <span></span><span></span><span></span>
       </span>
     </div>
-    <div
-      hx-ext="sse"
-      sse-connect="/chat/threads/{{ thread.id }}/stream?message_id={{ user_message.id }}"
-      sse-swap="message, error"
-      sse-close="close"
-      hx-target="#assistant-content-{{ user_message.id }}"
-      hx-swap="innerHTML"
-      class="hidden"
-      aria-hidden="true"
-      hx-on::htmx:sse-message="
-        if (event.detail && event.detail.type === 'error') {
-          errored = true; done = true;
-        }
-      "
-      hx-on::htmx:sse-close="
-        done = true;
-        if (!errored) {
-          htmx.ajax('GET', '/chat/threads/{{ thread.id }}/messages/{{ user_message.id }}/assistant', {
-            target: '#chat-assistant-pending-{{ user_message.id }}',
-            swap: 'outerHTML'
-          });
-        }
-      "></div>
   </div>
+  <button
+    type="button"
+    id="load-assistant-{{ user_message.id }}"
+    class="sr-only"
+    tabindex="-1"
+    aria-hidden="true"
+    hx-get="/chat/threads/{{ thread.id }}/messages/{{ user_message.id }}/assistant"
+    hx-target="#chat-assistant-pending-{{ user_message.id }}"
+    hx-swap="outerHTML"></button>
+  <div
+    hx-ext="sse"
+    sse-connect="/chat/threads/{{ thread.id }}/stream?message_id={{ user_message.id }}"
+    sse-swap="message, error"
+    sse-close="close"
+    hx-target="#assistant-content-{{ user_message.id }}"
+    hx-swap="innerHTML"
+    class="hidden"
+    aria-hidden="true"
+    data-errored="0"
+    hx-on::htmx:sse-message="
+      if (event.detail && event.detail.type === 'error') {
+        this.dataset.errored = '1';
+        var bubble = document.getElementById('chat-assistant-bubble-{{ user_message.id }}');
+        if (bubble) {
+          bubble.classList.add('chat-bubble-assistant--error');
+          bubble.setAttribute('aria-busy', 'false');
+        }
+      }
+    "
+    hx-on::htmx:sse-close="
+      if (this.dataset.errored !== '1' && typeof htmx !== 'undefined') {
+        htmx.trigger('#load-assistant-{{ user_message.id }}', 'click');
+      }
+    "></div>
 </div>

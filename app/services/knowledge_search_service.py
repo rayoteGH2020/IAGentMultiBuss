@@ -75,6 +75,7 @@ async def search(
     filters: KnowledgeSearchFilters,
     llm_client: LLMClient,
     redis: Any | None = None,
+    langfuse_parent_trace_id: str | None = None,
 ) -> KnowledgeSearchResult:
     """Búsqueda híbrida: dense (HNSW) + sparse (BM25) + Reciprocal Rank Fusion.
 
@@ -86,6 +87,8 @@ async def search(
         llm_client: Cliente LLM para obtener el embedding del query.
         redis: Cliente redis.asyncio para rate-limit; si es None se omite el check
                (útil en tests unitarios donde no hay Redis disponible).
+        langfuse_parent_trace_id: Si se proporciona (p. ej. desde ``chat_rag_turn``),
+            la búsqueda se registra como sub-span en esa traza.
 
     Returns:
         KnowledgeSearchResult con los chunks más relevantes y métricas de latencia.
@@ -118,13 +121,16 @@ async def search(
             limit=settings.knowledge_search_rpm_limit,
         )
 
-    # 4. Inicia traza Langfuse
+    # 4. Inicia traza Langfuse (sub-span de chat_rag_turn si hay parent)
     langfuse = get_langfuse()
-    trace_uuid = langfuse.create_trace_id()
-    trace_ctx = TraceContext(trace_id=str(trace_uuid))
+    if langfuse_parent_trace_id:
+        trace_ctx = TraceContext(trace_id=langfuse_parent_trace_id)
+    else:
+        trace_uuid = langfuse.create_trace_id()
+        trace_ctx = TraceContext(trace_id=str(trace_uuid))
     obs = langfuse.start_observation(
         trace_context=trace_ctx,
-        name="knowledge_search",
+        name="search_knowledge",
         as_type="span",
         metadata={"tenant_id": str(tenant_id)},
         input={"query": query[:200], "top_k": top_k},

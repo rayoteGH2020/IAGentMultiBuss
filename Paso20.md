@@ -80,7 +80,7 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
 
 ### Fase A — Configuración y feature flag
 
-- [ ] Actualizar `app/config.py`:
+- [x] Actualizar `app/config.py`:
   ```python
   # Módulo 2 RAG — chat (Paso 20)
   knowledge_tools_enabled: bool = True           # activar globalmente en dev
@@ -89,14 +89,14 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
   ```
   > **Nota:** en producción, el flag puede pasarse a nivel de tenant con un campo en `tenants.settings jsonb`. MVP: global.
 
-- [ ] Documentar en `.env.example`:
+- [x] Documentar en `.env.example`:
   ```
   KNOWLEDGE_TOOLS_ENABLED=true
   ```
 
 ### Fase B — Prompt unificado
 
-- [ ] Crear `app/llm/prompts/chat_unified_v1.txt`:
+- [x] Crear `app/llm/prompts/chat_unified_v1.txt`:
 
   El prompt debe incluir (orientación; redactar en castellano neutro, tono profesional):
 
@@ -130,31 +130,31 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
 
   > El prompt se carga con `load_prompt("chat_unified_v1")`. Variables dinámicas como `[COMPANY_NAME]` se inyectan en `services/chat_service.py` antes de llamar al LLM.
 
-- [ ] Actualizar `app/services/chat_service.py` (o equivalente):
-  - [ ] Cargar prompt `chat_unified_v1` en lugar del anterior.
-  - [ ] Inyectar `company_name = tenant.name` en el system prompt.
-  - [ ] Ampliar `get_tools_for_tenant()` para incluir tools de conocimiento cuando `settings.knowledge_tools_enabled`.
+- [x] Actualizar `app/services/chat_service.py` (o equivalente):
+  - [x] Cargar prompt `chat_unified_v1` vía `build_chat_system_prompt()` cuando `knowledge_tools_enabled`.
+  - [x] Inyectar `company_name = tenant.name` en el system prompt (`render_prompt`).
+  - [x] Tools de conocimiento: `build_document_chat_registry()` + `register_knowledge_tools()`; filtro en `ToolRegistry.list_for_llm()` (ver Fase C si se añade `get_tools_for_chat`).
 
 ### Fase C — Inyección de tools y loop
 
-- [ ] Actualizar `app/llm/tools/registry.py`:
-  - [ ] `get_tools_for_chat(tenant_id, db, settings) -> list[ToolDefinition]`:
+- [x] Actualizar `app/llm/tools/registry.py`:
+  - [x] `get_tools_for_chat(tenant_id, db, settings) -> list[ToolDefinition]`:
     - Siempre incluye tools documentales (módulo 1.5).
     - Si `settings.knowledge_tools_enabled`: añade `list_knowledge_sources`, `search_knowledge`, `get_knowledge_chunk`.
-  - [ ] Asegurar que el dispatch de tools conocimiento llama a `knowledge_tools.py` con `(db, tenant_id, **args)`.
+  - [x] Dispatch de tools conocimiento vía `knowledge_tools.py` executors + `ToolContext(db, tenant_id, ...)`.
 
-- [ ] Actualizar `run_tool_loop()` en `app/llm/client.py` (o `chat_service.py`):
-  - [ ] Pasar tools dinámicas (documentales + conocimiento según flag).
-  - [ ] En cada iteración, si la tool fue `search_knowledge`, extraer `chunks` de la respuesta y acumularlos en `citations_buffer`.
-  - [ ] Al finalizar el loop, adjuntar `citations_buffer` al mensaje `assistant` en `chat_messages.tool_result` (o campo dedicado `citations jsonb`).
+- [x] Actualizar `run_tool_loop()` en `app/llm/chat_loop.py` (invocado desde `LLMClient`):
+  - [x] Tools dinámicas vía `ToolRegistry.list_for_llm()` / `get_tools_for_chat()`.
+  - [x] Acumula citas de `search_knowledge` en `citation_batches`.
+  - [x] Adjunta citas al mensaje `assistant` final en campo `citations` (JSONB).
 
-- [ ] Migración Alembic `p20_chat_citations_01`:
-  - [ ] Añadir columna `citations jsonb null` a `chat_messages` (si no existe ya como parte de `tool_result`).
-  - [ ] Índice: ninguno adicional necesario (no se busca por citations).
+- [x] Migración Alembic `p20_chat_citations_01`:
+  - [x] Columna `citations jsonb null` en `chat_messages`.
+  - [x] Sin índice adicional.
 
 ### Fase D — Serialización de citas
 
-- [ ] Estructura de citas en `chat_messages.citations`:
+- [x] Estructura de citas en `chat_messages.citations`:
   ```json
   [
     {
@@ -170,30 +170,26 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
   ]
   ```
 
-- [ ] Schema Pydantic `ChatCitation` en `app/schemas/chat.py` (actualizar `ChatMessageRead`).
-- [ ] Regla: solo incluir chunks con `score >= knowledge_chat_min_score_threshold`.
-- [ ] Máx. `knowledge_chat_max_citations` citas por mensaje (las de mayor score).
+- [x] Schema Pydantic `ChatCitation` en `app/schemas/chat.py` (actualizar `ChatMessageRead`).
+- [x] Regla: solo incluir chunks con `score >= knowledge_chat_min_score_threshold` (`chat_citations.py`).
+- [x] Máx. `knowledge_chat_max_citations` citas por mensaje (las de mayor score, `finalize_citations`).
 
 ### Fase E — UI de citas
 
-- [ ] Actualizar `components/chat_message_assistant.html`:
-  - [ ] Si `message.citations` no está vacío, renderizar bloque `<div class="citations-block">`.
-  - [ ] Cada cita: badge con número de referencia `[N]`, nombre del documento, icono de categoría (reutilizar `knowledge_kind_badge.html`).
-  - [ ] Al hacer click en la cita → panel lateral con:
-    - Nombre y categoría del documento.
-    - Fragmento completo (`content`).
-    - Contexto si existe (`context`).
-    - Enlace `hx-get="/knowledge/{document_id}"` para abrir detalle.
-  - [ ] Alpine.js para mostrar/ocultar panel de cita sin round-trip al servidor.
+- [x] Actualizar `components/chat_message_assistant.html`:
+  - [x] Si `message.citations` no está vacío, renderizar bloque `<div class="citations-block">`.
+  - [x] Cada cita: badge con `[N]`, nombre del documento, `knowledge_kind_badge.html`.
+  - [x] Panel desplegable (`components/chat_citation_panel.html`): nombre, categoría, fragmento (`content_snippet`).
+  - [x] `hx-get="/knowledge/{document_id}"` carga detalle en panel inline; enlace a `/knowledge`.
+  - [x] Alpine.js `openCitation` para toggle sin round-trip.
 
-- [ ] Actualizar `components/chat_message_assistant.html` para marcar referencias inline:
-  - El texto de la respuesta puede contener `[1]`, `[2]`, etc. — renderizarlos como superíndices clicables que activan el panel Alpine.
+- [x] Referencias inline `[N]` → filtro Jinja `chat_content_with_citation_refs` (`app/core/chat_content.py`).
 
-- [ ] CSS (Tailwind): estilo sutil para las citas (borde izquierdo, fondo gris claro). Compilar con `./scripts/tailwind_watch.sh` si hay clases nuevas.
+- [x] CSS en `input.css`: `.chat-cite-ref`, `.citations-block`, `.citation-chip`, `.citation-panel` (compilar Tailwind).
 
 ### Fase F — Evals `knowledge_qa_v1`
 
-- [ ] Crear `app/evals/datasets/knowledge_qa_v1.json`:
+- [x] Crear `app/evals/datasets/knowledge_qa_v1.json`:
   ```json
   [
     {
@@ -214,7 +210,7 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
   ```
   Mínimo **20 pares** con distribución de dificultad (easy/medium/hard) y variedad de `kind`.
 
-- [ ] Crear `app/evals/runners/knowledge_qa.py`:
+- [x] Crear `app/evals/runners/knowledge_qa.py`:
   - Por cada entrada del dataset:
     1. Invocar `knowledge_search_service.search()` con la pregunta (sin LLM, mide solo retrieval).
     2. Invocar `chat_service.answer_question()` (con LLM, mide calidad de respuesta).
@@ -231,7 +227,7 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
     - `latency_p50 < 8 s`.
   - Guardar resultado en `app/evals/results/knowledge_qa_v1_{timestamp}.json`.
 
-- [ ] Añadir al CI (`.github/workflows/evals.yml`):
+- [x] Añadir al CI (`.github/workflows/evals.yml`):
   ```yaml
   on:
     push:
@@ -244,26 +240,26 @@ No se crea un endpoint `/knowledge-chat` separado — mismo `/chat`, mismo hilo,
 
 ### Fase G — Tests de integración de chat RAG
 
-- [ ] `tests/integration/test_knowledge_chat.py`:
-  - [ ] `test_chat_uses_knowledge_tools_when_enabled()` — mensaje sobre política devuelve tool call `search_knowledge`.
-  - [ ] `test_chat_skips_knowledge_tools_when_disabled()` — `knowledge_tools_enabled=False` → no usa tools knowledge.
-  - [ ] `test_chat_citations_persisted()` — `chat_messages.citations` no vacío tras respuesta.
-  - [ ] `test_chat_citations_below_threshold_excluded()` — chunks con score bajo excluidos de `citations`.
-  - [ ] `test_chat_unified_prompt_loaded()` — prompt `chat_unified_v1` cargado (no stub anterior).
-  - [ ] `test_chat_rls_knowledge()` — tenant B no recibe chunks de tenant A en respuesta.
+- [x] `tests/integration/test_knowledge_chat.py`:
+  - [x] `test_chat_uses_knowledge_tools_when_enabled()` — mensaje sobre política devuelve tool call `search_knowledge`.
+  - [x] `test_chat_skips_knowledge_tools_when_disabled()` — `knowledge_tools_enabled=False` → no usa tools knowledge.
+  - [x] `test_chat_citations_persisted()` — `chat_messages.citations` no vacío tras respuesta.
+  - [x] `test_chat_citations_below_threshold_excluded()` — chunks con score bajo excluidos de `citations`.
+  - [x] `test_chat_unified_prompt_loaded()` — prompt `chat_unified_v1` cargado (no stub anterior).
+  - [x] `test_chat_rls_knowledge()` — tenant B no recibe chunks de tenant A en respuesta.
 
-- [ ] `tests/unit/test_chat_service_citations.py`:
-  - [ ] `test_extract_citations_from_tool_results()` — lógica de extracción de citas de `tool_result`.
-  - [ ] `test_citations_sorted_by_score()` — citas ordenadas por relevancia.
-  - [ ] `test_citations_capped_at_max()` — max 5 citas aunque haya más.
+- [x] `tests/unit/test_chat_service_citations.py`:
+  - [x] `test_extract_citations_from_tool_results()` — lógica de extracción de citas de `tool_result`.
+  - [x] `test_citations_sorted_by_score()` — citas ordenadas por relevancia.
+  - [x] `test_citations_capped_at_max()` — max 5 citas aunque haya más.
 
 ### Fase H — Observabilidad y audit
 
-- [ ] Span Langfuse `chat_rag_turn` (anida los sub-spans de `search_knowledge`):
+- [x] Span Langfuse `chat_rag_turn` (anida los sub-spans de `search_knowledge`):
   - `thread_id`, `knowledge_tools_used: bool`, `citations_count`.
-- [ ] Audit log: acción `knowledge.chat_search` con `thread_id`, `query_hash`, `citations_count`.
-- [ ] `llm_calls`: fila por cada llamada LLM del loop; campo `task='chat'`.
-- [ ] `usage_meter`: incrementar `rag_messages_count` por cada turno de chat RAG.
+- [x] Audit log: acción `knowledge.chat_search` con `thread_id`, `query_hash`, `citations_count`.
+- [x] `llm_calls`: fila por cada llamada LLM del loop; campo `task='chat'`.
+- [x] `usage_meter`: incrementar `rag_messages_count` por cada turno de chat RAG.
 
 ## Detalles técnicos
 
@@ -366,7 +362,8 @@ migrations/versions/
   p20_chat_citations_01_add_citations.py     # columna citations en chat_messages
 templates/
   components/chat_message_assistant.html     # bloque de citas
-  components/chat_citation_panel.html        # panel Alpine desplegable
+  components/chat_citation_panel.html        # panel Alpine desplegable (Paso 20 E)
+  core/chat_content.py                       # filtro referencias [N] inline
 tests/
   unit/test_chat_service_citations.py
   integration/test_knowledge_chat.py
@@ -378,20 +375,20 @@ app/evals/
 
 ## Verificación manual (checklist)
 
-1. [ ] `infisical run -- uv run alembic upgrade head` (migración `p20_chat_citations_01`).
-2. [ ] `infisical run -- uv run uvicorn app.main:app --reload` (terminal 1).
-3. [ ] `infisical run -- uv run arq app.jobs.settings.WorkerSettings` (terminal 2 — necesario si se sube algún doc nuevo).
-4. [ ] Abrir `/chat` → crear hilo nuevo.
-5. [ ] Preguntar: *"¿Cuál es el horario de atención?"* → respuesta cita fragmento de `knowledge_chunks`.
-6. [ ] Verificar bloque «Fuentes:» visible bajo la respuesta.
+1. [x] `infisical run -- uv run alembic upgrade head` (migración `p20_chat_citations_01`).
+2. [x] `infisical run -- uv run uvicorn app.main:app --reload` (terminal 1).
+3. [x] `infisical run -- uv run arq app.jobs.settings.WorkerSettings` (terminal 2 — necesario si se sube algún doc nuevo).
+4. [x] Abrir `/chat` → crear hilo nuevo.
+5. [x] Preguntar: *"¿Cuál es el horario de atención?"* → respuesta cita fragmento de `knowledge_chunks`.
+6. [X] Verificar bloque «Fuentes:» visible bajo la respuesta.
 7. [ ] Hacer click en una fuente → panel desplegable muestra fragmento.
-8. [ ] Preguntar sobre factura: *"¿Qué facturas hay de proveedor X?"* → usa tools documentales, NO knowledge.
-9. [ ] Verificar en BD:
+8. [x] Preguntar sobre factura: *"¿Qué facturas hay de proveedor X?"* → usa tools documentales, NO knowledge.
+9. [x] Verificar en BD:
    ```sql
    SELECT role, LEFT(content,80), citations FROM chat_messages
    ORDER BY created_at DESC LIMIT 5;
    ```
-10. [ ] Verificar Langfuse: span `chat_rag_turn` con sub-spans de búsqueda.
+10. [x] Verificar Langfuse: span `chat_rag_turn` con sub-spans de búsqueda.
 11. [ ] Ejecutar tests:
     ```bash
     infisical run -- uv run pytest tests/unit/test_chat_service_citations.py tests/integration/test_knowledge_chat.py -q
@@ -405,15 +402,15 @@ app/evals/
 
 ## Criterios de aceptación
 
-- [ ] `knowledge_tools_enabled=True` en dev; chat usa tools de conocimiento.
-- [ ] Respuestas con fuente en la base de conocimiento muestran citas en UI.
-- [ ] Citas persisten en `chat_messages.citations` como JSONB.
-- [ ] Tools documentales (módulo 1.5) siguen funcionando con normalidad.
-- [ ] Prompt `chat_unified_v1.txt` cargado; sin prompts hardcodeados en Python.
-- [ ] Eval `knowledge_qa_v1`: `retrieval_recall@5 ≥ 0.80`, `answer_grounded ≥ 0.85`.
-- [ ] Tests de integración pasan; CI verde.
-- [ ] RLS: tenant B no recibe información de tenant A en chat.
-- [ ] `mypy --strict` y `ruff check` verdes.
+- [x] `knowledge_tools_enabled=True` en dev; chat usa tools de conocimiento.
+- [x] Respuestas con fuente en la base de conocimiento muestran citas en UI.
+- [x] Citas persisten en `chat_messages.citations` como JSONB.
+- [x] Tools documentales (módulo 1.5) siguen funcionando con normalidad.
+- [x] Prompt `chat_unified_v1.txt` cargado; sin prompts hardcodeados en Python.
+- [x] Eval `knowledge_qa_v1`: `retrieval_recall@5 ≥ 0.80`, `answer_grounded ≥ 0.85`.
+- [X] Tests de integración pasan; CI verde.
+- [X] RLS: tenant B no recibe información de tenant A en chat.
+- [x] `mypy --strict` y `ruff check` verdes.
 
 ## Comandos útiles
 

@@ -25,18 +25,18 @@ class DocTypeRead(BaseModel):
 
 
 class ChatCitation(BaseModel):
-    """Cita de un fragmento de conocimiento en respuesta del asistente."""
+    """Cita de un fragmento de conocimiento en respuesta del asistente (Paso 20 D)."""
 
     model_config = ConfigDict(from_attributes=False)
 
     ref: int = Field(ge=1, description="Número de referencia inline [N]")
     chunk_id: UUID
     document_id: UUID | None = None
-    document_name: str
-    kind: str
+    document_name: str = Field(min_length=1, max_length=300)
+    kind: str = Field(min_length=1, max_length=64)
     position: int = Field(ge=0)
     content_snippet: str = Field(max_length=500)
-    score: float = Field(ge=0.0)
+    score: float = Field(ge=0.0, description="Score RRF u otro de relevancia de búsqueda")
 
 
 class ChatMessageRead(BaseModel):
@@ -62,6 +62,11 @@ class ChatMessageRead(BaseModel):
     ) -> list[ChatCitation] | None:
         if v is None:
             return None
+        from app.services.chat_citations import citations_from_json
+
+        dicts = [item for item in v if isinstance(item, dict)]
+        if dicts and len(dicts) == len(v):
+            return citations_from_json(dicts)
         return [ChatCitation.model_validate(item) if isinstance(item, dict) else item for item in v]
 
 

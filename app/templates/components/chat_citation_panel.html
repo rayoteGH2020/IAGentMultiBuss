@@ -1,0 +1,91 @@
+{# Contenido del panel de cita (dentro de <details>; cite + message en contexto). #}
+
+<div
+
+  class="citation-panel mt-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900/80"
+
+  role="region"
+
+  aria-label="Detalle fuente {{ cite.ref }}">
+
+  <div class="flex flex-wrap items-center gap-2">
+
+    <p class="font-medium text-zinc-900 dark:text-zinc-100">
+
+      {{ cite.document_name }}
+
+    </p>
+
+    {% set kind = cite.kind %}
+
+    {% include "components/knowledge_kind_badge.html" %}
+
+    <span class="text-xs text-zinc-500">· fragmento {{ cite.position }}</span>
+
+    {% if cite.score is not none %}
+
+    <span class="text-xs text-zinc-400">· relevancia {{ "%.2f"|format(cite.score) }}</span>
+
+    {% endif %}
+
+  </div>
+
+  <p class="mt-2 leading-relaxed text-zinc-700 dark:text-zinc-300">{{ cite.content_snippet }}</p>
+
+  {% if cite.document_id %}
+
+  <div class="mt-3 flex flex-wrap items-center gap-2">
+
+    <button
+
+      type="button"
+
+      class="cursor-pointer text-xs font-medium text-sky-700 hover:underline dark:text-sky-400"
+
+      hx-get="/knowledge/{{ cite.document_id }}"
+
+      hx-target="#citation-detail-{{ message.id }}-{{ cite.ref }}"
+
+      hx-swap="innerHTML"
+
+      hx-indicator="#citation-detail-spinner-{{ message.id }}-{{ cite.ref }}">
+
+      Ver documento completo
+
+    </button>
+
+    <span
+
+      id="citation-detail-spinner-{{ message.id }}-{{ cite.ref }}"
+
+      class="htmx-indicator inline-block h-3 w-3 animate-spin rounded-full border-2 border-sky-600 border-t-transparent"
+
+      aria-hidden="true"></span>
+
+    <a
+
+      href="/knowledge"
+
+      hx-get="/knowledge"
+
+      hx-target="#main-content"
+
+      hx-push-url="true"
+
+      class="cursor-pointer text-xs text-zinc-500 hover:text-sky-700 hover:underline dark:hover:text-sky-400">
+
+      Ir a base de conocimiento →
+
+    </a>
+
+  </div>
+
+  <div
+
+    id="citation-detail-{{ message.id }}-{{ cite.ref }}"
+
+    class="mt-2 empty:hidden"></div>
+
+  {% endif %}
+
+</div>

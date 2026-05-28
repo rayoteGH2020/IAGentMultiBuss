@@ -29,6 +29,7 @@ from app.models.llm_call import LLMCall
 from app.models.membership import Membership
 from app.models.tenant import Tenant
 from app.models.ticket import Ticket, TicketStatus
+from app.models.usage_meter import UsageMeter
 from app.models.user import User
 
 __all__ = [
@@ -56,5 +57,6 @@ __all__ = [
     "Ticket",
     "TicketStatus",
     "TimestampMixin",
+    "UsageMeter",
     "User",
 ]

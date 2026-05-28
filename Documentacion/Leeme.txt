@@ -7,6 +7,9 @@ Arrancar App
 >> infisical run -- uv run arq app.jobs.settings.WorkerSettings
 >> http://localhost:8000
 
+compilar CSS
+> .\bin\tailwindcss.exe -i app\static\css\input.css -o app\static\css\app.css --minify
+
 
 para que sea visible desde el movil en la misma wifi
 

@@ -166,6 +166,7 @@ async def execute_search_knowledge(
         filters=filters,
         llm_client=get_llm_client(),
         redis=get_redis(),
+        langfuse_parent_trace_id=ctx.langfuse_trace_id,
     )
     chunks_payload = [_chunk_to_tool_dict(c, truncate=True) for c in result.chunks]
     citations = [_citation_from_chunk(c) for c in result.chunks]

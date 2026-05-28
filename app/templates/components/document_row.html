@@ -1,5 +1,5 @@
 {% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
-{% set col_count = 8 %}
+{% set col_count = 9 %}
 {% set is_new = document.id|string in just_uploaded_ids %}
 
 {% if document.status in ("pending", "processing") %}
@@ -20,6 +20,7 @@
                 stroke-width="3" class="opacity-75"></path>
         </svg>
         Procesando
+        <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100">{{ document.status }}</span>
         <span class="text-slate-400 truncate max-w-[18rem]"
               title="{{ document.source_filename or '' }}">
           — {{ document.source_filename or "—" }}
@@ -70,36 +71,48 @@
   class="invoice-group{% if is_new %} is-new{% endif %}"
   x-data="{ linesOpen: false, llmOpen: false }">
   <tr id="document-{{ document.id }}">
-    <td class="col-muted invoices-td--fecha">
-      <span class="invoices-cell-inner whitespace-nowrap">{{ document.fecha or "—" }}</span>
-    </td>
     <td class="invoices-td--tipo">
       <span class="invoices-cell-inner" title="{{ document.doc_type_label }}">{{ document.doc_type_label }}</span>
     </td>
-    <td class="invoices-td--grow">
-      <span class="invoices-cell-inner" title="{{ document.proveedor or '' }}">{{ document.proveedor or "—" }}</span>
+    <td class="col-muted invoices-td--fecha">
+      <span class="invoices-cell-inner whitespace-nowrap">{{ document.fecha or "—" }}</span>
     </td>
     <td class="invoices-td--grow">
-      <span class="invoices-cell-inner font-mono text-xs text-slate-700" title="{{ document.cif_nif or '' }}">{{ document.cif_nif or "—" }}</span>
+      <span class="invoices-cell-inner" title="{{ document.proveedor or '' }}{% if document.cif_nif %} ({{ document.cif_nif }}){% endif %}">
+        {% if document.proveedor and document.cif_nif %}
+          {{ document.proveedor }} ({{ document.cif_nif }})
+        {% elif document.proveedor %}
+          {{ document.proveedor }}
+        {% elif document.cif_nif %}
+          ({{ document.cif_nif }})
+        {% else %}
+          —
+        {% endif %}
+      </span>
     </td>
-    <td class="col-amount font-medium invoices-td--grow">
-      <span class="invoices-cell-inner">
+    <td class="col-amount invoices-td--num text-right">
+      <span class="invoices-cell-inner tabular-nums">
+        {% if document.base_imponible is not none %}{{ "%.2f"|format(document.base_imponible) }} €{% else %}—{% endif %}
+      </span>
+    </td>
+    <td class="col-amount invoices-td--iva-pct text-right">
+      <span class="invoices-cell-inner tabular-nums">
+        {% if document.iva_percent is not none %}{{ "%.2f"|format(document.iva_percent) }} %{% else %}—{% endif %}
+      </span>
+    </td>
+    <td class="col-amount invoices-td--num text-right">
+      <span class="invoices-cell-inner tabular-nums">
+        {% if document.iva_amount is not none %}{{ "%.2f"|format(document.iva_amount) }} €{% else %}—{% endif %}
+      </span>
+    </td>
+    <td class="col-amount font-medium invoices-td--num text-right">
+      <span class="invoices-cell-inner tabular-nums">
         {% if document.total is not none %}{{ "%.2f"|format(document.total) }} €{% else %}—{% endif %}
       </span>
     </td>
     <td class="col-muted invoices-td--subida"
         title="Procesado: {{ document.updated_at | local_datetime }}">
       <span class="invoices-cell-inner whitespace-nowrap">{{ document.created_at | local_datetime }}</span>
-    </td>
-    <td class="invoices-td--estado">
-      <span class="invoices-cell-inner">
-      <span class="status-pill
-        {% if document.status == "ready" %}bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100
-        {% elif document.status == "reviewed" %}bg-slate-100 text-slate-600 ring-1 ring-slate-200
-        {% else %}bg-slate-100 text-slate-600 ring-1 ring-slate-200{% endif %}">
-        {{ document.status }}
-      </span>
-      </span>
     </td>
     <td class="col-actions invoices-td--detalles">
       <div class="col-actions-inner">
@@ -123,7 +136,6 @@
           class="btn-ghost-icon"
           :title="linesOpen ? 'Ocultar detalle' : 'Ver detalle del documento'">
           <span class="sr-only" x-text="linesOpen ? 'Ocultar detalle' : 'Ver detalle'"></span>
-          {# Colapsado: chevron abajo. Expandido: rota 180° (apunta arriba). #}
           <svg class="h-4 w-4 shrink-0 transition-transform duration-200"
                :class="linesOpen ? 'rotate-180' : ''"
                viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -144,7 +156,6 @@
     </td>
   </tr>
   {% if document.has_expandable_detail %}
-  {# `hidden` nativo: colapsado antes y después del swap HTMX (x-show en <tr> no oculta sin Alpine). #}
   <tr
     id="document-detail-{{ document.id }}"
     class="invoice-lines-row"

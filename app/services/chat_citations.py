@@ -8,6 +8,9 @@ from uuid import UUID
 from app.config import Settings, get_settings
 from app.schemas.chat import ChatCitation
 
+# Longitud máxima del snippet persistido en ``chat_messages.citations`` (Paso 20 D).
+CITATION_SNIPPET_MAX_CHARS = 200
+
 
 def extract_citations_from_search_data(
     data: dict[str, object],
@@ -92,3 +95,10 @@ def finalize_citations(
 def citations_to_json(citations: list[ChatCitation]) -> list[dict[str, Any]]:
     """Serializa citas para persistencia en ``chat_messages.citations``."""
     return [c.model_dump(mode="json") for c in citations]
+
+
+def citations_from_json(raw: list[dict[str, Any]] | None) -> list[ChatCitation]:
+    """Deserializa citas JSONB de BD a modelos validados."""
+    if not raw:
+        return []
+    return [ChatCitation.model_validate(item) for item in raw]

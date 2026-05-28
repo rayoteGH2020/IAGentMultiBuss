@@ -1,4 +1,4 @@
-{# Cabecera ordenable. Columnas fijas: fecha, tipo, subida, estado, detalles. #}
+{# Cabecera ordenable del panel /documents (facturas y tickets). #}
 {% macro sort_th(label, field, th_class="", align="") %}
   {% set is_active = panel_list.sort == field %}
   {% if is_active %}
@@ -29,13 +29,14 @@
 
 <thead>
   <tr>
-    {{ sort_th("Fecha", "fecha", "invoices-th--fecha") }}
     {{ sort_th("Tipo", "doc_type_label", "invoices-th--tipo") }}
-    {{ sort_th("Proveedor", "proveedor", "invoices-th--grow") }}
-    {{ sort_th("CIF/NIF", "cif_nif", "invoices-th--grow") }}
-    {{ sort_th("Total", "total", "invoices-th--grow invoices-th--amount", "text-right") }}
-    {{ sort_th("Subida", "created_at", "invoices-th--subida") }}
-    {{ sort_th("Estado", "status", "invoices-th--estado") }}
+    {{ sort_th("Fecha", "fecha", "invoices-th--fecha") }}
+    {{ sort_th("Proveedor (CIF/NIF)", "proveedor", "invoices-th--grow") }}
+    {{ sort_th("Base imponible", "base_imponible", "invoices-th--num invoices-th--amount", "text-right") }}
+    {{ sort_th("IVA %", "iva_percent", "invoices-th--iva-pct invoices-th--amount", "text-right") }}
+    {{ sort_th("IVA", "iva_amount", "invoices-th--num invoices-th--amount", "text-right") }}
+    {{ sort_th("Importe total", "total", "invoices-th--num invoices-th--amount", "text-right") }}
+    {{ sort_th("Fecha creación", "created_at", "invoices-th--subida") }}
     <th scope="col" class="invoices-th invoices-th--detalles text-center">
       <span class="invoices-th-label">Detalles</span>
     </th>

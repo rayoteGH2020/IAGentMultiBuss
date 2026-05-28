@@ -8,6 +8,7 @@ from app.llm.tools.registry import (
     ToolFamily,
     ToolRegistry,
     ToolResult,
+    get_tools_for_chat,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "build_document_chat_registry",
+    "get_tools_for_chat",
 ]

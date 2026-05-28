@@ -161,6 +161,18 @@ async def llm_calls_schema_ready(db_session: AsyncSession) -> None:
 
 
 @pytest.fixture
+async def usage_meter_schema_ready(db_session: AsyncSession) -> None:
+    result = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'usage_meter'"
+        ),
+    )
+    if result.scalar_one_or_none() is None:
+        pytest.skip("Run Paso20 usage_meter migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
 async def knowledge_schema_ready(db_session: AsyncSession) -> None:
     for table in ("knowledge_documents", "knowledge_chunks"):
         result = await db_session.execute(

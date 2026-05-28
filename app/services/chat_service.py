@@ -22,7 +22,7 @@ from app.schemas.chat import (
     ChatThreadRead,
 )
 from app.schemas.pagination import Page
-from app.services import audit_service, chat_tool_runner
+from app.services import audit_service, chat_tool_runner, usage_meter_service
 from app.services.audit_service import AuditRequestContext
 
 if TYPE_CHECKING:
@@ -280,14 +280,14 @@ async def _tenant_company_name(db: AsyncSession, tenant_id: UUID) -> str:
     return name if name else "tu empresa"
 
 
-async def _first_assistant_after_user_message(
+async def _final_assistant_after_user_message(
     db: AsyncSession,
     *,
     tenant_id: UUID,
     thread_id: UUID,
     user_message: ChatMessage,
 ) -> ChatMessage | None:
-    """Primer mensaje assistant tras el user en orden de hilo (created_at, id)."""
+    """Último mensaje assistant del turno (respuesta final con citas, no el de tool_call)."""
     stmt = (
         select(ChatMessage)
         .where(
@@ -298,13 +298,18 @@ async def _first_assistant_after_user_message(
     )
     rows = list((await db.execute(stmt)).scalars().all())
     seen_user = False
+    last_assistant: ChatMessage | None = None
     for row in rows:
         if row.id == user_message.id:
             seen_user = True
             continue
-        if seen_user and row.role == ChatMessageRole.assistant:
-            return row
-    return None
+        if not seen_user:
+            continue
+        if row.role == ChatMessageRole.user:
+            break
+        if row.role == ChatMessageRole.assistant:
+            last_assistant = row
+    return last_assistant
 
 
 async def _has_messages_after_user(
@@ -350,7 +355,7 @@ async def get_assistant_message_after_user(
     if user_row is None:
         return None
 
-    assistant = await _first_assistant_after_user_message(
+    assistant = await _final_assistant_after_user_message(
         db,
         tenant_id=tenant_id,
         thread_id=thread_id,
@@ -415,6 +420,7 @@ async def _run_assistant_turn(
             query_hash=query_hash,
             citations_count=len(loop_result.citations),
         )
+        await usage_meter_service.increment_rag_messages_count(db, tenant_id=tenant_id)
 
     logger.info(
         "chat.turn_completed",

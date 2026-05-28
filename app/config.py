@@ -120,12 +120,15 @@ class Settings(BaseSettings):
     # Rate-limit de búsqueda por tenant (peticiones/minuto); ventana deslizante en Redis.
     knowledge_search_rpm_limit: int = 120
 
-    # Chat unificado (Paso 20): expone tools RAG al LLM cuando True.
-    # Mantener False hasta completar Paso 20 (prompt unificado + citas en UI).
-    knowledge_tools_enabled: bool = False
-    # Citas en UI del chat: máximo por mensaje y umbral RRF mínimo.
+    # Módulo 2 RAG — chat unificado (Paso 20)
+    # True en dev: el LLM recibe tools de conocimiento además de las documentales.
+    # En producción puede desactivarse globalmente o por tenant (tenants.settings jsonb, futuro).
+    knowledge_tools_enabled: bool = True
+    # Citas en UI: máximo por mensaje assistant.
+    # El umbral está en 0.0 porque los scores son RRF (escala ~0.01-0.016), no coseno (0-1);
+    # el filtro de calidad real es el top_k de la búsqueda.
     knowledge_chat_max_citations: int = 5
-    knowledge_chat_min_score_threshold: float = 0.35
+    knowledge_chat_min_score_threshold: float = 0.0
     chat_daily_message_limit: int = 60
     chat_max_message_bytes: int = 4096
     chat_history_message_limit: int = 20

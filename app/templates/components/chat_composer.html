@@ -6,7 +6,7 @@
   hx-swap="beforeend"
   hx-indicator="#chat-composer-spinner"
   hx-disabled-elt="find button[type='submit']"
-  hx-on::after-request="if (event.detail.successful) { content = ''; $dispatch('chat-scroll-bottom') }"
+  hx-on::after-request="window.chatComposerClear && window.chatComposerClear(event)"
   x-data="{
     content: '',
     maxBytes: 4096,

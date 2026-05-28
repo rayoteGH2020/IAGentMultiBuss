@@ -13,13 +13,14 @@ if TYPE_CHECKING:
 
 PANEL_SORT_COLUMNS: frozenset[str] = frozenset(
     {
-        "fecha",
         "doc_type_label",
+        "fecha",
         "proveedor",
-        "cif_nif",
+        "base_imponible",
+        "iva_percent",
+        "iva_amount",
         "total",
         "created_at",
-        "status",
     },
 )
 PANEL_DEFAULT_SORT = "created_at"
@@ -62,6 +63,9 @@ class PanelDocumentRow:
     fecha: date | None
     proveedor: str | None
     cif_nif: str | None
+    base_imponible: Decimal | None
+    iva_percent: Decimal | None
+    iva_amount: Decimal | None
     total: Decimal | None
     created_at: datetime
     updated_at: datetime

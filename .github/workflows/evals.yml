@@ -9,6 +9,10 @@ on:
       - "app/llm/**"           # Cambios en cliente LLM, prompts, pricing, tracing
       - "app/schemas/invoice.py"       # Cambios en el schema Pydantic de extracción
       - "app/services/invoice_service.py"  # Cambios en el servicio que aplica el resultado
+      - "app/services/knowledge_search_service.py"
+      - "app/services/chat_service.py"
+      - "app/services/chat_citations.py"
+      - "app/llm/prompts/chat_unified*"
       - "app/evals/**"         # Cambios en datasets, runners o fixtures de evals
   # workflow_dispatch: permite ejecutar el workflow manualmente desde la UI
   # de GitHub Actions sin necesidad de hacer un PR. Útil para:
@@ -17,6 +21,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  knowledge-qa-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Validate knowledge_qa_v1 dataset
+        run: uv run python -m app.evals.runners.knowledge_qa --validate-only
+
   invoice-extraction:
     runs-on: ubuntu-latest
 

@@ -1,6 +1,7 @@
 /** @type {import("tailwindcss").Config} */
 module.exports = {
   content: ["./app/templates/**/*.html", "./app/static/js/**/*.js"],
+  safelist: ["chat-cite-ref"],
   theme: {
     extend: {
       colors: {

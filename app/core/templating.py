@@ -10,6 +10,7 @@ from app.core.calendar_datetime import (
     format_calendar_event_time,
     google_iso_to_local_input,
 )
+from app.core.chat_content import chat_content_plain
 from app.core.datetime_display import local_datetime
 from app.core.document_processing_errors import format_user_processing_error
 
@@ -31,6 +32,7 @@ def _user_processing_error_filter(raw_error: str | None, filename: str | None = 
 
 
 templates.env.filters["user_processing_error"] = _user_processing_error_filter
+templates.env.filters["chat_content_plain"] = chat_content_plain
 
 
 def _inject_auth_context(request: Request) -> dict[str, Any]:

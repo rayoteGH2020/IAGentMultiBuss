@@ -36,6 +36,9 @@ def row_from_invoice(
         fecha=invoice.fecha,
         proveedor=invoice.proveedor,
         cif_nif=invoice.cif_nif,
+        base_imponible=invoice.base_imponible,
+        iva_percent=invoice.iva_percent,
+        iva_amount=invoice.iva_amount,
         total=invoice.total,
         created_at=invoice.created_at,
         updated_at=invoice.updated_at,
@@ -65,6 +68,9 @@ def row_from_ticket(
         fecha=ticket.fecha,
         proveedor=ticket.comercio,
         cif_nif=ticket.numero_ticket,
+        base_imponible=ticket.base_imponible,
+        iva_percent=ticket.iva_percent,
+        iva_amount=ticket.iva_amount,
         total=ticket.total,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
@@ -164,14 +170,26 @@ def _sort_key(row: PanelDocumentRow, field: str) -> tuple[bool, object]:
     if field == "proveedor":
         return (row.proveedor is None, (row.proveedor or "").casefold())
 
-    if field == "cif_nif":
-        return (row.cif_nif is None, (row.cif_nif or "").casefold())
+    if field == "base_imponible":
+        return (
+            row.base_imponible is None,
+            row.base_imponible if row.base_imponible is not None else Decimal("-1"),
+        )
+
+    if field == "iva_percent":
+        return (
+            row.iva_percent is None,
+            row.iva_percent if row.iva_percent is not None else Decimal("-1"),
+        )
+
+    if field == "iva_amount":
+        return (
+            row.iva_amount is None,
+            row.iva_amount if row.iva_amount is not None else Decimal("-1"),
+        )
 
     if field == "total":
         return (row.total is None, row.total if row.total is not None else Decimal("-1"))
-
-    if field == "status":
-        return (False, row.status)
 
     if field == "created_at":
         return (False, row.created_at)

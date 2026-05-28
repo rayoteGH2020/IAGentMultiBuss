@@ -16,13 +16,8 @@
   <script src="/static/js/alpine.min.js" defer></script>
 
   <script>
-    document.body && document.body.addEventListener("htmx:configRequest", (e) => {
+    document.addEventListener("htmx:configRequest", () => {
       // Espacio para inyectar CSRF cuando llegue
-    });
-    document.body && document.body.addEventListener("htmx:afterSwap", (e) => {
-      if (window.Alpine && e.detail.target) {
-        window.Alpine.initTree(e.detail.target);
-      }
     });
     document.addEventListener("appError", (e) => {
       console.error("[middleware error]", e.detail.value ?? e.detail);

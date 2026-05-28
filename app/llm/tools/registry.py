@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.db import set_tenant_context
 from app.core.errors import ValidationError
 
@@ -63,6 +63,7 @@ class ToolContext:
     tenant_id: UUID
     user_id: UUID | None = None
     thread_id: UUID | None = None
+    langfuse_trace_id: str | None = None
 
 
 ToolExecutor = Callable[..., Awaitable[ToolResult]]
@@ -129,7 +130,7 @@ class ToolRegistry:
             types.FunctionDeclaration(
                 name=tool.name,
                 description=tool.description,
-                parameters=cast(Any, _parameters_schema(tool.parameters_model)),
+                parameters=cast(Any, _gemini_parameters_schema(tool.parameters_model)),
             )
             for tool in self.list_for_llm(families=families)
         ]
@@ -210,6 +211,48 @@ def _parameters_schema(model: type[BaseModel]) -> dict[str, Any]:
         schema = _inline_json_schema(schema, defs)
     schema.pop("title", None)
     return schema
+
+
+def _gemini_parameters_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """JSON Schema compatible con Gemini function calling (sin claves rechazadas por la API)."""
+    return cast(dict[str, Any], _strip_gemini_unsupported_schema_keys(_parameters_schema(model)))
+
+
+def _strip_gemini_unsupported_schema_keys(node: Any) -> Any:
+    """Elimina campos que el endpoint de tools de Gemini no acepta (p. ej. ``additionalProperties``)."""
+    if isinstance(node, dict):
+        cleaned = {
+            k: _strip_gemini_unsupported_schema_keys(v)
+            for k, v in node.items()
+            if k not in {"additionalProperties", "title", "$schema"}
+        }
+        return cleaned
+    if isinstance(node, list):
+        return [_strip_gemini_unsupported_schema_keys(item) for item in node]
+    return node
+
+
+def get_tools_for_chat(
+    *,
+    settings: Settings | None = None,
+    registry: ToolRegistry | None = None,
+    tenant_id: UUID | None = None,
+    db: AsyncSession | None = None,
+) -> list[ToolDefinition]:
+    """Tools expuestas al LLM en ``/chat`` según ``knowledge_tools_enabled`` (Paso 20).
+
+    Siempre incluye tools documentales; añade familia ``knowledge`` si el flag está activo.
+    ``tenant_id`` y ``db`` se reservan para overrides por tenant en ``tenants.settings``.
+    """
+    _ = tenant_id, db
+    from app.llm.tools.document_chat import build_document_chat_registry
+
+    reg = registry or build_document_chat_registry()
+    s = settings or get_settings()
+    tools = reg.list_definitions()
+    if not s.knowledge_tools_enabled:
+        tools = [t for t in tools if t.family != ToolFamily.knowledge]
+    return [t for t in tools if t.enabled]
 
 
 def _inline_json_schema(node: Any, defs: dict[str, Any]) -> Any:

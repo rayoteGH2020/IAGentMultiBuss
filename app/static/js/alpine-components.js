@@ -111,6 +111,49 @@ function registerChatMessagesScroll() {
   }));
 }
 
+/** HTMX inserta HTML sin procesar; Alpine debe inicializar cada swap (chat, modales, etc.). */
+function registerHtmxAlpineBridge() {
+  const initAlpineOnSwap = (event) => {
+    const target = event.detail?.target;
+    if (!(target instanceof Element)) return;
+    if (window.htmx?.process) {
+      window.htmx.process(target);
+    }
+    if (window.Alpine) {
+      window.Alpine.initTree(target);
+    }
+  };
+  document.addEventListener("htmx:afterSwap", initAlpineOnSwap);
+  document.addEventListener("htmx:afterSettle", initAlpineOnSwap);
+}
+
+/** Limpia el textarea del compositor tras POST HTMX exitoso (sin depender solo de Alpine). */
+function registerChatComposerClear() {
+  window.chatComposerClear = (event) => {
+    if (!event?.detail?.successful) return;
+    const form =
+      event.detail.elt instanceof HTMLFormElement
+        ? event.detail.elt
+        : document.getElementById("chat-composer");
+    if (!(form instanceof HTMLFormElement)) return;
+    const textarea = form.querySelector("#chat-content");
+    if (textarea instanceof HTMLTextAreaElement) {
+      textarea.value = "";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (window.Alpine) {
+      const data = window.Alpine.$data(form);
+      if (data && Object.prototype.hasOwnProperty.call(data, "content")) {
+        data.content = "";
+      }
+    }
+    document.dispatchEvent(new CustomEvent("chat-scroll-bottom", { bubbles: true }));
+  };
+}
+
+registerHtmxAlpineBridge();
+registerChatComposerClear();
+
 document.addEventListener("alpine:init", () => {
   registerInvoicesTableColumns();
   registerChatMessagesScroll();
