@@ -1,0 +1,30 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Admin — Canales de {{ tenant.name }}{% endblock %}
+{% block page_title %}Canales externos — {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl space-y-6">
+
+  <a href="/admin/integrations"
+     class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+    </svg>
+    Volver a la lista de tenants
+  </a>
+
+  <div class="space-y-4">
+
+    {% with integration=whatsapp_integration, is_connected=whatsapp_connected %}
+      {% include "components/integration_whatsapp.html" %}
+    {% endwith %}
+
+    {% with integration=telegram_integration, is_connected=telegram_connected %}
+      {% include "components/integration_telegram.html" %}
+    {% endwith %}
+
+  </div>
+
+</div>
+{% endblock %}

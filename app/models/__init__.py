@@ -16,7 +16,13 @@ from app.models.calendar_integration import (
     CalendarIntegrationProvider,
     CalendarIntegrationStatus,
 )
+from app.models.channel_integration import (
+    ChannelIntegration,
+    ChannelIntegrationStatus,
+    ChannelType,
+)
 from app.models.chat import ChatMessage, ChatMessageRole, ChatThread
+from app.models.conversation import ChannelMessage, Conversation
 from app.models.doc_type import DocType, DocTypeCode
 from app.models.invoice import Invoice, InvoiceLine, InvoiceStatus
 from app.models.knowledge import (
@@ -38,9 +44,14 @@ __all__ = [
     "CalendarIntegration",
     "CalendarIntegrationProvider",
     "CalendarIntegrationStatus",
+    "ChannelIntegration",
+    "ChannelIntegrationStatus",
+    "ChannelMessage",
+    "ChannelType",
     "ChatMessage",
     "ChatMessageRole",
     "ChatThread",
+    "Conversation",
     "DocType",
     "DocTypeCode",
     "IdMixin",

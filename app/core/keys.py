@@ -67,6 +67,26 @@ def ticket_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     return f"tickets/{tenant_id}/{now:%Y/%m}/{uuid.uuid4()}-{safe}"
 
 
+def knowledge_faq_key(tenant_id: uuid.UUID, document_id: uuid.UUID) -> str:
+    """Genera una key R2 determinista para el contenido serializado de un FAQ (Paso 21 B).
+
+    Estructura: documents/{tenant_id}/faq/{document_id}.txt
+    Determinista por document_id para que las actualizaciones sobreescriban
+    el mismo objeto en R2 sin dejar huérfanos.
+    """
+    return f"documents/{tenant_id}/faq/{document_id}.txt"
+
+
+def knowledge_url_key(tenant_id: uuid.UUID) -> str:
+    """Genera una key R2 para texto scrapeado de una URL (Paso 21 A).
+
+    Estructura: documents/{tenant_id}/url/{yyyy}/{mm}/{uuid}.txt
+    El fichero .txt contendrá el texto plano extraído de la URL.
+    """
+    now = datetime.now(UTC)
+    return f"documents/{tenant_id}/url/{now:%Y/%m}/{uuid.uuid4()}.txt"
+
+
 def document_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     """Genera una key para documentos del módulo de conocimiento (RAG).
 

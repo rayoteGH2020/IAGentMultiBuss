@@ -1,0 +1,211 @@
+<article id="integration-whatsapp" class="card overflow-hidden p-0">
+  <header class="border-b border-slate-100 bg-slate-50/80 px-6 py-4">
+    <div class="flex items-start gap-4">
+      {# WhatsApp icon #}
+      <span class="flex-shrink-0 h-10 w-10 rounded-full bg-[#25D366] flex items-center justify-center">
+        <svg class="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.107.548 4.086 1.504 5.805L.057 23.25a.75.75 0 00.918.917l5.516-1.434A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.922 0-3.728-.5-5.292-1.375l-.361-.21-3.737.972.994-3.667-.228-.373A9.951 9.951 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
+        </svg>
+      </span>
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-slate-900">WhatsApp Business</h3>
+        <p class="text-sm text-slate-500 mt-1 leading-relaxed">
+          Recibe y responde mensajes de clientes via WhatsApp Business API.
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <div class="px-6 py-5" x-data="{ detailsOpen: false }" @keydown.escape.window="detailsOpen = false">
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="text-xs font-medium uppercase tracking-wide text-slate-500 shrink-0">Estado</span>
+        {% if is_connected %}
+          <span class="inline-flex items-center justify-center h-9 w-9 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600"
+                title="Conectado" aria-label="Conectado">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+          </span>
+        {% else %}
+          <span class="inline-flex items-center justify-center h-9 w-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500"
+                title="Desconectado" aria-label="Desconectado">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+            </svg>
+          </span>
+        {% endif %}
+      </div>
+
+      <button type="button"
+              @click="detailsOpen = true"
+              class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer shrink-0"
+              aria-haspopup="dialog"
+              :aria-expanded="detailsOpen.toString()">
+        <svg class="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+        {{ "Gestionar" if is_connected else "Configurar" }}
+      </button>
+    </div>
+
+    {# Error message #}
+    {% if error_message %}
+    <p class="mt-3 text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" role="alert">
+      {{ error_message }}
+    </p>
+    {% endif %}
+
+    {# Modal #}
+    <div x-show="detailsOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+         @click.self="detailsOpen = false"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="whatsapp-details-title">
+      <div class="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200"
+           @click.outside="detailsOpen = false">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h4 id="whatsapp-details-title" class="text-base font-semibold text-slate-900">
+            WhatsApp Business — {{ tenant.name }}
+          </h4>
+          <button type="button"
+                  @click="detailsOpen = false"
+                  class="rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  aria-label="Cerrar">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-4 space-y-4">
+          {% if is_connected and integration %}
+            {# Connected state #}
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 border border-emerald-200">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+              Conectado
+            </span>
+            <dl class="space-y-3 text-sm">
+              {% if integration.display_name %}
+              <div class="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">Número</dt>
+                <dd class="mt-1 font-medium text-slate-900">{{ integration.display_name }}</dd>
+              </div>
+              {% endif %}
+              <div class="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">Phone Number ID</dt>
+                <dd class="mt-1 font-mono text-xs text-slate-700 break-all">{{ integration.phone_number_id or "—" }}</dd>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5" x-data="{ copied: false }">
+                <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">URL de webhook</dt>
+                <dd class="mt-1 flex items-center gap-2">
+                  <code class="flex-1 font-mono text-xs text-slate-700 break-all">{{ app_base_url }}/api/webhooks/whatsapp</code>
+                  <button type="button"
+                          @click="navigator.clipboard.writeText('{{ app_base_url }}/api/webhooks/whatsapp'); copied = true; setTimeout(() => copied = false, 2000)"
+                          class="shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          :title="copied ? 'Copiado' : 'Copiar'">
+                    <svg x-show="!copied" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                    <svg x-show="copied" class="h-4 w-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </button>
+                </dd>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">Umbral de confianza</dt>
+                <dd class="mt-1 font-medium text-slate-900">{{ "%.0f"|format(integration.confidence_threshold * 100) }}%</dd>
+              </div>
+            </dl>
+            <p class="text-xs text-slate-500 leading-relaxed">
+              Registra la URL del webhook en Meta Developer Console → WhatsApp → Configuración → Webhooks → <code class="font-mono">messages</code>.
+            </p>
+            <form hx-post="/admin/integrations/{{ tenant.id }}/whatsapp/disconnect"
+                  hx-target="#integration-whatsapp"
+                  hx-swap="outerHTML"
+                  hx-confirm="¿Desconectar WhatsApp de {{ tenant.name }}?"
+                  hx-indicator="#wa-disconnect-spinner"
+                  @submit="detailsOpen = false">
+              <div class="flex flex-wrap items-center gap-3 pt-1">
+                <button type="submit" class="btn-secondary cursor-pointer">Desconectar</button>
+                <span id="wa-disconnect-spinner" class="htmx-indicator inline-flex items-center gap-2 text-sm text-slate-500" aria-live="polite">
+                  <svg class="h-4 w-4 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  Desconectando…
+                </span>
+              </div>
+            </form>
+
+          {% else %}
+            {# Disconnected state — configure form #}
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-200">
+              <span class="h-1.5 w-1.5 rounded-full bg-slate-400" aria-hidden="true"></span>
+              No configurado
+            </span>
+            <form hx-post="/admin/integrations/{{ tenant.id }}/whatsapp/save"
+                  hx-target="#integration-whatsapp"
+                  hx-swap="outerHTML"
+                  hx-indicator="#wa-save-spinner"
+                  @submit="detailsOpen = false"
+                  class="space-y-3">
+              <div>
+                <label for="wa-phone-number-id" class="block text-xs font-medium text-slate-700 mb-1">
+                  Phone Number ID de Meta <span class="text-red-500">*</span>
+                </label>
+                <input id="wa-phone-number-id" name="phone_number_id" type="text" required
+                       placeholder="123456789012345"
+                       class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"/>
+              </div>
+              <div>
+                <label for="wa-api-token" class="block text-xs font-medium text-slate-700 mb-1">
+                  Token de acceso permanente <span class="text-red-500">*</span>
+                </label>
+                <input id="wa-api-token" name="api_token" type="password" required
+                       autocomplete="off"
+                       class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"/>
+              </div>
+              <div>
+                <label for="wa-display-name" class="block text-xs font-medium text-slate-700 mb-1">
+                  Número visible (opcional)
+                </label>
+                <input id="wa-display-name" name="display_name" type="text"
+                       placeholder="+34 612 345 678"
+                       class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"/>
+              </div>
+              <div>
+                <label for="wa-confidence" class="block text-xs font-medium text-slate-700 mb-1">
+                  Umbral de confianza para respuesta automática
+                </label>
+                <input id="wa-confidence" name="confidence_threshold" type="number"
+                       min="0" max="1" step="0.05" value="0.5"
+                       class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"/>
+                <p class="mt-1 text-xs text-slate-500">Valor entre 0 y 1. Si la confianza es menor, se escala al negocio.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 pt-1">
+                <button type="submit" class="btn-primary cursor-pointer">Conectar</button>
+                <span id="wa-save-spinner" class="htmx-indicator inline-flex items-center gap-2 text-sm text-slate-500" aria-live="polite">
+                  <svg class="h-4 w-4 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  Guardando…
+                </span>
+              </div>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</article>

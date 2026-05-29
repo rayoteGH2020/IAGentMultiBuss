@@ -447,6 +447,34 @@ def _rrf_merge(
 
 
 # ---------------------------------------------------------------------------
+# Normalización de scores para canales externos
+# ---------------------------------------------------------------------------
+
+
+def normalize_rrf_score(rrf_score: float, *, rrf_k: int) -> float:
+    """Convierte un score RRF a escala 0-1 compatible con ``confidence_threshold``.
+
+    El score RRF máximo teórico para una lista es ``1/(rrf_k + 1)``.
+    Multiplicar por ``(rrf_k + 1)`` lleva el rango ``[0, 1/(k+1)]`` → ``[0, 1]``.
+    Si el chunk aparece en ambas listas (dense + sparse) el score se clampea a 1.0.
+
+    Ejemplos con rrf_k=60 (max teórico por lista = 1/61 ≈ 0.0164):
+      rank 1  → 0.0164 → 1.000  (resultado perfecto)
+      rank 5  → 0.0154 → 0.938
+      rank 10 → 0.0143 → 0.871
+      rank 30 → 0.0111 → 0.678
+      rank 60 → 0.0083 → 0.508
+
+    Usado por ``channel_chat_service`` para calcular ``confidence`` antes de
+    comparar con ``ChannelIntegration.confidence_threshold`` (escala 0-1).
+    """
+    if rrf_k <= 0:
+        return 0.0
+    max_single = 1.0 / (rrf_k + 1)
+    return min(rrf_score / max_single, 1.0)
+
+
+# ---------------------------------------------------------------------------
 # Rate-limit
 # ---------------------------------------------------------------------------
 

@@ -81,9 +81,16 @@ class ToolDefinition:
 
 @dataclass
 class ToolRegistry:
-    """Registro mutable de tools; una instancia por modo de chat."""
+    """Registro mutable de tools; una instancia por modo de chat.
+
+    ``allowed_families``: si se especifica, ``execute()`` rechaza cualquier tool
+    cuya familia no esté en el conjunto, incluso si está registrada. Úsalo en
+    registries de canal externo para garantizar que nunca se ejecuten tools
+    documentales aunque el LLM intente inyectarlas.
+    """
 
     _tools: dict[str, ToolDefinition] = field(default_factory=dict)
+    allowed_families: frozenset[ToolFamily] | None = None
 
     def register(self, tool: ToolDefinition) -> None:
         if tool.name in self._tools:
@@ -151,6 +158,17 @@ class ToolRegistry:
                 data={},
                 citations=[],
                 error=f"Unknown tool: {name!r}",
+            )
+
+        # Capa 2 de guardrail: rechaza tools fuera de la familia permitida aunque
+        # estuvieran registradas (defensa en profundidad contra bugs futuros o
+        # inyecciones que intenten escalar a tools documentales en contexto de canal).
+        if self.allowed_families is not None and tool.family not in self.allowed_families:
+            return ToolResult(
+                ok=False,
+                data={"error": "tool_not_allowed_in_context", "tool": name},
+                citations=[],
+                error=f"Tool {name!r} is not available in this context",
             )
 
         settings = get_settings()

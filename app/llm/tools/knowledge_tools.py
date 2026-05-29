@@ -216,6 +216,24 @@ async def execute_get_knowledge_chunk(
     )
 
 
+def build_channel_registry() -> ToolRegistry:
+    """Registry exclusivo para canales externos (WhatsApp, Telegram).
+
+    Garantías de seguridad (defensa en profundidad):
+      1. Solo registra tools de ``ToolFamily.knowledge`` — las tools documentales
+         (facturas, tickets) no existen en este registry; ``execute()`` devuelve
+         "Unknown tool" si el LLM intentase llamarlas por inyección de prompt.
+      2. ``allowed_families=frozenset({ToolFamily.knowledge})`` en el registry:
+         aunque en el futuro se registrase accidentalmente una tool de otra familia,
+         ``execute()`` la rechazaría antes de invocar su executor.
+      3. RLS de tenant activo en ``execute()`` vía ``set_tenant_context``: el
+         cliente externo solo ve datos del tenant asociado a su número de teléfono.
+    """
+    registry = ToolRegistry(allowed_families=frozenset({ToolFamily.knowledge}))
+    register_knowledge_tools(registry)
+    return registry
+
+
 def register_knowledge_tools(registry: ToolRegistry) -> None:
     """Registra las tres tools reales de conocimiento (familia ``knowledge``)."""
     registry.register(

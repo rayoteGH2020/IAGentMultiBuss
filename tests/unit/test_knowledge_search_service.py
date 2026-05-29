@@ -113,6 +113,51 @@ async def test_search_caps_top_k() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tests normalize_rrf_score (Paso 21 — confianza canales externos)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_rrf_score_rank_1_equals_1() -> None:
+    """El mejor resultado posible (rank 1, una lista) debe normalizar a 1.0."""
+    k = 60
+    score = 1.0 / (k + 1)  # 1/61 ≈ 0.01639
+    assert kss.normalize_rrf_score(score, rrf_k=k) == pytest.approx(1.0)
+
+
+def test_normalize_rrf_score_dual_list_clamped_to_1() -> None:
+    """Chunk en ambas listas a rank 1 → score 2/61 → clampea a 1.0."""
+    k = 60
+    score = 2.0 / (k + 1)  # aparece en dense Y sparse, rank 1 en ambas
+    assert kss.normalize_rrf_score(score, rrf_k=k) == pytest.approx(1.0)
+
+
+def test_normalize_rrf_score_rank_10() -> None:
+    """Rank 10 en una lista debe normalizar a ~0.871."""
+    k = 60
+    score = 1.0 / (k + 10)  # 1/70
+    normalized = kss.normalize_rrf_score(score, rrf_k=k)
+    assert 0.85 < normalized < 0.90
+
+
+def test_normalize_rrf_score_rank_60() -> None:
+    """Rank 60 (el peor candidato del LIMIT 60) normaliza a ~0.508 — sobre el umbral 0.5."""
+    k = 60
+    score = 1.0 / (k + 60)  # 1/120
+    normalized = kss.normalize_rrf_score(score, rrf_k=k)
+    assert 0.50 < normalized < 0.52
+
+
+def test_normalize_rrf_score_zero_is_zero() -> None:
+    """Score cero (sin resultados) → confianza 0.0."""
+    assert kss.normalize_rrf_score(0.0, rrf_k=60) == 0.0
+
+
+def test_normalize_rrf_score_invalid_k_returns_zero() -> None:
+    """rrf_k <= 0 es una configuración inválida → devuelve 0.0 sin excepción."""
+    assert kss.normalize_rrf_score(0.01, rrf_k=0) == 0.0
+
+
+# ---------------------------------------------------------------------------
 # _check_search_rate
 # ---------------------------------------------------------------------------
 

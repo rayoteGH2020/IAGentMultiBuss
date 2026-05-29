@@ -1,4 +1,4 @@
-# Paso 21 — Canales externos: ingesta URL, FAQ manual, WhatsApp y Telegram
+¿Se chunkea o se indexa cada FAQ como un chunk único?# Paso 21 — Canales externos: ingesta URL, FAQ manual, WhatsApp y Telegram
 
 ## Objetivo
 
@@ -84,7 +84,7 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
 
 ### A.1 — Configuración
 
-- [ ] Ampliar `app/config.py`:
+- [x] Ampliar `app/config.py`:
   ```python
   # Ingesta URL (Paso 21)
   knowledge_url_max_size_bytes: int = 2 * 1024 * 1024
@@ -96,37 +96,38 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
 
 ### A.2 — Scraping
 
-- [ ] Crear `app/core/web_scraper.py`:
-  - [ ] `async def scrape_url(url: str, settings: Settings) -> ScrapedResult`:
-    - Validar URL (scheme, blacklist, longitud).
-    - `httpx.AsyncClient` con timeout `knowledge_url_timeout_s`.
-    - Respetar `robots.txt` (simplificado: si `Disallow: /` → abortar).
-    - Convertir HTML → texto plano con `html2text`.
-    - Truncar a `knowledge_url_max_size_bytes`.
-    - `ScrapedResult(text, title, final_url, char_count)`.
-  - [ ] Errores HTTP → `ScrapingError` con mensaje descriptivo.
+- [x] Crear `app/core/web_scraper.py`:
+  - [x] `async def scrape_url(url: str, settings: Settings) -> ScrapedResult`:
+    - [x] Validar URL (scheme, blacklist, longitud).
+    - [x] `httpx.AsyncClient` con timeout `knowledge_url_timeout_s`.
+    - [x] Respetar `robots.txt` (simplificado: si `Disallow: /` → abortar).
+    - [x] Convertir HTML → texto plano con `html2text`.
+    - [x] Truncar a `knowledge_url_max_size_bytes`.
+    - [x] `ScrapedResult(text, title, final_url, char_count)`.
+  - [x] Errores HTTP → `ScrapingError` con mensaje descriptivo.
 
 ### A.3 — Migración y modelo
 
-- [ ] Verificar que `source_url text null` existe en `knowledge_documents`. Si no:
-  - [ ] Migración `p21_a_knowledge_url`: `ALTER TABLE knowledge_documents ADD COLUMN source_url text`.
-  - [ ] Actualizar `KnowledgeDocument.source_url: Mapped[str | None]`.
+- [x] Migración `p21_a_knowledge_url_faq_01_add_columns` ya aplicada desde la primera sesión.
+- [x] `KnowledgeDocument.source_url: Mapped[str | None]` ya existe en el modelo.
 
 ### A.4 — Worker
 
-- [ ] Crear `app/jobs/knowledge_url_jobs.py`:
-  - `index_knowledge_url(ctx, document_id, tenant_id)` — scraping + reutilizar `run_index_pipeline()` de Paso 18.
-- [ ] Registrar en `app/jobs/settings.py` y `app/jobs/queue.py`.
+- [x] Crear `app/jobs/knowledge_url_jobs.py` con `index_knowledge_url()` — scraping + upload R2 + `run_index_pipeline()`.
+- [x] Registrado en `app/jobs/settings.py` (timeout 120 s) y `enqueue_knowledge_url_indexing()` en `queue.py`.
 
 ### A.5 — Rutas y UI
 
-- [ ] Ampliar `app/routes/web/knowledge.py`: `GET/POST /knowledge/url`.
-- [ ] Actualizar `pages/knowledge/index.html`: tab «Añadir URL».
+- [x] Ampliar `app/routes/web/knowledge.py`: `POST /knowledge/url` con rate-limit y manejo de `ScrapingError`.
+- [x] Crear `app/templates/components/knowledge_url_form.html` — modal Alpine + HTMX.
+- [x] Actualizar `pages/knowledge/index.html`: botón «Añadir URL» junto al de subida.
 
 ### A.6 — Tests
 
-- [ ] `tests/unit/test_web_scraper.py`: mocks con `respx`; errores HTTP; robots.txt.
-- [ ] `tests/integration/test_knowledge_url.py`: URL → job → `chunk_count > 0`.
+- [x] `tests/unit/test_web_scraper.py`: mocks con `respx`; errores HTTP; robots.txt; truncado; extracción de título.
+- [x] `tests/integration/test_knowledge_url.py`: job llamado directamente, httpx interceptado con `respx`, R2 y embeddings mockeados.
+  - [x] `test_index_knowledge_url_full_flow` — URL → scraping → status=ready, chunk_count > 0, nombre actualizado con título.
+  - [x] `test_index_knowledge_url_scraping_failure_marks_failed` — HTTP 404 → status=failed con error_message.
 
 ---
 
@@ -134,7 +135,7 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
 
 ### B.1 — Configuración
 
-- [ ] Ampliar `app/config.py`:
+- [x] Ampliar `app/config.py`:
   ```python
   knowledge_faq_max_pairs: int = 200
   knowledge_faq_min_answer_chars: int = 10
@@ -142,7 +143,7 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
 
 ### B.2 — Serialización
 
-- [ ] Crear `app/core/faq_serializer.py`:
+- [x] Crear `app/core/faq_serializer.py` con `FaqPair`, `serialize_faq()`, `deserialize_faq()`:
   ```python
   class FaqPair(BaseModel):
       question: str
@@ -154,25 +155,29 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
 
 ### B.3 — Migración y modelo
 
-- [ ] Migración `p21_b_knowledge_faq`: `ALTER TABLE knowledge_documents ADD COLUMN faq_content text`.
-- [ ] Actualizar `KnowledgeDocument.faq_content: Mapped[str | None]`.
+- [x] Migración `p21_a_knowledge_url_faq_01_add_columns` ya añadió `faq_content text` null.
+- [x] `KnowledgeDocument.faq_content: Mapped[str | None]` ya existe en el modelo.
 
 ### B.4 — Servicio
 
-- [ ] Ampliar `app/services/knowledge_document_service.py`:
-  - `create_from_faq(faq, tenant, user, db)` — serializa pares, sin R2, encola `index_knowledge_document`.
-  - `update_faq_pairs(document_id, pairs, tenant, db)` — actualiza `faq_content`, reencola.
-  - `get_faq_pairs(document_id, tenant, db) -> list[FaqPair]`.
+- [x] Ampliar `app/services/knowledge_document_service.py`:
+  - [x] `create_from_faq()` — serializa pares, sube a R2 (key determinista por doc_id), crea doc con `faq_content`.
+  - [x] `update_faq_pairs()` — re-serializa, sobreescribe R2, actualiza `faq_content`, status=pending.
+  - [x] `get_faq_pairs(doc)` — parsea `faq_content` con `deserialize_faq()`.
 
 ### B.5 — Rutas y UI
 
-- [ ] Ampliar `app/routes/web/knowledge.py`: `GET/POST /knowledge/faq`, `GET/PUT /knowledge/{id}/faq`.
-- [ ] `components/knowledge_faq_form.html`: lista Alpine de pares Q/A con botones añadir/borrar.
+- [x] `POST /knowledge/faq` — crear FAQ con validación de pares (mín. 1, respuesta ≥ min_chars).
+- [x] `GET /knowledge/{id}/faq` — formulario de edición pre-cargado con pares existentes.
+- [x] `PUT /knowledge/{id}/faq` — actualizar pares + re-encolar indexación.
+- [x] `components/knowledge_faq_form.html` — modal Alpine con lista dinámica de pares Q/A.
+- [x] `components/knowledge_faq_edit_panel.html` — panel de edición para FAQ existentes.
+- [x] `pages/knowledge/index.html` — botón «Crear FAQ» junto a URL y subida.
 
 ### B.6 — Tests
 
-- [ ] `tests/unit/test_faq_serializer.py`.
-- [ ] `tests/integration/test_knowledge_faq.py`.
+- [x] `tests/unit/test_faq_serializer.py` — serialize/deserialize, round-trip, casos borde.
+- [x] `tests/integration/test_knowledge_faq.py` — flujo completo create_from_faq → job → ready + round-trip de pares en BD.
 
 ---
 
@@ -182,7 +187,7 @@ Tabla central que asocia un tenant con sus canales externos (WhatsApp, Telegram)
 
 ### C.1 — Modelo ORM
 
-- [ ] Crear `app/models/channel_integration.py`:
+- [x] Crear `app/models/channel_integration.py`:
 
   ```python
   """Integración de canales externos de mensajería por tenant (Paso 21)."""
@@ -254,7 +259,7 @@ Tabla central que asocia un tenant con sus canales externos (WhatsApp, Telegram)
 
 ### C.2 — Migración
 
-- [ ] Migración `p21_c_channel_integrations`:
+- [x] Migración `p21_c_channel_integrations_01` (incluye `webhook_secret_enc` y política RLS `webhook_select` para lookups cross-tenant):
   ```sql
   CREATE TABLE channel_integrations (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -278,53 +283,29 @@ Tabla central que asocia un tenant con sus canales externos (WhatsApp, Telegram)
 
 ### C.3 — Tablas `conversations` y `messages`
 
-- [ ] Verificar si existen como modelos ORM. Si no:
-  - [ ] Crear `app/models/conversation.py`:
-    ```python
-    class Conversation(Base):
-        __tablename__ = "conversations"
-        id: Mapped[UUID] = ...
-        tenant_id: Mapped[UUID] = ...
-        channel: Mapped[str] = ...           # web | whatsapp | telegram
-        external_id: Mapped[str | None] = ... # número E.164 del cliente
-        customer_identifier: Mapped[str | None] = ...
-        started_at: Mapped[datetime] = ...
-        closed_at: Mapped[datetime | None] = ...
-
-    class ChannelMessage(Base):
-        __tablename__ = "channel_messages"   # distinto de chat_messages (módulo 1.5)
-        id: Mapped[UUID] = ...
-        conversation_id: Mapped[UUID] = ...
-        tenant_id: Mapped[UUID] = ...
-        role: Mapped[str] = ...              # user | assistant
-        content: Mapped[str] = ...
-        metadata: Mapped[dict] = ...         # jsonb, citations, confidence
-        llm_call_id: Mapped[UUID | None] = ...
-        created_at: Mapped[datetime] = ...
-    ```
-  - [ ] Migración `p21_c2_conversations`: tablas + RLS + índices.
+- [x] Crear `app/models/conversation.py` con `Conversation` y `ChannelMessage` (`channel_messages`, atributo `msg_metadata` mapeado a columna `metadata`).
+- [x] Migración `p21_c2_conversations_01`: tablas + RLS + índices.
 
   > **Nota:** se nombra `channel_messages` (no `messages`) para evitar colisión con el modelo `messages` del módulo RAG definido en `arquitectura.md §5`. Verificar con `alembic current` antes de crear migración.
 
 ### C.4 — Servicio `channel_integration_service`
 
-- [ ] Crear `app/services/channel_integration_service.py`:
-  - `get_integration(db, tenant_id, channel) -> ChannelIntegration | None`
-  - `save_integration(db, tenant_id, channel, phone_number_id, api_token, display_name, confidence_threshold)` — cifra token con `ENCRYPTION_KEY`.
-  - `revoke_integration(db, tenant_id, channel)` — status = inactive, borra token.
-  - `get_tenant_by_phone_number_id(db, phone_number_id) -> Tenant | None` — lookup para webhook WhatsApp.
-  - `get_integration_by_id(db, integration_id) -> ChannelIntegration | None` — lookup para webhook Telegram.
-  - `decrypt_token(integration) -> str` — descifra `api_token_enc`.
+- [x] Crear `app/services/channel_integration_service.py`:
+  - [x] `get_integration` / `save_integration` / `revoke_integration`
+  - [x] `get_integration_by_phone_number_id` — lookup cross-tenant vía política RLS `webhook_select`
+  - [x] `get_tenant_by_phone_number_id` — variante que retorna el `Tenant`
+  - [x] `get_integration_by_id` — lookup para webhook Telegram
+  - [x] `decrypt_api_token` / `decrypt_webhook_secret`
 
 ---
 
-## Sub-módulo D — Tarjetas UI en `/settings/integrations`
+## Sub-módulo D — Tarjetas UI en `/admin/integrations` *(desviación de diseño: accesible solo por superadmin vía ADMIN_CLERK_ORG_ID, no por admin de tenant)*
 
-Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente el patrón de `components/integration_google_calendar.html`. Solo visibles/editables por usuarios con rol `admin`.
+Tarjetas en `pages/admin/channel_integrations_detail.html`, protegidas por `SuperAdmin` dependency.
 
 ### D.1 — Configuración
 
-- [ ] Ampliar `app/config.py`:
+- [x] `app/config.py` ampliado con settings WhatsApp/Telegram, `admin_clerk_org_id`, `channel_cache_*`, SMTP:
   ```python
   # Canales externos (Paso 21)
   whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
@@ -335,7 +316,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### D.2 — Rutas web
 
-- [ ] Ampliar `app/routes/web/integrations.py` (o extraer a `routes/web/channel_integrations.py`):
+- [x] Crear `app/routes/web/admin_channel_integrations.py` con `SuperAdmin` dependency:
 
   ```python
   # GET /settings/integrations/whatsapp/status  → tarjeta WhatsApp (fragmento)
@@ -351,7 +332,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### D.3 — Tarjeta WhatsApp
 
-- [ ] Crear `app/templates/components/integration_whatsapp.html` (misma estructura que `integration_google_calendar.html`):
+- [x] Crear `app/templates/components/integration_whatsapp.html` (misma estructura que `integration_google_calendar.html`):
 
   **Header:** logo WhatsApp + título + descripción.
 
@@ -371,11 +352,11 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
   **Footer — estado conectado:** instrucción: «Registra esta URL en Meta Developer Console → Webhooks → `messages`.»
 
-- [ ] Añadir `{% include "components/integration_whatsapp.html" %}` en `pages/settings/integrations.html`.
+- [x] Incluida en `pages/admin/channel_integrations_detail.html`.
 
 ### D.4 — Tarjeta Telegram
 
-- [ ] Crear `app/templates/components/integration_telegram.html`:
+- [x] Crear `app/templates/components/integration_telegram.html`:
 
   **Header:** logo Telegram + título + descripción.
 
@@ -392,11 +373,11 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
   - Umbral de confianza actual.
   - Botón «Desconectar» (llama a `deleteWebhook` en Telegram + revoca integración).
 
-- [ ] Añadir `{% include "components/integration_telegram.html" %}` en `pages/settings/integrations.html`.
+- [x] Incluida en `pages/admin/channel_integrations_detail.html`.
 
 ### D.5 — Context helper actualizado
 
-- [ ] Actualizar `_integration_card_ctx()` en `routes/web/integrations.py` para incluir:
+- [x] `_channel_ctx()` en `routes/web/admin_channel_integrations.py` (carga WA + TG integrations por tenant):
   ```python
   whatsapp_integration = await channel_integration_service.get_integration(db, tenant.id, "whatsapp")
   telegram_integration = await channel_integration_service.get_integration(db, tenant.id, "telegram")
@@ -409,12 +390,12 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### D.6 — Tests UI
 
-- [ ] `tests/integration/test_channel_integrations_ui.py`:
-  - `test_save_whatsapp_integration_requires_admin()`.
-  - `test_save_whatsapp_stores_token_encrypted()` — `api_token_enc` en BD ≠ token original.
-  - `test_save_telegram_calls_set_webhook()` — mock del cliente Telegram.
-  - `test_disconnect_revokes_and_deletes_webhook()`.
-  - `test_non_admin_cannot_configure_channel()`.
+- [x] `tests/integration/test_channel_integrations_ui.py`:
+  - [x] `test_save_whatsapp_integration_requires_admin()`.
+  - [x] `test_save_whatsapp_stores_token_encrypted()` — `api_token_enc` en BD ≠ token original.
+  - [x] `test_save_telegram_calls_set_webhook()` — mock del cliente Telegram.
+  - [x] `test_disconnect_revokes_and_deletes_webhook()`.
+  - [x] `test_non_admin_cannot_configure_channel()`.
 
 ---
 
@@ -422,7 +403,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.1 — Cliente WhatsApp
 
-- [ ] Crear `app/core/whatsapp_client.py`:
+- [x] Crear `app/core/whatsapp_client.py`:
   ```python
   async def send_text_message(to: str, text: str, phone_number_id: str, api_token: str, settings: Settings) -> None:
       """POST a {whatsapp_api_url}/{phone_number_id}/messages."""
@@ -435,7 +416,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.2 — Servicio conversacional de canal
 
-- [ ] Crear `app/services/channel_chat_service.py`:
+- [x] Crear `app/services/channel_chat_service.py`:
   ```python
   async def answer_for_channel(
       db: AsyncSession,
@@ -455,7 +436,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.3 — Prompt para canal externo
 
-- [ ] Crear `app/llm/prompts/channel_external_v1.txt`:
+- [x] Crear `app/llm/prompts/channel_external_v1.txt`:
   ```
   Eres el asistente virtual de [COMPANY_NAME].
   Respondes preguntas de clientes sobre los servicios, horarios, precios y políticas
@@ -472,7 +453,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.4 — Webhook
 
-- [ ] Crear `app/routes/api/webhooks_whatsapp.py`:
+- [x] `app/routes/api/webhooks_whatsapp.py` — GET verificación Meta + POST con HMAC-SHA256 + lookup por phone_number_id + enqueue ARQ:
   ```python
   router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
@@ -505,30 +486,19 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.5 — Job ARQ
 
-- [ ] Crear `app/jobs/channel_jobs.py`:
-  ```python
-  async def process_channel_message(
-      ctx: dict,
-      tenant_id: str,
-      channel: str,
-      customer_identifier: str,
-      message_text: str,
-      integration_id: str,
-  ) -> None:
-      # 1. Resolver tenant y channel_integration de BD
-      # 2. channel_chat_service.answer_for_channel(...)
-      # 3. Si confidence >= threshold: enviar respuesta
-      # 4. Si confidence < threshold: mensaje de escalado + audit log 'channel.escalated'
-      # 5. Audit log: 'channel.message_received', 'channel.message_sent'
-  ```
-- [ ] Registrar en `app/jobs/settings.py`.
+- [x] Crear `app/jobs/channel_jobs.py` con `process_channel_message`:
+  - Carga tenant + integración + admin_email en sesión BD
+  - Llama a `channel_chat_service.answer_for_channel()` y hace commit
+  - Envía respuesta si `confidence >= threshold`; escala si no (mensaje + email al admin)
+  - Gestión de errores: 1er fallo → "procesando..." + ARQ reintenta; 2º fallo → error amigable
+- [x] Registrar en `app/jobs/settings.py` con timeout 120 s.
+- [x] `enqueue_channel_message()` añadido a `app/jobs/queue.py`.
 
 ### E.6 — Secretos globales WhatsApp
 
-- [ ] Añadir en Infisical:
-  - `WHATSAPP_VERIFY_TOKEN` — token arbitrario para verificación Meta.
-  - `WHATSAPP_APP_SECRET` — secreto de la app Meta para validar firma HMAC.
-- [ ] Actualizar `app/config.py`:
+- [x] Settings en `app/config.py` añadidos (`whatsapp_verify_token`, `whatsapp_app_secret`, etc.).
+- [ ] Acción manual: añadir `WHATSAPP_VERIFY_TOKEN` y `WHATSAPP_APP_SECRET` en Infisical antes de verificación E.
+- [ ] Actualizar `.env.example`.
   ```python
   whatsapp_verify_token: SecretStr = SecretStr("")
   whatsapp_app_secret: SecretStr = SecretStr("")
@@ -539,20 +509,21 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### E.7 — Tests
 
-- [ ] `tests/unit/test_whatsapp_client.py`:
-  - `test_send_message_truncates_long_text()`.
-  - `test_verify_signature_valid()` / `test_verify_signature_invalid()`.
-- [ ] `tests/unit/test_channel_chat_service.py`:
-  - `test_creates_conversation_if_not_exists()`.
-  - `test_reuses_existing_conversation()`.
-  - `test_escalates_when_confidence_below_threshold()`.
-  - `test_knowledge_tools_only_no_invoice_tools()` — asegurar que las tools documentales NO se pasan al canal externo.
-- [ ] `tests/integration/test_whatsapp_webhook.py`:
-  - `test_webhook_get_verification_ok()`.
-  - `test_webhook_get_verification_wrong_token_403()`.
-  - `test_webhook_post_enqueues_job()`.
-  - `test_webhook_post_invalid_signature_returns_200_silently()` — no exponer errores.
-  - `test_webhook_post_unknown_phone_number_id_returns_200()`.
+- [x] `tests/unit/test_whatsapp_client.py`:
+  - [x] `test_verify_signature_valid()` / `test_verify_signature_invalid()` / `test_verify_signature_missing_prefix()`.
+  - [x] `test_send_message_truncates_long_text()` / `test_send_message_sends_to_correct_url()`.
+- [x] `tests/unit/test_channel_chat_service.py`:
+  - [x] `test_creates_conversation_if_not_exists()`.
+  - [x] `test_reuses_existing_conversation()`.
+  - [x] `test_confidence_zero_when_no_citations()` (escalado por confianza 0).
+  - [x] `test_confidence_positive_when_citations_present()`.
+  - [x] `test_knowledge_tools_only_no_invoice_tools()` — guardrail 100 % verificado.
+- [x] `tests/integration/test_whatsapp_webhook.py`:
+  - [x] `test_webhook_get_verification_ok()`.
+  - [x] `test_webhook_get_verification_wrong_token()`.
+  - [x] `test_webhook_post_enqueues_job()`.
+  - [x] `test_webhook_post_invalid_signature_returns_200_silently()`.
+  - [x] `test_webhook_post_unknown_phone_number_id_returns_200()`.
 
 ---
 
@@ -560,7 +531,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### F.1 — Cliente Telegram
 
-- [ ] Crear `app/core/telegram_client.py`:
+- [x] Crear `app/core/telegram_client.py`:
   ```python
   async def set_webhook(bot_token: str, webhook_url: str, settings: Settings) -> None:
       """POST https://api.telegram.org/bot{token}/setWebhook {url: webhook_url}."""
@@ -579,7 +550,7 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### F.2 — Webhook
 
-- [ ] Crear `app/routes/api/webhooks_telegram.py`:
+- [x] `app/routes/api/webhooks_telegram.py` — POST `/{integration_id}` con verificación de secret, lookup cross-tenant, enqueue ARQ:
   ```python
   @router.post("/telegram/{integration_id}")
   async def telegram_webhook(
@@ -599,20 +570,22 @@ Dos tarjetas nuevas en `pages/settings/integrations.html`, siguiendo exactamente
 
 ### F.3 — Secreto por webhook Telegram
 
-Al registrar el webhook, Telegram acepta un parámetro `secret_token` (hasta 256 chars) que devuelve en `X-Telegram-Bot-Api-Secret-Token`. Usar un valor aleatorio generado al guardar la integración, almacenado también cifrado en `channel_integrations` (segundo campo `webhook_secret_enc bytea null`).
-
-- [ ] Añadir columna `webhook_secret_enc bytea null` a `channel_integrations` en la misma migración C.2 (o nueva `p21_f_telegram_secret`).
+- [x] Columna `webhook_secret_enc bytea null` incluida en migración `p21_c_channel_integrations_01` (Sub-módulo C).
+- [x] `save_integration()` genera el secret con `secrets.token_hex(32)`, lo cifra y lo almacena.
+- [x] Admin save llama a `telegram_client.set_webhook()` con el secret; admin disconnect llama a `delete_webhook()`.
 
 ### F.4 — Tests
 
-- [ ] `tests/unit/test_telegram_client.py`:
-  - `test_set_webhook_called_on_save()`.
-  - `test_delete_webhook_called_on_disconnect()`.
-  - `test_send_message_truncates_at_4096()`.
-- [ ] `tests/integration/test_telegram_webhook.py`:
-  - `test_webhook_post_valid_secret_enqueues_job()`.
-  - `test_webhook_post_invalid_secret_returns_200_silently()`.
-  - `test_webhook_post_unknown_integration_id_returns_200()`.
+- [x] `tests/unit/test_telegram_client.py`:
+  - [x] `test_set_webhook_posts_to_correct_url()` / `test_set_webhook_includes_secret_token_when_provided()`.
+  - [x] `test_delete_webhook_posts_to_correct_url()`.
+  - [x] `test_send_message_truncates_at_4096()` / `test_send_message_does_not_truncate_short_text()`.
+  - [x] `test_verify_webhook_secret_valid()` / `test_verify_webhook_secret_invalid()`.
+- [x] `tests/integration/test_telegram_webhook.py`:
+  - [x] `test_webhook_post_valid_secret_enqueues_job()`.
+  - [x] `test_webhook_post_invalid_secret_returns_200_silently()`.
+  - [x] `test_webhook_post_unknown_integration_id_returns_200()`.
+  - [x] `test_webhook_post_no_text_message_returns_200()`.
 
 ---
 
@@ -697,7 +670,7 @@ tests/
 
 ### Sub-módulo A — Ingesta URL
 
-1. [ ] `infisical run -- uv run alembic upgrade head`.
+1. [x] `infisical run -- uv run alembic upgrade head` — BD en `p21_c2_conversations_01 (head)`.
 2. [ ] Abrir `/knowledge` → pestaña «Añadir URL» → introducir URL pública.
 3. [ ] Verificar polling `pending → ready`, `chunk_count > 0`.
 4. [ ] En `/chat` preguntar sobre el contenido de la URL → cita chunks de esa URL.

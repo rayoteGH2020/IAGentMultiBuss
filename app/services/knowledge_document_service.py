@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.errors import NotFoundError
-from app.core.keys import document_key
+from app.core.faq_serializer import FaqPair, deserialize_faq, serialize_faq
+from app.core.keys import document_key, knowledge_faq_key, knowledge_url_key
 from app.core.knowledge_uploads import validate_knowledge_upload
 from app.core.storage import get_storage
 from app.core.uploads import original_upload_filename
@@ -31,6 +32,9 @@ from app.services import audit_service
 logger = structlog.get_logger(__name__)
 
 ACTION_KNOWLEDGE_UPLOAD = "knowledge.upload"
+ACTION_KNOWLEDGE_URL_UPLOAD = "knowledge.url_upload"
+ACTION_KNOWLEDGE_FAQ_CREATE = "knowledge.faq_create"
+ACTION_KNOWLEDGE_FAQ_EDIT = "knowledge.faq_edit"
 ACTION_KNOWLEDGE_DELETE = "knowledge.delete"
 ACTION_KNOWLEDGE_REINDEX = "knowledge.reindex"
 RESOURCE_KNOWLEDGE_DOCUMENT = "knowledge_document"
@@ -104,6 +108,159 @@ async def create_from_upload(
         kind=kind.value,
     )
     return doc
+
+
+async def create_from_url(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID | None,
+    url: str,
+    kind: KnowledgeDocumentKind,
+    name: str | None = None,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> KnowledgeDocument:
+    """Crea un KnowledgeDocument en estado pending para ingesta por URL (Paso 21 A).
+
+    No descarga ni sube nada a R2 aquí: el job knowledge_url_jobs.index_knowledge_url
+    es responsable del scraping, subida a R2 y posterior indexación via run_index_pipeline.
+    La key R2 se pre-genera para que el job sepa dónde subir el texto extraído.
+    """
+    key = knowledge_url_key(tenant_id)
+    doc_name = (name or url)[:300]
+    doc = KnowledgeDocument(
+        tenant_id=tenant_id,
+        kind=kind,
+        name=doc_name,
+        original_filename=url[:300],
+        source_file_key=key,
+        source_mime="text/plain",
+        source_url=url,
+        status=KnowledgeDocumentStatus.pending,
+        chunk_count=0,
+        file_size_bytes=0,
+        uploaded_by=user_id,
+    )
+    db.add(doc)
+    await db.flush()
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_URL_UPLOAD,
+        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
+        resource_id=doc.id,
+        metadata={"url": url, "kind": kind.value},
+        request_ctx=request_ctx,
+    )
+    logger.info(
+        "knowledge.url.created",
+        document_id=str(doc.id),
+        tenant_id=str(tenant_id),
+        url=url,
+    )
+    return doc
+
+
+async def create_from_faq(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID | None,
+    pairs: list[FaqPair],
+    kind: KnowledgeDocumentKind,
+    name: str | None = None,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> KnowledgeDocument:
+    """Crea un KnowledgeDocument de tipo FAQ desde pares Q/A (Paso 21 B).
+
+    Serializa los pares al formato P:/R:, los sube a R2 y crea el documento
+    en estado pending. La key R2 es determinista (incluye doc UUID) para que
+    update_faq_pairs pueda sobreescribirla sin dejar huérfanos.
+    """
+    from uuid import uuid4
+
+    text = serialize_faq(pairs)
+    doc_id = uuid4()
+    key = knowledge_faq_key(tenant_id, doc_id)
+
+    storage = get_storage()
+    await storage.upload_bytes(key, text.encode("utf-8"), content_type="text/plain")
+
+    doc_name = (name or f"FAQ ({len(pairs)} pares)")[:300]
+    doc = KnowledgeDocument(
+        id=doc_id,
+        tenant_id=tenant_id,
+        kind=kind,
+        name=doc_name,
+        original_filename=f"faq_{doc_id}.txt",
+        source_file_key=key,
+        source_mime="text/plain",
+        faq_content=text,
+        status=KnowledgeDocumentStatus.pending,
+        chunk_count=0,
+        file_size_bytes=len(text.encode("utf-8")),
+        uploaded_by=user_id,
+    )
+    db.add(doc)
+    await db.flush()
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_FAQ_CREATE,
+        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
+        resource_id=doc.id,
+        metadata={"kind": kind.value, "pairs": len(pairs)},
+        request_ctx=request_ctx,
+    )
+    logger.info("knowledge.faq.created", document_id=str(doc_id), tenant_id=str(tenant_id))
+    return doc
+
+
+async def update_faq_pairs(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_id: UUID,
+    pairs: list[FaqPair],
+    user_id: UUID | None,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> KnowledgeDocument:
+    """Actualiza los pares Q/A de un FAQ existente y marca el documento como pending.
+
+    Sube el nuevo texto a la misma key R2 (sobreescribe) y actualiza faq_content.
+    El caller es responsable de encolar el reindexado.
+    """
+    doc = await _get_orm(db, tenant_id=tenant_id, document_id=document_id)
+
+    text = serialize_faq(pairs)
+    storage = get_storage()
+    await storage.upload_bytes(doc.source_file_key, text.encode("utf-8"), content_type="text/plain")
+
+    doc.faq_content = text
+    doc.file_size_bytes = len(text.encode("utf-8"))
+    doc.status = KnowledgeDocumentStatus.pending
+    doc.error_message = None
+    await db.flush()
+
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_FAQ_EDIT,
+        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
+        resource_id=document_id,
+        metadata={"pairs": len(pairs)},
+        request_ctx=request_ctx,
+    )
+    logger.info("knowledge.faq.updated", document_id=str(document_id), tenant_id=str(tenant_id))
+    return doc
+
+
+def get_faq_pairs(doc: KnowledgeDocument) -> list[FaqPair]:
+    """Parsea faq_content de un documento FAQ a lista de FaqPair."""
+    return deserialize_faq(doc.faq_content or "")
 
 
 async def list_documents(

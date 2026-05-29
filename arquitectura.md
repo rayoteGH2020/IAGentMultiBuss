@@ -323,14 +323,21 @@ chat_messages (
 documents (
   id uuid pk,
   tenant_id uuid fk,
+  kind text,                       -- contract | terms | schedule | services | policy | faq | manual | other
   name text,
-  source_file_key text null,
-  source_url text null,
-  type text,                       -- pdf | url | manual | faq
+  original_filename text,
+  source_file_key text,            -- clave R2 del texto fuente (siempre presente)
+  source_mime text,
+  source_url text null,            -- URL pública de origen (Paso 21 A); null para ficheros y FAQs
+  faq_content text null,           -- pares Q/A serializados en formato P:/R: (Paso 21 B); null si no es FAQ
   status text,                     -- pending | indexing | ready | failed
   chunk_count int default 0,
+  error_message text null,
+  file_size_bytes int default 0,
+  uploaded_by uuid fk -> users null,
   ingested_at timestamptz null,
-  created_at timestamptz
+  created_at timestamptz,
+  updated_at timestamptz
 )
 
 chunks (
@@ -349,24 +356,48 @@ chunks (
 
 conversations (
   id uuid pk,
-  tenant_id uuid fk,
-  channel text,                     -- web | whatsapp | telegram | email
-  external_id text null,
-  customer_identifier text null,
-  started_at timestamptz,
+  tenant_id uuid fk -> tenants ON DELETE CASCADE,
+  channel text,                      -- whatsapp | telegram
+  external_id text null,             -- reservado para uso futuro
+  customer_identifier text null,     -- teléfono E.164 (WA) o chat_id (Telegram)
+  started_at timestamptz default now(),
   closed_at timestamptz null
 )
+-- RLS: tenant_isolation (tenant_id = current_setting('app.current_tenant'))
+-- Índice compuesto: (tenant_id, channel, customer_identifier) para lookup de conversación activa
 
-messages (
+channel_messages (
   id uuid pk,
-  conversation_id uuid fk,
-  tenant_id uuid fk,
-  role text,                        -- user | assistant | system | tool
+  conversation_id uuid fk -> conversations ON DELETE CASCADE,
+  tenant_id uuid fk -> tenants ON DELETE CASCADE,   -- redundante con conversation, necesario para RLS directa
+  role text,                         -- user | assistant
   content text,
-  metadata jsonb default '{}',
-  llm_call_id uuid fk null,
-  created_at timestamptz
+  metadata jsonb default '{}',       -- citations, confidence, tools_used por turno
+  llm_call_id uuid null,             -- correlación de coste / traza Langfuse
+  created_at timestamptz default now()
 )
+-- RLS: tenant_isolation
+-- Índice compuesto: (conversation_id, created_at) para cargar historial cronológico
+-- NOTA: tabla nombrada channel_messages (no messages) para evitar colisión
+--       con el módulo messages del RAG (módulo 2) si se implementa en futuro
+
+channel_integrations (
+  id uuid pk,
+  tenant_id uuid fk -> tenants ON DELETE CASCADE,
+  channel text,                      -- whatsapp | telegram
+  phone_number_id text null,         -- WhatsApp: Phone Number ID de Meta (lookup de webhook)
+  display_name text null,            -- etiqueta visible: "+34 612…" o "@MyBot"
+  api_token_enc bytea null,          -- access_token (WA) / bot_token (TG) cifrado con ENCRYPTION_KEY (Fernet)
+  webhook_secret_enc bytea null,     -- secret_token para X-Telegram-Bot-Api-Secret-Token, cifrado
+  status text default 'active',      -- active | revoked
+  confidence_threshold float default 0.5,  -- umbral de confianza para auto-responder
+  created_at timestamptz,
+  updated_at timestamptz,
+  unique (tenant_id, channel)
+)
+-- RLS: tenant_isolation + webhook_select (permite SELECT cross-tenant en webhook handlers
+--      usando set_config('app.webhook_lookup','true',true); flag local a la transacción)
+-- Índice en phone_number_id: lookup rápido en webhook WhatsApp
 
 -- Módulo 3: Analytics
 data_sources (

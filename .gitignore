@@ -69,3 +69,7 @@ Documentacion/**
 # Listado local de auditoría (generado vs Pasos); no versionar
 PendienteImplementar.md
 FicherosTtoDocs.md
+keepCoding.md
+
+# Claude Code memoria local (contiene contexto personal entre sesiones)
+.claude/

@@ -1,0 +1,72 @@
+{# Panel de edición de pares FAQ (GET /knowledge/{id}/faq).
+   Se carga dentro del modal de detalle existente.
+   Al guardar hace PUT /knowledge/{document.id}/faq y actualiza la fila del documento. #}
+
+<div
+  x-data="{
+    pairs: {{ pairs | map(attribute='model_dump') | list | tojson }},
+    addPair() { this.pairs.push({ question: '', answer: '' }); },
+    removePair(idx) { if (this.pairs.length > 1) this.pairs.splice(idx, 1); },
+    faqJson() { return JSON.stringify(this.pairs); }
+  }"
+  class="space-y-4 p-4">
+
+  <h3 id="knowledge-detail-modal-title" class="text-base font-semibold text-slate-900">
+    Editar FAQ — {{ document.name }}
+  </h3>
+
+  <div class="space-y-3 max-h-72 overflow-y-auto">
+    <div class="flex items-center justify-between">
+      <p class="text-xs font-medium text-slate-700">Pares pregunta / respuesta</p>
+      <button type="button" @click="addPair()"
+              class="text-xs text-primary-600 hover:text-primary-800 font-medium cursor-pointer">
+        + Añadir par
+      </button>
+    </div>
+
+    <template x-for="(pair, idx) in pairs" :key="idx">
+      <div class="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-500" x-text="'Par ' + (idx + 1)"></span>
+          <button type="button" @click="removePair(idx)" x-show="pairs.length > 1"
+                  class="text-xs text-red-500 hover:text-red-700 cursor-pointer">Eliminar</button>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-600 mb-0.5">Pregunta</label>
+          <input type="text" x-model="pair.question"
+                 class="block w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20"/>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-600 mb-0.5">Respuesta</label>
+          <textarea x-model="pair.answer" rows="2"
+                    class="block w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 resize-none"></textarea>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <form
+    hx-put="/knowledge/{{ document.id }}/faq"
+    hx-target="#knowledge-row-{{ document.id }}"
+    hx-swap="outerHTML"
+    hx-indicator="#faq-edit-spinner"
+    class="space-y-3">
+    <input type="hidden" name="faq_data" :value="faqJson()">
+    <div class="flex items-center gap-3 justify-end">
+      <span id="faq-edit-spinner" class="htmx-indicator text-sm text-slate-500 flex items-center gap-1.5">
+        <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
+          <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
+        </svg>
+        Guardando…
+      </span>
+      <button
+        type="submit"
+        :disabled="pairs.some(p => !p.question.trim() || !p.answer.trim())"
+        class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+        Guardar cambios
+      </button>
+    </div>
+  </form>
+
+</div>

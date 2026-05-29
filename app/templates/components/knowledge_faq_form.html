@@ -1,0 +1,169 @@
+{# Formulario para crear un FAQ manual en la base de conocimiento (Paso 21 B).
+   Los pares Q/A se gestionan con Alpine.js y se envían serializados como JSON
+   en un campo oculto `faq_data`. #}
+
+{% set kind_labels = {
+  "contract": "Contrato",
+  "terms": "Condiciones generales",
+  "schedule": "Horarios",
+  "services": "Catálogo de servicios",
+  "policy": "Política interna",
+  "faq": "Preguntas frecuentes",
+  "manual": "Manual / Procedimiento",
+  "other": "Otro"
+} %}
+
+<div
+  x-data="{
+    open: false,
+    kind: '',
+    name: '',
+    pairs: [{ question: '', answer: '' }],
+    addPair() { this.pairs.push({ question: '', answer: '' }); },
+    removePair(idx) { if (this.pairs.length > 1) this.pairs.splice(idx, 1); },
+    faqJson() { return JSON.stringify(this.pairs); }
+  }"
+  @keydown.escape.window="open = false"
+  hx-boost="false"
+  class="inline-block">
+
+  <button
+    type="button"
+    @click="open = true; pairs = [{ question: '', answer: '' }]; kind = ''; name = ''"
+    class="btn-secondary shrink-0">
+    Crear FAQ
+  </button>
+
+  <div
+    x-show="open"
+    x-cloak
+    class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4"
+    @click.self="open = false">
+
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 shrink-0">
+        <h2 class="text-lg font-semibold text-slate-900">Crear FAQ manual</h2>
+        <button
+          type="button"
+          @click="open = false"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer"
+          aria-label="Cerrar">✕</button>
+      </div>
+
+      <form
+        hx-post="/knowledge/faq"
+        hx-target="#knowledge-table-container"
+        hx-swap="outerHTML"
+        hx-indicator="#k-faq-spinner"
+        hx-boost="false"
+        @htmx:after-request="if ($event.detail.successful) { open = false; }"
+        class="flex flex-col flex-1 min-h-0">
+
+        <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+          {# Nombre opcional #}
+          <div>
+            <label for="k-faq-name" class="block text-xs font-medium text-slate-700 mb-1">
+              Nombre del documento (opcional)
+            </label>
+            <input
+              id="k-faq-name"
+              name="name"
+              type="text"
+              x-model="name"
+              placeholder="Ej. Preguntas frecuentes sobre envíos"
+              class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"/>
+          </div>
+
+          {# Categoría #}
+          <div>
+            <label for="k-faq-kind" class="block text-xs font-medium text-slate-700 mb-1">
+              Categoría <span class="text-red-500">*</span>
+            </label>
+            <select
+              id="k-faq-kind"
+              name="kind"
+              x-model="kind"
+              required
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 cursor-pointer">
+              <option value="" disabled>Selecciona una categoría…</option>
+              {% for k, label in kind_labels.items() %}
+              <option value="{{ k }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {# Pares Q/A #}
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-medium text-slate-700">Pares pregunta / respuesta</p>
+              <button
+                type="button"
+                @click="addPair()"
+                class="text-xs text-primary-600 hover:text-primary-800 font-medium cursor-pointer">
+                + Añadir par
+              </button>
+            </div>
+
+            <template x-for="(pair, idx) in pairs" :key="idx">
+              <div class="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-slate-500" x-text="'Par ' + (idx + 1)"></span>
+                  <button
+                    type="button"
+                    @click="removePair(idx)"
+                    x-show="pairs.length > 1"
+                    class="text-xs text-red-500 hover:text-red-700 cursor-pointer">
+                    Eliminar
+                  </button>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-600 mb-0.5">Pregunta</label>
+                  <input
+                    type="text"
+                    x-model="pair.question"
+                    placeholder="¿Cuál es vuestro horario?"
+                    class="block w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20"/>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-600 mb-0.5">Respuesta</label>
+                  <textarea
+                    x-model="pair.answer"
+                    rows="2"
+                    placeholder="Abrimos de lunes a viernes de 9 a 18 horas."
+                    class="block w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 resize-none"></textarea>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          {# Campo oculto con los pares serializados como JSON #}
+          <input type="hidden" name="faq_data" :value="faqJson()">
+
+        </div>
+
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 shrink-0">
+          <span id="k-faq-spinner" class="htmx-indicator text-sm text-slate-500 flex items-center gap-1.5">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
+              <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
+            </svg>
+            Guardando…
+          </span>
+          <button type="button" @click="open = false"
+                  class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 cursor-pointer">
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            :disabled="!kind || pairs.some(p => !p.question.trim() || !p.answer.trim())"
+            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+            Crear FAQ
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>

@@ -10,9 +10,19 @@ from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import AuthMiddleware
-from app.routes.api import health, metrics, webhooks
+from app.routes.api import health, metrics, webhooks, webhooks_telegram, webhooks_whatsapp
+from app.routes.web import (
+    admin_channel_integrations,
+    chat,
+    demo,
+    documents,
+    home,
+    integrations,
+    jobs,
+    knowledge,
+    settings,
+)
 from app.routes.web import auth as auth_routes
-from app.routes.web import chat, demo, documents, home, integrations, jobs, knowledge, settings
 
 
 @asynccontextmanager
@@ -64,6 +74,8 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     # webhooks: callbacks de Clerk y otros servicios externos.
     app.include_router(webhooks.router)
+    app.include_router(webhooks_whatsapp.router)
+    app.include_router(webhooks_telegram.router)
 
     # --- Rutas web (devuelven HTML via Jinja2 + patrón página/fragmento HTMX) ---
     app.include_router(auth_routes.router)
@@ -78,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(integrations.router)
     app.include_router(integrations.auth_router)
+    app.include_router(admin_channel_integrations.router)
     app.include_router(demo.router)
 
     @app.get("/invoices", include_in_schema=False)

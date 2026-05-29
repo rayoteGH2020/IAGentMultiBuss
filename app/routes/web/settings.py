@@ -1,17 +1,12 @@
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, get_db, require_role
-from app.models import Membership
+from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db
 from app.services import tenant_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
-
-RequireAdmin = Annotated[Membership, Depends(require_role("admin"))]
 
 
 @router.get("")

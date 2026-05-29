@@ -26,7 +26,7 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: [--maxkb=500]
-        exclude: ^(uv\.lock|tests/fixtures/invoices/)
+        exclude: ^(uv\.lock|tests/fixtures/invoices/|tests/fixtures/knowledge/)
       - id: detect-private-key
 
   - repo: https://github.com/Yelp/detect-secrets

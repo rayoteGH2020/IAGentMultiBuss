@@ -11,6 +11,7 @@ validate_knowledge_upload internamente.
 
 from __future__ import annotations
 
+import json
 from typing import Annotated
 from uuid import UUID
 
@@ -20,13 +21,14 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.errors import RateLimitError
+from app.core.errors import RateLimitError, ScrapingError, ValidationError
+from app.core.faq_serializer import FaqPair
 from app.core.rate_limiter import check_knowledge_upload_rate
 from app.core.templating import render
 from app.core.uploads import UploadValidationError
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
-from app.jobs.queue import enqueue_knowledge_indexing
-from app.models.knowledge import KnowledgeDocumentKind, KnowledgeDocumentStatus
+from app.jobs.queue import enqueue_knowledge_indexing, enqueue_knowledge_url_indexing
+from app.models.knowledge import KnowledgeDocument, KnowledgeDocumentKind, KnowledgeDocumentStatus
 from app.schemas.knowledge import KnowledgeDocumentFilters
 from app.services import knowledge_document_service
 
@@ -219,6 +221,256 @@ async def upload_knowledge(
             )
 
     ctx = await _list_ctx(db, tenant.id, upload_errors=errors)
+    return render(
+        request,
+        full="pages/knowledge/index.html",
+        partial="components/knowledge_rows.html",
+        ctx=ctx,
+    )
+
+
+@router.post("/faq")
+async def create_knowledge_faq(
+    request: Request,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+    faq_data: Annotated[str, Form()] = "[]",
+    kind: Annotated[str | None, Form()] = None,
+    name: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """Crea un documento FAQ desde pares Q/A enviados como JSON en el campo faq_data."""
+    settings = get_settings()
+    doc_kind = _parse_kind(kind)
+
+    def _error(msg: str) -> HTMLResponse:
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx={**_sync_list_ctx(), "upload_errors": [{"filename": "FAQ", "error": msg}]},
+        )
+
+    if doc_kind is None:
+        return _error("Debes seleccionar una categoría.")
+
+    try:
+        raw = json.loads(faq_data)
+        pairs = [FaqPair(**p) for p in raw]
+    except Exception:
+        return _error("Los datos del FAQ son inválidos.")
+
+    if not pairs:
+        return _error("El FAQ debe tener al menos un par pregunta/respuesta.")
+    if len(pairs) > settings.knowledge_faq_max_pairs:
+        return _error(f"Máximo {settings.knowledge_faq_max_pairs} pares permitidos.")
+    for p in pairs:
+        if len(p.answer.strip()) < settings.knowledge_faq_min_answer_chars:
+            return _error(
+                f"Cada respuesta debe tener al menos {settings.knowledge_faq_min_answer_chars} caracteres."
+            )
+
+    try:
+        doc = await knowledge_document_service.create_from_faq(
+            db,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            pairs=pairs,
+            kind=doc_kind,
+            name=name.strip() or None,
+        )
+        await enqueue_knowledge_indexing(doc.id, tenant.id)
+    except Exception:
+        ctx = await _list_ctx(
+            db, tenant.id, upload_errors=[{"filename": "FAQ", "error": "Error al crear el FAQ."}]
+        )
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx=ctx,
+        )
+
+    ctx = await _list_ctx(db, tenant.id)
+    return render(
+        request,
+        full="pages/knowledge/index.html",
+        partial="components/knowledge_rows.html",
+        ctx=ctx,
+    )
+
+
+def _sync_list_ctx() -> dict[str, object]:
+    """Contexto mínimo sin BD para errores de validación antes de queries."""
+    return {
+        "documents": [],
+        "total": 0,
+        "filters": KnowledgeDocumentFilters(),
+        "kinds": list(KnowledgeDocumentKind),
+        "statuses": list(KnowledgeDocumentStatus),
+        "upload_errors": [],
+    }
+
+
+@router.get("/{document_id}/faq")
+async def knowledge_faq_edit(
+    request: Request,
+    document_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Devuelve el formulario de edición de pares FAQ para un documento existente."""
+    from sqlalchemy import select as sa_select
+
+    from app.core.errors import NotFoundError
+
+    doc_orm = (
+        await db.execute(
+            sa_select(KnowledgeDocument).where(
+                KnowledgeDocument.id == document_id,
+                KnowledgeDocument.tenant_id == tenant.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if doc_orm is None:
+        raise NotFoundError(f"KnowledgeDocument {document_id} not found")
+
+    pairs = knowledge_document_service.get_faq_pairs(doc_orm)
+    return render(
+        request,
+        full="components/knowledge_faq_edit_panel.html",
+        partial="components/knowledge_faq_edit_panel.html",
+        ctx={"document": doc_orm, "pairs": pairs, "kinds": list(KnowledgeDocumentKind)},
+    )
+
+
+@router.put("/{document_id}/faq")
+async def knowledge_faq_update(
+    request: Request,
+    document_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+    faq_data: Annotated[str, Form()] = "[]",
+) -> HTMLResponse:
+    """Actualiza los pares Q/A de un FAQ y re-encola la indexación."""
+    settings = get_settings()
+    try:
+        raw = json.loads(faq_data)
+        pairs = [FaqPair(**p) for p in raw]
+    except Exception as exc:
+        raise ValidationError("Los datos del FAQ son inválidos.") from exc
+
+    if not pairs:
+        raise ValidationError("El FAQ debe tener al menos un par pregunta/respuesta.")
+    if len(pairs) > settings.knowledge_faq_max_pairs:
+        raise ValidationError(f"Máximo {settings.knowledge_faq_max_pairs} pares permitidos.")
+
+    doc_orm = await knowledge_document_service.update_faq_pairs(
+        db,
+        tenant_id=tenant.id,
+        document_id=document_id,
+        pairs=pairs,
+        user_id=user.id,
+    )
+    await enqueue_knowledge_indexing(doc_orm.id, tenant.id, replace_existing=True)
+
+    doc_read = await knowledge_document_service.get_document(
+        db, tenant_id=tenant.id, document_id=document_id, include_download_url=False
+    )
+    return render(
+        request,
+        full="components/knowledge_row.html",
+        partial="components/knowledge_row.html",
+        ctx={"document": doc_read},
+    )
+
+
+@router.post("/url")
+async def upload_knowledge_url(
+    request: Request,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    redis: RedisDep,
+    db: AsyncSession = Depends(get_db),
+    url: Annotated[str, Form()] = "",
+    kind: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    """Indexa una URL pública en la base de conocimiento."""
+    doc_kind = _parse_kind(kind)
+    if not url.strip() or doc_kind is None:
+        ctx = await _list_ctx(
+            db,
+            tenant.id,
+            upload_errors=[{"filename": "—", "error": "URL y categoría son obligatorios."}],
+        )
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx=ctx,
+        )
+
+    settings = get_settings()
+    try:
+        await check_knowledge_upload_rate(
+            redis,
+            tenant_id=tenant.id,
+            max_per_day=settings.knowledge_url_max_per_day_per_tenant,
+            n_files=1,
+        )
+    except RateLimitError as exc:
+        ctx = await _list_ctx(
+            db,
+            tenant.id,
+            upload_errors=[{"filename": url, "error": str(exc)}],
+        )
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx=ctx,
+        )
+
+    try:
+        doc = await knowledge_document_service.create_from_url(
+            db,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            url=url.strip(),
+            kind=doc_kind,
+        )
+        await enqueue_knowledge_url_indexing(doc.id, tenant.id)
+    except ScrapingError as exc:
+        ctx = await _list_ctx(
+            db,
+            tenant.id,
+            upload_errors=[{"filename": url, "error": exc.message}],
+        )
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx=ctx,
+        )
+    except Exception:
+        ctx = await _list_ctx(
+            db,
+            tenant.id,
+            upload_errors=[
+                {"filename": url, "error": "Error al procesar la URL. Inténtalo de nuevo."}
+            ],
+        )
+        return render(
+            request,
+            full="pages/knowledge/index.html",
+            partial="components/knowledge_rows.html",
+            ctx=ctx,
+        )
+
+    ctx = await _list_ctx(db, tenant.id)
     return render(
         request,
         full="pages/knowledge/index.html",

@@ -40,11 +40,14 @@ dependencies = [
     # Auth
     "pyjwt[crypto]>=2.10.0",
     "cryptography>=43.0.0",
+    # Email
+    "aiosmtplib>=3.0.0",
     # Webhooks
     "svix>=1.42.0",
     "jsonref>=1.1.0",
     "pypdf>=5.1.0",
     "python-magic-bin>=0.4.14",
+    "html2text>=2025.4.15",
 ]
 
 [dependency-groups]
@@ -106,6 +109,13 @@ ignore = [
 "app/models/audit_log.py" = ["TCH003"]
 "app/models/chat.py" = ["TCH003"]
 "app/models/calendar_integration.py" = ["TCH003"]
+"app/models/channel_integration.py" = ["TCH003"]
+"app/models/conversation.py" = ["TCH003"]
+"app/services/channel_integration_service.py" = ["TCH"]
+"app/routes/web/admin_channel_integrations.py" = ["TCH"]
+"app/services/channel_chat_service.py" = ["TCH"]
+"app/jobs/channel_jobs.py" = ["TCH"]
+"app/schemas/channel.py" = ["TCH"]
 "app/schemas/invoice.py" = ["TCH003"]
 "app/schemas/ticket.py" = ["TCH003"]
 "app/schemas/chat.py" = ["TCH"]
@@ -120,6 +130,8 @@ ignore = [
 "app/services/knowledge_search_service.py" = ["S608"]
 "app/evals/seed_knowledge_eval.py" = ["S608"]
 "app/models/usage_meter.py" = ["TCH003"]
+"app/routes/api/webhooks_whatsapp.py" = ["I001"]
+"app/routes/api/webhooks_telegram.py" = ["I001"]
 "app/services/document_query_service.py" = ["TCH"]
 "app/services/audit_service.py" = ["TCH"]
 "app/services/document_classification.py" = ["TCH"]
@@ -148,7 +160,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["migrations", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*", "pgvector.*"]
+module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*", "pgvector.*", "html2text.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

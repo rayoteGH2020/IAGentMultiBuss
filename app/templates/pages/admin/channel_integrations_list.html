@@ -1,0 +1,48 @@
+{% extends "layouts/dashboard.html" %}
+
+{% block title %}Admin — Canales externos{% endblock %}
+{% block page_title %}Admin — Canales externos{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl space-y-6">
+
+  <header class="space-y-1">
+    <p class="text-sm text-slate-500 leading-relaxed">
+      Selecciona un tenant para configurar sus integraciones de WhatsApp y Telegram.
+    </p>
+  </header>
+
+  <section class="card overflow-hidden p-0">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-100">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-600">Tenant</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-600">Plan</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-600">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for tenant in tenants %}
+        <tr class="hover:bg-slate-50/60 transition-colors">
+          <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ tenant.plan }}</td>
+          <td class="px-4 py-3 text-right">
+            <a href="/admin/integrations/{{ tenant.id }}"
+               class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors">
+              Configurar canales
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="px-4 py-8 text-center text-sm text-slate-400">
+            No hay tenants registrados.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+</div>
+{% endblock %}

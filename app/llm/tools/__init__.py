@@ -1,6 +1,7 @@
 """Tools tipadas para el chat documental y RAG."""
 
 from app.llm.tools.document_chat import build_document_chat_registry
+from app.llm.tools.knowledge_tools import build_channel_registry
 from app.llm.tools.registry import (
     ToolCitation,
     ToolContext,
@@ -18,6 +19,7 @@ __all__ = [
     "ToolFamily",
     "ToolRegistry",
     "ToolResult",
+    "build_channel_registry",
     "build_document_chat_registry",
     "get_tools_for_chat",
 ]

@@ -105,6 +105,25 @@ async def get_db_no_tenant() -> AsyncIterator[AsyncSession]:
             raise
 
 
+async def current_superadmin(request: Request) -> Tenant:
+    """Dependency that restricts access to the platform superadmin.
+
+    The superadmin is identified by the Clerk org matching ADMIN_CLERK_ORG_ID.
+    Raises ForbiddenError for any other authenticated tenant.
+    """
+    from app.config import get_settings
+    from app.core.errors import ForbiddenError
+
+    tenant = await current_tenant(request)
+    admin_org = get_settings().admin_clerk_org_id.strip()
+    if not admin_org or tenant.clerk_org_id != admin_org:
+        raise ForbiddenError("Superadmin access required")
+    return tenant
+
+
+SuperAdmin = Annotated[Tenant, Depends(current_superadmin)]
+
+
 def require_role(*roles: str) -> Callable[..., Coroutine[Any, Any, Membership]]:
     """Factory de dependencia para control de acceso por rol.
 
@@ -119,6 +138,12 @@ def require_role(*roles: str) -> Callable[..., Coroutine[Any, Any, Membership]]:
         return membership
 
     return _dep
+
+
+# Alias listo para usar en cualquier ruta que requiera rol admin.
+# Mismo patrón que CurrentUser/CurrentTenant: importar desde deps en lugar de
+# redeclarar RequireAdmin en cada módulo de rutas.
+RequireAdmin = Annotated[Membership, Depends(require_role("admin"))]
 
 
 async def get_redis_dep() -> redis.Redis:

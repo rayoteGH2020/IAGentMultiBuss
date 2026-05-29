@@ -166,6 +166,53 @@ class Settings(BaseSettings):
     # para AES-256.
     encryption_key: SecretStr = SecretStr("")
 
+    # WhatsApp Business API (Paso 21 E)
+    # whatsapp_verify_token: token arbitrario que Meta devuelve en la verificación GET.
+    # whatsapp_app_secret: secreto de la app Meta para validar firma HMAC-SHA256.
+    whatsapp_verify_token: SecretStr = SecretStr("")
+    whatsapp_app_secret: SecretStr = SecretStr("")
+    whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
+    whatsapp_max_response_chars: int = 1000
+
+    # Telegram Bot API (Paso 21 F)
+    telegram_api_url: str = "https://api.telegram.org"
+
+    # Canales externos — umbral de confianza por defecto (Paso 21 E/F)
+    channel_confidence_threshold_default: float = 0.5
+    # Máximo de mensajes por hora por customer_identifier (token bucket en Redis).
+    channel_rate_limit_msg_per_hour: int = 60
+
+    # Semantic cache de canales externos (Paso 21 E/F)
+    channel_cache_enabled: bool = True
+    channel_cache_ttl_hours: int = 24
+    channel_cache_similarity_threshold: float = 0.92
+    channel_cache_min_confidence: float = 0.6
+
+    # FAQ manual (Paso 21 B)
+    knowledge_faq_max_pairs: int = 200
+    knowledge_faq_min_answer_chars: int = 10
+
+    # Ingesta por URL (Paso 21 A)
+    knowledge_url_max_size_bytes: int = 2 * 1024 * 1024
+    knowledge_url_timeout_s: int = 30
+    knowledge_url_blacklist: list[str] = []
+    knowledge_url_allowed_schemes: list[str] = ["https"]
+    knowledge_url_max_per_day_per_tenant: int = 20
+
+    # Admin superusuario (Paso 21)
+    # ID de la organización Clerk que identifica al superadmin (Ruben).
+    # Si está vacío, las rutas /admin devuelven 403.
+    admin_clerk_org_id: str = ""
+
+    # Email SMTP — notificaciones internas (Paso 21, solución temporal)
+    # Si smtp_host está vacío, los envíos se omiten silenciosamente (útil en dev).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+
     # Metrics interno (Paso 15) — token para `/metrics/module1`
     # Bearer token simple para proteger el endpoint de métricas internas.
     # No es auth de usuario; es autenticación máquina-a-máquina (CI, dashboards).
