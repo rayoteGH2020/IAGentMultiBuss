@@ -23,6 +23,9 @@ from app.routes.web import (
     settings,
 )
 from app.routes.web import auth as auth_routes
+from app.routes.web.admin import dashboard as sadm_dashboard
+from app.routes.web.admin import organizations as sadm_organizations
+from app.routes.web.admin import users as sadm_users
 
 
 @asynccontextmanager
@@ -91,6 +94,9 @@ def create_app() -> FastAPI:
     app.include_router(integrations.router)
     app.include_router(integrations.auth_router)
     app.include_router(admin_channel_integrations.router)
+    app.include_router(sadm_dashboard.router)
+    app.include_router(sadm_organizations.router)
+    app.include_router(sadm_users.router)
     app.include_router(demo.router)
 
     @app.get("/invoices", include_in_schema=False)

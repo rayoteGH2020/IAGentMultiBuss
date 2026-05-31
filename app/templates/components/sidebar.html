@@ -52,6 +52,19 @@
     {% endfor %}
   </nav>
 
+  {% if request.state.is_superadmin %}
+  <div class="px-4 pb-2">
+    {% set sadm_active = request.url.path.startswith("/sadm") %}
+    <a href="/sadm"
+       hx-boost="true"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              {{ 'bg-amber-50 text-amber-700' if sadm_active else 'text-amber-600 hover:bg-amber-50' }}">
+      {% include "components/icons/settings.html" ignore missing %}
+      <span>SuperAdmin</span>
+    </a>
+  </div>
+  {% endif %}
+
   <div class="p-4 border-t border-slate-200">
     <p class="text-xs text-slate-500">v0.1.0 · dev</p>
   </div>

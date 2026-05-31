@@ -1,0 +1,23 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Admin · Mi SaaS{% endblock %}
+{% block page_title %}Consola SuperAdmin{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Panel de administración exclusivo del SuperAdmin. Gestiona organizaciones y usuarios.
+  </p>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <a href="/sadm/organizations"
+       class="block rounded-xl border border-slate-200 bg-white p-6 hover:border-primary-300 hover:shadow-sm transition-all">
+      <h2 class="text-base font-semibold text-slate-900">Organizaciones</h2>
+      <p class="mt-1 text-sm text-slate-500">Crear y gestionar tenants sincronizados con Clerk.</p>
+    </a>
+    <a href="/admin/integrations"
+       class="block rounded-xl border border-slate-200 bg-white p-6 hover:border-primary-300 hover:shadow-sm transition-all">
+      <h2 class="text-base font-semibold text-slate-900">Integraciones de canales</h2>
+      <p class="mt-1 text-sm text-slate-500">Configurar WhatsApp y Telegram por tenant.</p>
+    </a>
+  </div>
+</div>
+{% endblock %}

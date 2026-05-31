@@ -1,0 +1,36 @@
+{# Fragmento HTMX: tabla de miembros de una organización (SADM). #}
+<div id="members-list" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  {% if members %}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Email</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Nombre</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Rol</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Acciones</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for user, membership in members %}
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-3 text-slate-900">{{ user.email }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ user.name or "—" }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ membership.role }}</td>
+        <td class="px-4 py-3 text-right">
+          <button type="button"
+                  hx-delete="/sadm/users/{{ user.id }}/orgs/{{ membership.tenant_id }}"
+                  hx-target="#members-list"
+                  hx-swap="outerHTML"
+                  hx-confirm="¿Eliminar a {{ user.email }} de esta organización?"
+                  class="text-xs text-red-500 hover:text-red-700 cursor-pointer">
+            Eliminar
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-slate-400">Sin miembros todavía.</div>
+  {% endif %}
+</div>

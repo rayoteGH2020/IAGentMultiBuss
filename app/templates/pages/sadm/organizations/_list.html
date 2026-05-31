@@ -1,0 +1,30 @@
+{# Fragmento HTMX: tabla de organizaciones (SADM). #}
+<div id="org-list" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  {% if tenants %}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Nombre</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Plan</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Creada</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Acciones</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for tenant in tenants %}
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ tenant.plan }}</td>
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ tenant.created_at | local_datetime }}</td>
+        <td class="px-4 py-3 text-right">
+          <a href="/sadm/organizations/{{ tenant.id }}/members"
+             class="text-xs text-primary-600 hover:underline">Miembros</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-slate-400">Sin organizaciones todavía.</div>
+  {% endif %}
+</div>

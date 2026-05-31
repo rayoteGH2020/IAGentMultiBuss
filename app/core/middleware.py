@@ -6,6 +6,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
+from app.config import get_settings
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError
 from app.core.security import verify_clerk_jwt
@@ -47,7 +48,6 @@ def _is_public(path: str) -> bool:
 
 
 def _skip_session_resolution(path: str) -> bool:
-    """Rutas donde no hace falta leer JWT ni tocar BD (salvo login/signup/org/onboarding)."""
     if path in SESSION_OPTIONAL_PATHS:
         return False
     if _is_logout_related_path(path):
@@ -56,7 +56,6 @@ def _skip_session_resolution(path: str) -> bool:
 
 
 def _path_allowed_without_active_organization(path: str) -> bool:
-    """Rutas accesibles con sesión Clerk pero sin organización activa en el JWT."""
     if path in SESSION_OPTIONAL_PATHS:
         return True
     if _is_logout_related_path(path):
@@ -110,6 +109,10 @@ async def try_resolve_clerk_session(request: Request) -> None:
             request.state.user = user
             request.state.tenant = tenant
             request.state.membership = membership
+
+            # Flag de conveniencia para templates: ¿es este tenant el org admin?
+            admin_org = get_settings().admin_clerk_org_id.strip()
+            request.state.is_superadmin = bool(admin_org and tenant.clerk_org_id == admin_org)
         except Exception:
             await session.rollback()
             raise
@@ -127,6 +130,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.tenant = None
         request.state.membership = None
         request.state.auth_missing_organization = False
+        request.state.is_superadmin = False
 
         try:
             if _skip_session_resolution(request.url.path):
