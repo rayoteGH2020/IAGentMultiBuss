@@ -328,7 +328,6 @@ documents (
   original_filename text,
   source_file_key text,            -- clave R2 del texto fuente (siempre presente)
   source_mime text,
-  source_url text null,            -- URL pública de origen (Paso 21 A); null para ficheros y FAQs
   faq_content text null,           -- pares Q/A serializados en formato P:/R: (Paso 21 B); null si no es FAQ
   status text,                     -- pending | indexing | ready | failed
   chunk_count int default 0,

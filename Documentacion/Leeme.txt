@@ -99,24 +99,6 @@ uv run ruff check .
 
 ######################
 
-Indicaciones al arranque para Cursor:
-
-Paso01.md hecho
-Paso02.md hecho
-Paso03.md hecho
-Paso04.md hecho
-Paso05.md hecho
-Paso06.md hecho
-Paso07.md hecho
-Paso08.md hecho
-Paso09.md hecho
-Paso10.md hecho
-Paso11.md hecho
-Paso12.md hecho
-Paso13.md hecho
-Paso14.md hecho
-Paso15.md hecho
-
 Ahora la app está implementada usando un LLM en cloud. vamos a usar el fichero @MigracionLyC.md para añadir LLM en local.
 Lee el fichero @MigracionLyC.md y comienza con la implementación de ### PR-1
 

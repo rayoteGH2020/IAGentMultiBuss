@@ -83,13 +83,6 @@ class LLMCompleteError(ExternalServiceError):
         self.llm_call_id = llm_call_id
 
 
-class ScrapingError(AppError):
-    """Error al descargar o procesar una URL para ingesta de conocimiento (Paso 21 A)."""
-
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    code = "scraping_error"
-
-
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> Response:

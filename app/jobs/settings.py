@@ -14,7 +14,6 @@ from app.config import get_settings
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
-from app.jobs.knowledge_url_jobs import index_knowledge_url
 from app.jobs.ticket_jobs import process_ticket
 
 
@@ -33,7 +32,6 @@ class WorkerSettings:
         process_ticket,
         arq_func(index_knowledge_document, timeout=600),
         arq_func(process_channel_message, timeout=120),
-        arq_func(index_knowledge_url, timeout=120),
     ]
 
     # Máximo de jobs ejecutándose simultáneamente en ESTE proceso worker.

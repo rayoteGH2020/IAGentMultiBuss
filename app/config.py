@@ -192,13 +192,6 @@ class Settings(BaseSettings):
     knowledge_faq_max_pairs: int = 200
     knowledge_faq_min_answer_chars: int = 10
 
-    # Ingesta por URL (Paso 21 A)
-    knowledge_url_max_size_bytes: int = 2 * 1024 * 1024
-    knowledge_url_timeout_s: int = 30
-    knowledge_url_blacklist: list[str] = []
-    knowledge_url_allowed_schemes: list[str] = ["https"]
-    knowledge_url_max_per_day_per_tenant: int = 20
-
     # Admin superusuario (Paso 21)
     # ID de la organización Clerk que identifica al superadmin (Ruben).
     # Si está vacío, las rutas /admin devuelven 403.

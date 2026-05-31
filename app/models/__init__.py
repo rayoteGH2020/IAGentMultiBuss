@@ -21,6 +21,7 @@ from app.models.channel_integration import (
     ChannelIntegrationStatus,
     ChannelType,
 )
+from app.models.channel_response_cache import ChannelResponseCache
 from app.models.chat import ChatMessage, ChatMessageRole, ChatThread
 from app.models.conversation import ChannelMessage, Conversation
 from app.models.doc_type import DocType, DocTypeCode
@@ -47,6 +48,7 @@ __all__ = [
     "ChannelIntegration",
     "ChannelIntegrationStatus",
     "ChannelMessage",
+    "ChannelResponseCache",
     "ChannelType",
     "ChatMessage",
     "ChatMessageRole",

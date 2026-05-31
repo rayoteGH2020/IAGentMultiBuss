@@ -23,7 +23,6 @@
     </div>
     <div class="flex items-center gap-2 shrink-0">
       {% include "components/knowledge_faq_form.html" %}
-      {% include "components/knowledge_url_form.html" %}
       {% include "components/knowledge_upload_form.html" %}
     </div>
   </div>
@@ -39,6 +38,7 @@
     x-transition.opacity
     class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 sm:p-6"
     @click.self="detailOpen = false"
+    @close-knowledge-detail.window="detailOpen = false"
     role="dialog"
     aria-modal="true"
     aria-labelledby="knowledge-detail-modal-title">

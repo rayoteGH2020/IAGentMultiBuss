@@ -99,29 +99,6 @@ async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
     return str(job.job_id)
 
 
-async def enqueue_knowledge_url_indexing(
-    document_id: UUID,
-    tenant_id: UUID,
-) -> str:
-    """Encola indexación de un documento de conocimiento por URL (Paso 21 A)."""
-    job_id = f"knowledge_url:{document_id}"
-    pool = await get_arq_pool()
-    job = await pool.enqueue_job(
-        "index_knowledge_url",
-        str(document_id),
-        str(tenant_id),
-        _job_id=job_id,
-    )
-    if job is None:
-        logger.warning(
-            "arq.enqueue_knowledge_url_duplicate",
-            document_id=str(document_id),
-            tenant_id=str(tenant_id),
-        )
-        return job_id
-    return str(job.job_id)
-
-
 async def enqueue_channel_message(
     *,
     tenant_id: str,

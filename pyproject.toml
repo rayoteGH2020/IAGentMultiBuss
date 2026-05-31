@@ -47,7 +47,6 @@ dependencies = [
     "jsonref>=1.1.0",
     "pypdf>=5.1.0",
     "python-magic-bin>=0.4.14",
-    "html2text>=2025.4.15",
 ]
 
 [dependency-groups]
@@ -110,6 +109,7 @@ ignore = [
 "app/models/chat.py" = ["TCH003"]
 "app/models/calendar_integration.py" = ["TCH003"]
 "app/models/channel_integration.py" = ["TCH003"]
+"app/models/channel_response_cache.py" = ["TCH003"]
 "app/models/conversation.py" = ["TCH003"]
 "app/services/channel_integration_service.py" = ["TCH"]
 "app/routes/web/admin_channel_integrations.py" = ["TCH"]
@@ -148,6 +148,12 @@ ignore = [
 "app/schemas/knowledge_search.py" = ["TCH"]
 "app/services/knowledge_document_service.py" = ["TCH"]
 "app/services/knowledge_index_service.py" = ["TCH"]
+"app/services/admin_service.py" = ["TCH"]
+"app/routes/web/admin/dashboard.py" = ["TCH"]
+"app/routes/web/admin/organizations.py" = ["TCH"]
+"app/routes/web/admin/users.py" = ["TCH"]
+"app/core/clerk_client.py" = ["TCH"]
+"app/routes/web/auth.py" = ["TCH"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -160,7 +166,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["migrations", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*", "pgvector.*", "html2text.*"]
+module = ["arq.*", "voyageai.*", "instructor.*", "langfuse.*", "svix.*", "pgvector.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

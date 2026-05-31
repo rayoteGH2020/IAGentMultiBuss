@@ -1,15 +1,14 @@
-¿Se chunkea o se indexa cada FAQ como un chunk único?# Paso 21 — Canales externos: ingesta URL, FAQ manual, WhatsApp y Telegram
+# Paso 21 — Canales externos: FAQ manual, WhatsApp y Telegram
 
 ## Objetivo
 
-Completar el módulo 2 con cuatro capacidades:
+Completar el módulo 2 con tres capacidades:
 
-1. **Ingesta por URL** — indexar contenido web como fuente RAG sin subir fichero.
-2. **Editor de FAQ manual** — crear/editar preguntas frecuentes directamente desde la UI.
-3. **Configuración de canales externos** — tabla `channel_integrations` + tarjetas UI en `/settings/integrations` para que cada tenant registre su número de WhatsApp Business y/o su bot de Telegram.
-4. **Canales WhatsApp y Telegram** — recibir mensajes de clientes vía webhook, procesarlos con el pipeline RAG del Paso 20 y responder automáticamente.
+1. **Editor de FAQ manual** — crear/editar preguntas frecuentes directamente desde la UI.
+2. **Configuración de canales externos** — tabla `channel_integrations` + tarjetas UI en `/settings/integrations` para que cada tenant registre su número de WhatsApp Business y/o su bot de Telegram.
+3. **Canales WhatsApp y Telegram** — recibir mensajes de clientes vía webhook, procesarlos con el pipeline RAG del Paso 20 y responder automáticamente.
 
-Al final del paso, la base de conocimiento se nutre desde tres orígenes (fichero, URL, FAQ), y el chatbot responde tanto desde `/chat` web como desde WhatsApp y Telegram con la base de conocimiento **del tenant correspondiente**.
+Al final del paso, la base de conocimiento se nutre desde dos orígenes (fichero, FAQ), y el chatbot responde tanto desde `/chat` web como desde WhatsApp y Telegram con la base de conocimiento **del tenant correspondiente**.
 
 ## Pre-requisitos
 
@@ -17,7 +16,6 @@ Al final del paso, la base de conocimiento se nutre desde tres orígenes (ficher
 - Cuenta **WhatsApp Business API** (Meta for Developers): número verificado, app creada.
 - Bot de **Telegram** creado vía `@BotFather` (uno por tenant).
 - `ENCRYPTION_KEY` en Infisical (ya usada para Google Calendar; misma clave para cifrar tokens de canal).
-- Librería `html2text` para limpieza de HTML en scraping.
 
 ## Contexto relevante
 
@@ -34,7 +32,6 @@ Al final del paso, la base de conocimiento se nutre desde tres orígenes (ficher
 
 ### Dentro de Paso 21
 
-- Sub-módulo A: Ingesta por URL.
 - Sub-módulo B: FAQ manual.
 - Sub-módulo C: Modelo `ChannelIntegration` + migración.
 - Sub-módulo D: Tarjetas UI en `/settings/integrations` (WhatsApp + Telegram), solo accesibles por `admin`.
@@ -43,6 +40,7 @@ Al final del paso, la base de conocimiento se nutre desde tres orígenes (ficher
 
 ### Fuera de Paso 21
 
+- Ingesta por URL (descartada).
 - Editor WYSIWYG avanzado.
 - OCR de PDFs escaneados.
 - Reranker externo.
@@ -77,57 +75,6 @@ routes/api/webhooks_whatsapp.py   routes/api/webhooks_telegram.py
                           │
               whatsapp_client / telegram_client → respuesta al cliente
 ```
-
----
-
-## Sub-módulo A — Ingesta URL
-
-### A.1 — Configuración
-
-- [x] Ampliar `app/config.py`:
-  ```python
-  # Ingesta URL (Paso 21)
-  knowledge_url_max_size_bytes: int = 2 * 1024 * 1024
-  knowledge_url_timeout_s: int = 30
-  knowledge_url_blacklist: list[str] = []
-  knowledge_url_allowed_schemes: list[str] = ["https"]
-  knowledge_url_max_per_day_per_tenant: int = 20
-  ```
-
-### A.2 — Scraping
-
-- [x] Crear `app/core/web_scraper.py`:
-  - [x] `async def scrape_url(url: str, settings: Settings) -> ScrapedResult`:
-    - [x] Validar URL (scheme, blacklist, longitud).
-    - [x] `httpx.AsyncClient` con timeout `knowledge_url_timeout_s`.
-    - [x] Respetar `robots.txt` (simplificado: si `Disallow: /` → abortar).
-    - [x] Convertir HTML → texto plano con `html2text`.
-    - [x] Truncar a `knowledge_url_max_size_bytes`.
-    - [x] `ScrapedResult(text, title, final_url, char_count)`.
-  - [x] Errores HTTP → `ScrapingError` con mensaje descriptivo.
-
-### A.3 — Migración y modelo
-
-- [x] Migración `p21_a_knowledge_url_faq_01_add_columns` ya aplicada desde la primera sesión.
-- [x] `KnowledgeDocument.source_url: Mapped[str | None]` ya existe en el modelo.
-
-### A.4 — Worker
-
-- [x] Crear `app/jobs/knowledge_url_jobs.py` con `index_knowledge_url()` — scraping + upload R2 + `run_index_pipeline()`.
-- [x] Registrado en `app/jobs/settings.py` (timeout 120 s) y `enqueue_knowledge_url_indexing()` en `queue.py`.
-
-### A.5 — Rutas y UI
-
-- [x] Ampliar `app/routes/web/knowledge.py`: `POST /knowledge/url` con rate-limit y manejo de `ScrapingError`.
-- [x] Crear `app/templates/components/knowledge_url_form.html` — modal Alpine + HTMX.
-- [x] Actualizar `pages/knowledge/index.html`: botón «Añadir URL» junto al de subida.
-
-### A.6 — Tests
-
-- [x] `tests/unit/test_web_scraper.py`: mocks con `respx`; errores HTTP; robots.txt; truncado; extracción de título.
-- [x] `tests/integration/test_knowledge_url.py`: job llamado directamente, httpx interceptado con `respx`, R2 y embeddings mockeados.
-  - [x] `test_index_knowledge_url_full_flow` — URL → scraping → status=ready, chunk_count > 0, nombre actualizado con título.
-  - [x] `test_index_knowledge_url_scraping_failure_marks_failed` — HTTP 404 → status=failed con error_message.
 
 ---
 
@@ -604,9 +551,8 @@ Tarjetas en `pages/admin/channel_integrations_detail.html`, protegidas por `Supe
 
 ```
 app/
-  config.py                                       # + URL/FAQ/canal settings
+  config.py                                       # + FAQ/canal settings
   core/
-    web_scraper.py                                # scraping httpx + html2text
     faq_serializer.py                             # serialización pares Q/A
     whatsapp_client.py                            # cliente API WhatsApp
     telegram_client.py                            # cliente API Telegram
@@ -623,41 +569,38 @@ app/
   llm/prompts/
     channel_external_v1.txt                       # prompt para clientes externos
   jobs/
-    knowledge_url_jobs.py                         # index_knowledge_url
     channel_jobs.py                               # process_channel_message
     settings.py                                   # + nuevos jobs
     queue.py                                      # + enqueue helpers
   routes/
     web/
-      knowledge.py                                # + /url, /faq, /faq/edit
+      knowledge.py                                # + /faq, /faq/edit
       integrations.py                             # + tarjetas WA/Telegram, save/disconnect
     api/
       webhooks_whatsapp.py                        # GET+POST /api/webhooks/whatsapp
       webhooks_telegram.py                        # POST /api/webhooks/telegram/{integration_id}
   main.py                                         # + registrar nuevos routers
 migrations/versions/
-  p21_a_knowledge_url.py
-  p21_b_knowledge_faq.py
+  p21_a_knowledge_url_faq_01_add_columns.py       # añadió source_url + faq_content (source_url ya eliminada)
   p21_c_channel_integrations.py                   # tabla + RLS + índices
   p21_c2_conversations.py                         # conversations + channel_messages + RLS
+  p21_e_channel_response_cache_01.py              # semantic cache
+  p21_drop_source_url_01.py                       # elimina columna source_url
 templates/
   pages/
-    knowledge/index.html                          # + tabs URL / FAQ
+    knowledge/index.html                          # + FAQ
     settings/integrations.html                    # + include WA/Telegram cards
   components/
     integration_whatsapp.html                     # tarjeta WhatsApp
     integration_telegram.html                     # tarjeta Telegram
     knowledge_faq_form.html                       # editor pares Q/A Alpine
-    knowledge_url_form.html                       # campo URL
 tests/
   unit/
-    test_web_scraper.py
     test_faq_serializer.py
     test_whatsapp_client.py
     test_telegram_client.py
     test_channel_chat_service.py
   integration/
-    test_knowledge_url.py
     test_knowledge_faq.py
     test_channel_integrations_ui.py
     test_whatsapp_webhook.py
@@ -668,59 +611,52 @@ tests/
 
 ## Verificación manual (checklist)
 
-### Sub-módulo A — Ingesta URL
-
-1. [x] `infisical run -- uv run alembic upgrade head` — BD en `p21_c2_conversations_01 (head)`.
-2. [ ] Abrir `/knowledge` → pestaña «Añadir URL» → introducir URL pública.
-3. [ ] Verificar polling `pending → ready`, `chunk_count > 0`.
-4. [ ] En `/chat` preguntar sobre el contenido de la URL → cita chunks de esa URL.
-
 ### Sub-módulo B — FAQ manual
 
-5. [ ] Pestaña «Crear FAQ» → añadir 3 pares Q/A → guardar.
-6. [ ] Fila aparece → polling → `ready`.
-7. [ ] En `/chat` preguntar la pregunta del FAQ → respuesta usa el fragmento.
-8. [ ] Editar FAQ → modificar respuesta → reindexar → verificar respuesta actualizada.
+1. [x] `infisical run -- uv run alembic upgrade head` — BD en `p21_drop_source_url_01 (head)`.
+2. [x] Pestaña «Crear FAQ» → añadir 3 pares Q/A → guardar.
+3. [x] Fila aparece → polling → `ready`.
+4. [x] En `/chat` preguntar la pregunta del FAQ → respuesta usa el fragmento.
+5. [x] Editar FAQ → modificar respuesta → reindexar → verificar respuesta actualizada.
 
 ### Sub-módulo D — Configuración de canales
 
-9. [ ] Abrir `/settings/integrations` como `admin` → ver tarjetas WhatsApp y Telegram.
-10. [ ] **WhatsApp:** introducir `phone_number_id` + token → guardar → tarjeta muestra estado conectado + URL de webhook.
-11. [ ] Verificar en BD: `SELECT id, channel, phone_number_id, display_name, status FROM channel_integrations;`
-12. [ ] Verificar que `api_token_enc` ≠ token original (cifrado).
-13. [ ] **Telegram:** introducir bot_token → guardar → verificar que `setWebhook` se llamó (log o Telegram API response).
-14. [ ] Tarjeta Telegram muestra URL webhook: `{app_base_url}/api/webhooks/telegram/{integration_id}`.
-15. [ ] Probar desconexión → `deleteWebhook` llamado (Telegram) → fila `status=inactive`.
+6. [ ] Abrir `/settings/integrations` como `admin` → ver tarjetas WhatsApp y Telegram.
+7. [ ] **WhatsApp:** introducir `phone_number_id` + token → guardar → tarjeta muestra estado conectado + URL de webhook.
+8. [ ] Verificar en BD: `SELECT id, channel, phone_number_id, display_name, status FROM channel_integrations;`
+9. [ ] Verificar que `api_token_enc` ≠ token original (cifrado).
+10. [ ] **Telegram:** introducir bot_token → guardar → verificar que `setWebhook` se llamó (log o Telegram API response).
+11. [ ] Tarjeta Telegram muestra URL webhook: `{app_base_url}/api/webhooks/telegram/{integration_id}`.
+12. [ ] Probar desconexión → `deleteWebhook` llamado (Telegram) → fila `status=inactive`.
 
 ### Sub-módulo E — WhatsApp
 
-16. [ ] Configurar webhook en Meta Developer Console (usar ngrok en dev).
-17. [ ] `GET /api/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=xyz&hub.verify_token=<token>` → responde `xyz`.
-18. [ ] Enviar mensaje desde WhatsApp al número configurado → worker procesa job → respuesta automática llega.
-19. [ ] Verificar en BD:
+13. [ ] Configurar webhook en Meta Developer Console (usar ngrok en dev).
+14. [ ] `GET /api/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=xyz&hub.verify_token=<token>` → responde `xyz`.
+15. [ ] Enviar mensaje desde WhatsApp al número configurado → worker procesa job → respuesta automática llega.
+16. [ ] Verificar en BD:
     ```sql
     SELECT c.channel, c.customer_identifier, m.role, LEFT(m.content, 80)
     FROM conversations c JOIN channel_messages m ON m.conversation_id = c.id
     ORDER BY m.created_at DESC LIMIT 6;
     ```
-20. [ ] Preguntar algo sin respuesta en la base de conocimiento → mensaje de escalado + audit log `channel.escalated`.
+17. [ ] Preguntar algo sin respuesta en la base de conocimiento → mensaje de escalado + audit log `channel.escalated`.
 
 ### Sub-módulo F — Telegram
 
-21. [ ] Enviar mensaje al bot de Telegram → worker procesa → respuesta llega al chat.
-22. [ ] Verificar conversación en BD (mismo query que paso 19, `channel='telegram'`).
-23. [ ] Preguntar sin respuesta → escalado correcto.
+18. [ ] Enviar mensaje al bot de Telegram → worker procesa → respuesta llega al chat.
+19. [ ] Verificar conversación en BD (mismo query que paso 16, `channel='telegram'`).
+20. [ ] Preguntar sin respuesta → escalado correcto.
 
 ### General
 
-24. [ ] `infisical run -- uv run pytest tests/ -q` — todos los tests pasan.
-25. [ ] `uv run mypy app` y `uv run ruff check .` — verdes.
+21. [ ] `infisical run -- uv run pytest tests/ -q` — todos los tests pasan.
+22. [ ] `uv run mypy app` y `uv run ruff check .` — verdes.
 
 ---
 
 ## Criterios de aceptación
 
-- [ ] URL pública se indexa → chunks consultables desde `/chat`.
 - [ ] FAQ manual crea chunks; edición dispara reindexación.
 - [ ] Admin puede configurar WhatsApp y Telegram desde `/settings/integrations` (tarjetas UI).
 - [ ] Tokens almacenados cifrados en `channel_integrations.api_token_enc`.

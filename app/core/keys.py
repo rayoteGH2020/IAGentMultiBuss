@@ -77,16 +77,6 @@ def knowledge_faq_key(tenant_id: uuid.UUID, document_id: uuid.UUID) -> str:
     return f"documents/{tenant_id}/faq/{document_id}.txt"
 
 
-def knowledge_url_key(tenant_id: uuid.UUID) -> str:
-    """Genera una key R2 para texto scrapeado de una URL (Paso 21 A).
-
-    Estructura: documents/{tenant_id}/url/{yyyy}/{mm}/{uuid}.txt
-    El fichero .txt contendrá el texto plano extraído de la URL.
-    """
-    now = datetime.now(UTC)
-    return f"documents/{tenant_id}/url/{now:%Y/%m}/{uuid.uuid4()}.txt"
-
-
 def document_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     """Genera una key para documentos del módulo de conocimiento (RAG).
 

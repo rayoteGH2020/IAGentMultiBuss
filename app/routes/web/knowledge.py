@@ -21,13 +21,13 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.errors import RateLimitError, ScrapingError, ValidationError
+from app.core.errors import RateLimitError, ValidationError
 from app.core.faq_serializer import FaqPair
 from app.core.rate_limiter import check_knowledge_upload_rate
 from app.core.templating import render
 from app.core.uploads import UploadValidationError
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
-from app.jobs.queue import enqueue_knowledge_indexing, enqueue_knowledge_url_indexing
+from app.jobs.queue import enqueue_knowledge_indexing
 from app.models.knowledge import KnowledgeDocument, KnowledgeDocumentKind, KnowledgeDocumentStatus
 from app.schemas.knowledge import KnowledgeDocumentFilters
 from app.services import knowledge_document_service
@@ -338,11 +338,12 @@ async def knowledge_faq_edit(
         raise NotFoundError(f"KnowledgeDocument {document_id} not found")
 
     pairs = knowledge_document_service.get_faq_pairs(doc_orm)
+    pairs_json = json.dumps([p.model_dump() for p in pairs])
     return render(
         request,
         full="components/knowledge_faq_edit_panel.html",
         partial="components/knowledge_faq_edit_panel.html",
-        ctx={"document": doc_orm, "pairs": pairs, "kinds": list(KnowledgeDocumentKind)},
+        ctx={"document": doc_orm, "pairs_json": pairs_json, "kinds": list(KnowledgeDocumentKind)},
     )
 
 
@@ -385,97 +386,6 @@ async def knowledge_faq_update(
         full="components/knowledge_row.html",
         partial="components/knowledge_row.html",
         ctx={"document": doc_read},
-    )
-
-
-@router.post("/url")
-async def upload_knowledge_url(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    redis: RedisDep,
-    db: AsyncSession = Depends(get_db),
-    url: Annotated[str, Form()] = "",
-    kind: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
-    """Indexa una URL pública en la base de conocimiento."""
-    doc_kind = _parse_kind(kind)
-    if not url.strip() or doc_kind is None:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[{"filename": "—", "error": "URL y categoría son obligatorios."}],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
-
-    settings = get_settings()
-    try:
-        await check_knowledge_upload_rate(
-            redis,
-            tenant_id=tenant.id,
-            max_per_day=settings.knowledge_url_max_per_day_per_tenant,
-            n_files=1,
-        )
-    except RateLimitError as exc:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[{"filename": url, "error": str(exc)}],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
-
-    try:
-        doc = await knowledge_document_service.create_from_url(
-            db,
-            tenant_id=tenant.id,
-            user_id=user.id,
-            url=url.strip(),
-            kind=doc_kind,
-        )
-        await enqueue_knowledge_url_indexing(doc.id, tenant.id)
-    except ScrapingError as exc:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[{"filename": url, "error": exc.message}],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
-    except Exception:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[
-                {"filename": url, "error": "Error al procesar la URL. Inténtalo de nuevo."}
-            ],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
-
-    ctx = await _list_ctx(db, tenant.id)
-    return render(
-        request,
-        full="pages/knowledge/index.html",
-        partial="components/knowledge_rows.html",
-        ctx=ctx,
     )
 
 

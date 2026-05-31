@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.errors import NotFoundError
 from app.core.faq_serializer import FaqPair, deserialize_faq, serialize_faq
-from app.core.keys import document_key, knowledge_faq_key, knowledge_url_key
+from app.core.keys import document_key, knowledge_faq_key
 from app.core.knowledge_uploads import validate_knowledge_upload
 from app.core.storage import get_storage
 from app.core.uploads import original_upload_filename
@@ -32,7 +32,6 @@ from app.services import audit_service
 logger = structlog.get_logger(__name__)
 
 ACTION_KNOWLEDGE_UPLOAD = "knowledge.upload"
-ACTION_KNOWLEDGE_URL_UPLOAD = "knowledge.url_upload"
 ACTION_KNOWLEDGE_FAQ_CREATE = "knowledge.faq_create"
 ACTION_KNOWLEDGE_FAQ_EDIT = "knowledge.faq_edit"
 ACTION_KNOWLEDGE_DELETE = "knowledge.delete"
@@ -106,58 +105,6 @@ async def create_from_upload(
         document_id=str(doc.id),
         tenant_id=str(tenant_id),
         kind=kind.value,
-    )
-    return doc
-
-
-async def create_from_url(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    user_id: UUID | None,
-    url: str,
-    kind: KnowledgeDocumentKind,
-    name: str | None = None,
-    request_ctx: audit_service.AuditRequestContext | None = None,
-) -> KnowledgeDocument:
-    """Crea un KnowledgeDocument en estado pending para ingesta por URL (Paso 21 A).
-
-    No descarga ni sube nada a R2 aquí: el job knowledge_url_jobs.index_knowledge_url
-    es responsable del scraping, subida a R2 y posterior indexación via run_index_pipeline.
-    La key R2 se pre-genera para que el job sepa dónde subir el texto extraído.
-    """
-    key = knowledge_url_key(tenant_id)
-    doc_name = (name or url)[:300]
-    doc = KnowledgeDocument(
-        tenant_id=tenant_id,
-        kind=kind,
-        name=doc_name,
-        original_filename=url[:300],
-        source_file_key=key,
-        source_mime="text/plain",
-        source_url=url,
-        status=KnowledgeDocumentStatus.pending,
-        chunk_count=0,
-        file_size_bytes=0,
-        uploaded_by=user_id,
-    )
-    db.add(doc)
-    await db.flush()
-    await audit_service.log_action(
-        db,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        action=ACTION_KNOWLEDGE_URL_UPLOAD,
-        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
-        resource_id=doc.id,
-        metadata={"url": url, "kind": kind.value},
-        request_ctx=request_ctx,
-    )
-    logger.info(
-        "knowledge.url.created",
-        document_id=str(doc.id),
-        tenant_id=str(tenant_id),
-        url=url,
     )
     return doc
 

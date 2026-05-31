@@ -82,8 +82,6 @@ class KnowledgeDocument(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    # Ingesta por URL (Paso 21 A): URL pública de origen; null para documentos subidos por fichero.
-    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # FAQ manual (Paso 21 B): pares Q/A serializados; null para documentos no-FAQ.
     faq_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

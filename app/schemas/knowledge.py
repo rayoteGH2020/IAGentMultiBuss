@@ -39,6 +39,7 @@ class KnowledgeDocumentRead(BaseModel):
     ingested_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    faq_content: str | None = None
     # Solo se rellena en get_document(); None en listados.
     download_url: str | None = None
 
