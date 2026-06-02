@@ -383,23 +383,25 @@
     @apply mx-auto max-w-md text-center;
   }
 
-  /* Google Calendar — fichas de evento (tonos azules) */
+  /* ── Google Calendar — cuadrícula 3 columnas ───────────────────── */
   .calendar-events-grid {
-    @apply grid gap-3 sm:gap-4;
+    @apply grid grid-cols-3 gap-3;
   }
+
+  /* ── Ficha base (lunes / día 0 = sky-blue por defecto) ─────────── */
   .calendar-event-card {
     @apply relative overflow-hidden rounded-2xl border border-sky-200/80
-           bg-gradient-to-br from-sky-50 via-primary-50/90 to-blue-100/50
-           shadow-[0_1px_2px_rgba(14,165,233,0.1),0_6px_20px_rgba(2,132,199,0.08)]
+           bg-gradient-to-br from-sky-50 via-sky-50/90 to-sky-100/50
+           shadow-[0_1px_2px_rgba(14,165,233,0.08),0_4px_16px_rgba(2,132,199,0.07)]
            transition-[transform,box-shadow,border-color] duration-300 ease-out
-           hover:border-sky-300 hover:shadow-[0_8px_28px_rgba(2,132,199,0.14)]
+           hover:border-sky-300 hover:shadow-[0_6px_22px_rgba(2,132,199,0.13)]
            hover:-translate-y-0.5;
     animation: calendar-card-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
   .calendar-event-card::before {
     content: "";
     @apply pointer-events-none absolute inset-y-0 left-0 w-1
-           bg-gradient-to-b from-sky-400 via-primary-500 to-primary-700;
+           bg-gradient-to-b from-sky-400 via-sky-500 to-sky-700;
   }
   .calendar-event-card::after {
     content: "";
@@ -407,58 +409,58 @@
            bg-sky-300/20 blur-2xl;
   }
   .calendar-event-card__inner {
-    @apply relative z-[1] p-4 sm:p-5;
+    @apply relative z-[1] p-3;
   }
   .calendar-event-card__view {
-    @apply flex gap-4;
+    @apply flex gap-2;
   }
   .calendar-event-card__date {
     @apply flex shrink-0 flex-col items-center justify-center
-           rounded-xl border border-sky-200/90 bg-white/70 px-3 py-2.5
-           shadow-sm backdrop-blur-sm min-w-[3.25rem];
+           rounded-xl border border-sky-200/90 bg-white/70 px-2.5 py-2
+           shadow-sm backdrop-blur-sm min-w-[2.75rem];
   }
   .calendar-event-card__day {
-    @apply text-xl leading-none font-semibold text-primary-700 tabular-nums tracking-tight;
+    @apply text-lg leading-none font-semibold text-sky-700 tabular-nums tracking-tight;
   }
   .calendar-event-card__month {
-    @apply mt-1 text-[0.65rem] font-semibold tracking-[0.12em] text-sky-600;
+    @apply mt-0.5 text-[0.6rem] font-semibold tracking-[0.1em] text-sky-600 uppercase;
   }
   .calendar-event-card__content {
     @apply min-w-0 flex-1;
   }
   .calendar-event-card__header {
-    @apply flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between;
+    @apply flex flex-col gap-1;
   }
   .calendar-event-card__title {
-    @apply font-medium text-slate-900 break-words leading-snug;
+    @apply text-sm font-medium text-slate-900 break-words leading-snug;
   }
   .calendar-event-card__actions {
-    @apply flex shrink-0 items-center gap-2;
+    @apply flex shrink-0 items-center gap-1.5;
   }
   .calendar-event-card__link {
-    @apply inline-flex items-center rounded-md border border-sky-200/90 bg-white/80
-           px-2.5 py-1 text-xs font-medium text-primary-700
-           transition-colors hover:border-sky-300 hover:bg-white hover:text-primary-900;
+    @apply inline-flex items-center rounded border border-sky-200/90 bg-white/80
+           px-2 py-0.5 text-xs font-medium text-sky-700
+           transition-colors hover:border-sky-300 hover:bg-white;
   }
   .calendar-event-card__edit {
-    @apply inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium
-           text-sky-800/80 transition-colors hover:bg-sky-100/80 hover:text-primary-900;
+    @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium
+           text-sky-700/80 transition-colors hover:bg-sky-100/80;
   }
   .calendar-event-card__time {
-    @apply mt-2 flex flex-wrap items-center gap-1.5 text-sm font-medium text-primary-700 tabular-nums;
+    @apply mt-1.5 flex flex-wrap items-center gap-1 text-xs font-medium text-sky-700 tabular-nums;
   }
   .calendar-event-card__time-sep {
-    @apply text-sky-400/90;
+    @apply text-sky-400/80;
   }
   .calendar-event-card__badge {
     @apply inline-flex items-center rounded-full border border-sky-200 bg-sky-100/80
-           px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary-700;
+           px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-sky-700;
   }
   .calendar-event-card__desc {
-    @apply mt-2.5 text-sm leading-relaxed text-slate-600/95 break-words line-clamp-3;
+    @apply mt-1.5 text-xs leading-relaxed text-slate-600/90 break-words line-clamp-2;
   }
   .calendar-event-card__form {
-    @apply space-y-3 rounded-xl border border-sky-200/90 bg-white/90 p-4 backdrop-blur-sm;
+    @apply space-y-3 rounded-xl border border-sky-200/90 bg-white/90 p-3 backdrop-blur-sm;
   }
   .calendar-event-card__label {
     @apply mb-1 block text-xs font-medium text-sky-900/70;
@@ -468,6 +470,105 @@
            text-slate-800 shadow-sm transition-shadow
            focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
   }
+
+  /* ── 7 esquemas de color por día de la semana ───────────────────── */
+  /* 0 Lunes — sky (default, sin override) */
+
+  /* 1 Martes — indigo */
+  .calendar-event-card--1 {
+    @apply border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-indigo-50/90 to-indigo-100/50
+           hover:border-indigo-300;
+  }
+  .calendar-event-card--1::before { @apply from-indigo-400 via-indigo-500 to-indigo-700; }
+  .calendar-event-card--1::after  { @apply bg-indigo-300/20; }
+  .calendar-event-card--1 .calendar-event-card__day   { @apply text-indigo-700; }
+  .calendar-event-card--1 .calendar-event-card__month { @apply text-indigo-600; }
+  .calendar-event-card--1 .calendar-event-card__time  { @apply text-indigo-700; }
+  .calendar-event-card--1 .calendar-event-card__badge { @apply border-indigo-200 bg-indigo-100/80 text-indigo-700; }
+  .calendar-event-card--1 .calendar-event-card__link  { @apply border-indigo-200/90 text-indigo-700 hover:border-indigo-300; }
+  .calendar-event-card--1 .calendar-event-card__edit  { @apply text-indigo-700/80 hover:bg-indigo-100/80; }
+  .calendar-event-card--1 .calendar-event-card__date  { @apply border-indigo-200/90; }
+  .calendar-event-card--1 .calendar-event-card__form  { @apply border-indigo-200/90; }
+
+  /* 2 Miércoles — emerald */
+  .calendar-event-card--2 {
+    @apply border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-emerald-50/90 to-emerald-100/50
+           hover:border-emerald-300;
+  }
+  .calendar-event-card--2::before { @apply from-emerald-400 via-emerald-500 to-emerald-700; }
+  .calendar-event-card--2::after  { @apply bg-emerald-300/20; }
+  .calendar-event-card--2 .calendar-event-card__day   { @apply text-emerald-700; }
+  .calendar-event-card--2 .calendar-event-card__month { @apply text-emerald-600; }
+  .calendar-event-card--2 .calendar-event-card__time  { @apply text-emerald-700; }
+  .calendar-event-card--2 .calendar-event-card__badge { @apply border-emerald-200 bg-emerald-100/80 text-emerald-700; }
+  .calendar-event-card--2 .calendar-event-card__link  { @apply border-emerald-200/90 text-emerald-700 hover:border-emerald-300; }
+  .calendar-event-card--2 .calendar-event-card__edit  { @apply text-emerald-700/80 hover:bg-emerald-100/80; }
+  .calendar-event-card--2 .calendar-event-card__date  { @apply border-emerald-200/90; }
+  .calendar-event-card--2 .calendar-event-card__form  { @apply border-emerald-200/90; }
+
+  /* 3 Jueves — amber */
+  .calendar-event-card--3 {
+    @apply border-amber-200/80 bg-gradient-to-br from-amber-50 via-amber-50/90 to-amber-100/50
+           hover:border-amber-300;
+  }
+  .calendar-event-card--3::before { @apply from-amber-400 via-amber-500 to-amber-600; }
+  .calendar-event-card--3::after  { @apply bg-amber-300/20; }
+  .calendar-event-card--3 .calendar-event-card__day   { @apply text-amber-700; }
+  .calendar-event-card--3 .calendar-event-card__month { @apply text-amber-600; }
+  .calendar-event-card--3 .calendar-event-card__time  { @apply text-amber-700; }
+  .calendar-event-card--3 .calendar-event-card__badge { @apply border-amber-200 bg-amber-100/80 text-amber-700; }
+  .calendar-event-card--3 .calendar-event-card__link  { @apply border-amber-200/90 text-amber-700 hover:border-amber-300; }
+  .calendar-event-card--3 .calendar-event-card__edit  { @apply text-amber-700/80 hover:bg-amber-100/80; }
+  .calendar-event-card--3 .calendar-event-card__date  { @apply border-amber-200/90; }
+  .calendar-event-card--3 .calendar-event-card__form  { @apply border-amber-200/90; }
+
+  /* 4 Viernes — rose */
+  .calendar-event-card--4 {
+    @apply border-rose-200/80 bg-gradient-to-br from-rose-50 via-rose-50/90 to-rose-100/50
+           hover:border-rose-300;
+  }
+  .calendar-event-card--4::before { @apply from-rose-400 via-rose-500 to-rose-700; }
+  .calendar-event-card--4::after  { @apply bg-rose-300/20; }
+  .calendar-event-card--4 .calendar-event-card__day   { @apply text-rose-700; }
+  .calendar-event-card--4 .calendar-event-card__month { @apply text-rose-600; }
+  .calendar-event-card--4 .calendar-event-card__time  { @apply text-rose-700; }
+  .calendar-event-card--4 .calendar-event-card__badge { @apply border-rose-200 bg-rose-100/80 text-rose-700; }
+  .calendar-event-card--4 .calendar-event-card__link  { @apply border-rose-200/90 text-rose-700 hover:border-rose-300; }
+  .calendar-event-card--4 .calendar-event-card__edit  { @apply text-rose-700/80 hover:bg-rose-100/80; }
+  .calendar-event-card--4 .calendar-event-card__date  { @apply border-rose-200/90; }
+  .calendar-event-card--4 .calendar-event-card__form  { @apply border-rose-200/90; }
+
+  /* 5 Sábado — violet */
+  .calendar-event-card--5 {
+    @apply border-violet-200/80 bg-gradient-to-br from-violet-50 via-violet-50/90 to-violet-100/50
+           hover:border-violet-300;
+  }
+  .calendar-event-card--5::before { @apply from-violet-400 via-violet-500 to-violet-700; }
+  .calendar-event-card--5::after  { @apply bg-violet-300/20; }
+  .calendar-event-card--5 .calendar-event-card__day   { @apply text-violet-700; }
+  .calendar-event-card--5 .calendar-event-card__month { @apply text-violet-600; }
+  .calendar-event-card--5 .calendar-event-card__time  { @apply text-violet-700; }
+  .calendar-event-card--5 .calendar-event-card__badge { @apply border-violet-200 bg-violet-100/80 text-violet-700; }
+  .calendar-event-card--5 .calendar-event-card__link  { @apply border-violet-200/90 text-violet-700 hover:border-violet-300; }
+  .calendar-event-card--5 .calendar-event-card__edit  { @apply text-violet-700/80 hover:bg-violet-100/80; }
+  .calendar-event-card--5 .calendar-event-card__date  { @apply border-violet-200/90; }
+  .calendar-event-card--5 .calendar-event-card__form  { @apply border-violet-200/90; }
+
+  /* 6 Domingo — slate */
+  .calendar-event-card--6 {
+    @apply border-slate-300/80 bg-gradient-to-br from-slate-100 via-slate-100/90 to-slate-200/50
+           hover:border-slate-400;
+  }
+  .calendar-event-card--6::before { @apply from-slate-400 via-slate-500 to-slate-600; }
+  .calendar-event-card--6::after  { @apply bg-slate-300/20; }
+  .calendar-event-card--6 .calendar-event-card__day   { @apply text-slate-600; }
+  .calendar-event-card--6 .calendar-event-card__month { @apply text-slate-500; }
+  .calendar-event-card--6 .calendar-event-card__time  { @apply text-slate-600; }
+  .calendar-event-card--6 .calendar-event-card__badge { @apply border-slate-300 bg-slate-200/80 text-slate-600; }
+  .calendar-event-card--6 .calendar-event-card__link  { @apply border-slate-300/90 text-slate-600 hover:border-slate-400; }
+  .calendar-event-card--6 .calendar-event-card__edit  { @apply text-slate-600/80 hover:bg-slate-200/80; }
+  .calendar-event-card--6 .calendar-event-card__date  { @apply border-slate-300/90; }
+  .calendar-event-card--6 .calendar-event-card__form  { @apply border-slate-300/90; }
 }
 
 @keyframes chat-typing {

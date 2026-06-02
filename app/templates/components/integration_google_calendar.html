@@ -166,13 +166,14 @@
   </div>
 
   {% if is_connected %}
-  <div class="border-t border-slate-100 px-6 py-5">
-    <div id="calendar-events-panel"
-         hx-get="/settings/integrations/google/events"
-         hx-trigger="load"
-         hx-swap="outerHTML">
-      <p class="text-sm text-slate-500">Cargando eventos del calendario…</p>
-    </div>
+  <div class="border-t border-slate-100 px-6 py-4">
+    <a href="/calendar" hx-boost="true"
+       class="inline-flex items-center gap-2 text-sm font-medium text-primary-700 hover:text-primary-900 cursor-pointer">
+      Ver eventos en Calendario
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </a>
   </div>
   {% endif %}
 </article>

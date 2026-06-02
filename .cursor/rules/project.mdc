@@ -32,6 +32,11 @@ Antes de generar o retocar código de forma sustantiva:
 - Excepciones desde `app.core.errors`. Logging con `structlog`, no `print()`.
 - Prompts en `app/llm/prompts/` versionados; no prompts largos inline en Python.
 
+## Tests obligatorios
+
+- Ante **cualquier** modificación o desarrollo nuevo de código: crear/actualizar los tests necesarios y **ejecutarlos** (`infisical run -- uv run pytest <rutas> -q`) antes de dar la tarea por terminada. Detalle en `Agents.md` §9.
+- Si el entorno no permite ejecutarlos (sin BD/credenciales), indicarlo explícitamente. Cambios solo de docs/config estática quedan exentos.
+
 ## Multi-tenant y datos
 
 - RLS en tablas con `tenant_id`; sesión con `app.current_tenant`. No confiar solo en filtros manuales.

@@ -1,4 +1,4 @@
-"""E2E: flujo login Clerk → home → ajustes organización → renombrar tenant."""
+"""E2E: flujo login Clerk → home → Mi cuenta → renombrar organización."""
 
 import os
 
@@ -32,8 +32,8 @@ async def test_login_to_dashboard() -> None:
         heading = page.locator("h1").first
         assert (await heading.inner_text()) != ""
 
-        await page.click("a[href='/settings/organization']")
-        await page.wait_for_url(f"{BASE_URL}/settings/organization")
+        await page.click("a[href='/settings/profile']")
+        await page.wait_for_url(f"{BASE_URL}/settings/profile")
 
         await page.fill("input[name='name']", "Nuevo Nombre Test")
         await page.click("button[type='submit']")

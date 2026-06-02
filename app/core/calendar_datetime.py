@@ -93,6 +93,19 @@ def calendar_event_date_chip(iso_value: str) -> dict[str, str]:
     }
 
 
+def calendar_event_weekday(iso_value: str) -> int:
+    """Devuelve el día de la semana del evento (0=lunes, 6=domingo)."""
+    if len(iso_value) == 10 and iso_value[4] == "-" and iso_value[7] == "-":
+        return date.fromisoformat(iso_value).weekday()
+    normalized = iso_value.replace("Z", "+00:00")
+    parsed_dt = datetime.fromisoformat(normalized)
+    if parsed_dt.tzinfo:
+        local = parsed_dt.astimezone(resolve_display_timezone())
+    else:
+        local = parsed_dt.replace(tzinfo=UTC).astimezone(resolve_display_timezone())
+    return local.date().weekday()
+
+
 def calendar_event_is_all_day(iso_value: str) -> bool:
     """True si el evento es de día completo (solo fecha)."""
     return len(iso_value) == 10 and iso_value[4] == "-" and iso_value[7] == "-"

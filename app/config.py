@@ -206,10 +206,36 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_starttls: bool = True
 
-    # Metrics interno (Paso 15) — token para `/metrics/module1`
+    # Métricas interno (Paso 15) — token para `/metrics/module1`
     # Bearer token simple para proteger el endpoint de métricas internas.
     # No es auth de usuario; es autenticación máquina-a-máquina (CI, dashboards).
     metrics_token: SecretStr = SecretStr("")
+
+    # Voz → Google Calendar (Paso 23)
+    voice_calendar_enabled: bool = True
+    voice_max_audio_bytes: int = 8 * 1024 * 1024  # 8 MB
+    voice_max_audio_seconds: int = 60  # duración máx. de la nota
+    # MIME aceptados por Gemini audio. audio/webm puede requerir transcodificación
+    # en algunos entornos; preferir audio/ogg o audio/mp4 desde MediaRecorder.
+    voice_allowed_audio_mimes: list[str] = [
+        "audio/ogg",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/aac",
+        "audio/wav",
+        "audio/webm",
+    ]
+    # Zona horaria para resolver fechas/horas relativas dictadas ("mañana", "a las 5").
+    # Futuro: tz por usuario/tenant. De momento, valor único configurable.
+    voice_calendar_default_timezone: str = "Europe/Madrid"
+    # Duración por defecto si el usuario no especifica fin (minutos).
+    voice_event_default_duration_minutes: int = 60
+    # Umbral de confianza por debajo del cual la UI exige revisión explícita.
+    voice_event_min_confidence: float = 0.5
+    # Rate-limit por usuario: notas de voz por hora (ventana deslizante en Redis).
+    voice_rate_limit_per_hour: int = 30
+    # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
+    llm_model_transcription: str | None = None
 
     @property
     def is_dev(self) -> bool:

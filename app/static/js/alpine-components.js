@@ -151,10 +151,173 @@ function registerChatComposerClear() {
   };
 }
 
+/** Panel de eventos del calendario con estado de grabación de voz. */
+function registerCalendarEventsPanel() {
+  Alpine.data("calendarEventsPanel", () => ({
+    createOpen: false,
+    micState: "idle", // idle | recording | unsupported
+    micError: "",
+    _recognition: null,
+
+    startVoice() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        this.micError = "Tu navegador no soporta reconocimiento de voz (prueba Chrome o Edge).";
+        this.micState = "unsupported";
+        return;
+      }
+      if (this.micState === "recording") {
+        this._recognition?.stop();
+        return;
+      }
+      const recognition = new SR();
+      recognition.lang = "es-ES";
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      this._recognition = recognition;
+      this.micState = "recording";
+      this.micError = "";
+
+      recognition.onresult = (e) => {
+        const transcript = (e.results[0][0].transcript || "").trim();
+        this.micState = "idle";
+        const titleEl = document.getElementById("new-event-summary");
+        if (titleEl) {
+          titleEl.value = transcript;
+          titleEl.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        this.createOpen = true;
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error !== "aborted") {
+          this.micError = "No se pudo capturar audio. Comprueba los permisos del micrófono.";
+        }
+        this.micState = "idle";
+      };
+
+      recognition.onend = () => {
+        if (this.micState === "recording") this.micState = "idle";
+        this._recognition = null;
+      };
+
+      recognition.start();
+    },
+
+    destroy() {
+      this._recognition?.stop();
+    },
+  }));
+}
+
+/**
+ * Grabador de micrófono para creación de eventos por voz (Paso 23).
+ * Usa MediaRecorder API; si no está disponible el template muestra un
+ * <input type="file"> como fallback (progressive enhancement).
+ *
+ * Estados: idle | recording | uploading | error
+ * Al detener, sube el Blob a POST /calendar/voice/transcribe via fetch
+ * y reemplaza el contenido de #voice-container con la respuesta HTML.
+ */
+function registerVoiceRecorder() {
+  Alpine.data("voiceRecorder", (maxSeconds = 60) => ({
+    micState: "idle",
+    errorMsg: "",
+    elapsed: 0,
+    hasMediaRecorder: typeof window.MediaRecorder !== "undefined",
+    _recorder: null,
+    _chunks: [],
+    _timer: null,
+
+    startRecording() {
+      if (this.micState !== "idle") return;
+      this.errorMsg = "";
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          this._chunks = [];
+          this._recorder = new MediaRecorder(stream);
+          this._recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) this._chunks.push(e.data);
+          };
+          this._recorder.onstop = () => {
+            stream.getTracks().forEach((t) => t.stop());
+            const blob = new Blob(this._chunks, {
+              type: this._recorder.mimeType || "audio/webm",
+            });
+            this._uploadAudio(blob, this._recorder.mimeType || "audio/webm");
+          };
+          this._recorder.start(250); // collect data every 250ms
+          this.micState = "recording";
+          this.elapsed = 0;
+          this._timer = setInterval(() => {
+            this.elapsed += 1;
+            if (this.elapsed >= maxSeconds) this.stopRecording();
+          }, 1000);
+        })
+        .catch(() => {
+          this.micState = "error";
+          this.errorMsg =
+            "No se pudo acceder al micrófono. Comprueba los permisos del navegador.";
+        });
+    },
+
+    stopRecording() {
+      if (this._timer) {
+        clearInterval(this._timer);
+        this._timer = null;
+      }
+      if (this._recorder && this._recorder.state !== "inactive") {
+        this._recorder.stop();
+      }
+      this.micState = "uploading";
+    },
+
+    async _uploadAudio(blob, mimeType) {
+      const fd = new FormData();
+      const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : "webm";
+      fd.append("audio", blob, `recording.${ext}`);
+      try {
+        const resp = await fetch("/calendar/voice/transcribe", {
+          method: "POST",
+          body: fd,
+          headers: { "HX-Request": "true" },
+        });
+        const html = await resp.text();
+        const container = document.getElementById("voice-container");
+        if (container) {
+          container.innerHTML = html;
+          if (window.htmx) window.htmx.process(container);
+          if (window.Alpine) window.Alpine.initTree(container);
+        }
+      } catch {
+        this.micState = "error";
+        this.errorMsg = "Error al enviar el audio. Inténtalo de nuevo.";
+      }
+    },
+
+    formatElapsed() {
+      const m = String(Math.floor(this.elapsed / 60)).padStart(2, "0");
+      const s = String(this.elapsed % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    },
+
+    destroy() {
+      if (this._timer) clearInterval(this._timer);
+      if (this._recorder && this._recorder.state !== "inactive") {
+        this._recorder.stop();
+      }
+    },
+  }));
+}
+
 registerHtmxAlpineBridge();
 registerChatComposerClear();
 
 document.addEventListener("alpine:init", () => {
   registerInvoicesTableColumns();
   registerChatMessagesScroll();
+  registerCalendarEventsPanel();
+  registerVoiceRecorder();
 });

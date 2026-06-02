@@ -13,6 +13,8 @@ from app.core.middleware import AuthMiddleware
 from app.routes.api import health, metrics, webhooks, webhooks_telegram, webhooks_whatsapp
 from app.routes.web import (
     admin_channel_integrations,
+    calendar,
+    calendar_voice,
     chat,
     demo,
     documents,
@@ -90,6 +92,9 @@ def create_app() -> FastAPI:
     # jobs: endpoint de polling HTMX `/jobs/{invoice,ticket,knowledge}/{id}/status`.
     app.include_router(jobs.router)
     app.include_router(chat.router)
+    # calendar: visualización y gestión de eventos de Google Calendar (módulo agenda).
+    app.include_router(calendar.router)
+    app.include_router(calendar_voice.router)
     app.include_router(settings.router)
     app.include_router(integrations.router)
     app.include_router(integrations.auth_router)

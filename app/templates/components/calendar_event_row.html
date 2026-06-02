@@ -1,8 +1,9 @@
 {% set event_slug = event.id | replace('/', '-') | replace('@', '-') %}
 {% set date_chip = event.start | calendar_event_date_chip %}
+{% set weekday = event.start | calendar_event_weekday %}
 
 <article id="calendar-event-{{ event_slug }}"
-         class="calendar-event-card"
+         class="calendar-event-card calendar-event-card--{{ weekday }}"
          {% if loop is defined %}style="animation-delay: {{ loop.index0 * 55 }}ms"{% endif %}>
   <div x-data="{ editing: false }" class="calendar-event-card__inner">
     <div x-show="!editing" class="calendar-event-card__view">
@@ -46,7 +47,7 @@
 
     <form x-show="editing" x-cloak
           class="calendar-event-card__form"
-          hx-post="/settings/integrations/google/events/{{ event.id }}"
+          hx-post="/calendar/events/{{ event.id }}"
           hx-target="#calendar-events-panel"
           hx-swap="outerHTML"
           hx-indicator="#calendar-edit-spinner-{{ event_slug }}">

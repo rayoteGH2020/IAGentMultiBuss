@@ -154,3 +154,109 @@ def validate_invoice_upload(_filename: str, data: bytes) -> str:
         msg = f"Unsupported file type: {detected or 'unknown'}"
         raise UploadValidationError(msg)
     return detected
+
+
+# ---------------------------------------------------------------------------
+# Validación de audio para voz → Google Calendar (Paso 23)
+# ---------------------------------------------------------------------------
+
+ALLOWED_AUDIO_MIMES: frozenset[str] = frozenset(
+    {
+        "audio/ogg",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/aac",
+        "audio/wav",
+        "audio/webm",
+    }
+)
+
+# Aliases que python-magic o algunos navegadores reportan para el mismo formato.
+# La normalización ocurre antes de comprobar contra ALLOWED_AUDIO_MIMES.
+_AUDIO_MIME_ALIASES: dict[str, str] = {
+    "audio/x-wav": "audio/wav",
+    "audio/x-mpeg": "audio/mpeg",
+    "audio/x-ogg": "audio/ogg",
+    # MediaRecorder genera audio en contenedor WebM; magic lo detecta como
+    # video/webm porque analiza el tipo de pista EBML, no la intención de uso.
+    "video/webm": "audio/webm",
+}
+
+
+def _audio_mime_from_signatures(data: bytes) -> str | None:
+    """Detección de tipo de audio por magic bytes, sin dependencias externas."""
+    # OGG: cabecera "OggS" (RFC 3533 §6).
+    if len(data) >= 4 and data[:4] == b"OggS":
+        return "audio/ogg"
+    # MP3 con etiqueta ID3 (cabecera "ID3", ISO/IEC 11172-3).
+    if len(data) >= 3 and data[:3] == b"ID3":
+        return "audio/mpeg"
+    # MP3 sin ID3: sync word 0xFF seguido de 0xFB / 0xF3 / 0xF2.
+    if len(data) >= 2 and data[0] == 0xFF and data[1] in (0xFB, 0xF3, 0xF2):
+        return "audio/mpeg"
+    # WAV: contenedor RIFF con identificador "WAVE" en bytes 8-11.
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "audio/wav"
+    # MP4 / M4A: caja ISO Base Media File Format; "ftyp" siempre en bytes 4-7.
+    if len(data) >= 8 and data[4:8] == b"ftyp":
+        return "audio/mp4"
+    # AAC (ADTS): sync word 0xFF 0xF1 (MPEG-4) o 0xFF 0xF9 (MPEG-2).
+    if len(data) >= 2 and data[0] == 0xFF and data[1] in (0xF1, 0xF9):
+        return "audio/aac"
+    # WebM / MKV: cabecera EBML 0x1A 0x45 0xDF 0xA3.
+    if len(data) >= 4 and data[:4] == b"\x1a\x45\xdf\xa3":
+        return "audio/webm"
+    return None
+
+
+def validate_voice_upload(data: bytes, *, max_bytes: int) -> str:
+    """Valida tamaño y tipo de un fichero de audio para dictado de eventos.
+
+    Args:
+        data: Bytes completos del audio leídos en memoria.
+        max_bytes: Límite de tamaño en bytes (de settings.voice_max_audio_bytes).
+
+    Returns:
+        MIME type normalizado y permitido (p. ej. ``"audio/ogg"``).
+
+    Raises:
+        UploadValidationError: si el fichero está vacío, supera el límite o
+            su tipo no está en ALLOWED_AUDIO_MIMES.
+
+    Note:
+        La validación de duración (voice_max_audio_seconds) es específica de
+        cada contenedor y requiere parsear metadatos del formato. El límite de
+        bytes actúa como cota superior suficiente para el MVP.
+    """
+    if len(data) == 0:
+        raise UploadValidationError("Empty audio file")
+    if len(data) > max_bytes:
+        raise UploadValidationError(f"Audio too large: {len(data)} bytes (max {max_bytes})")
+
+    detected: str | None = None
+    try:
+        import magic
+
+        detected = magic.from_buffer(data[:4096], mime=True)
+    except Exception as exc:
+        logger.warning("upload.audio_magic_failed", error=str(exc))
+        detected = None
+
+    # Normalizar aliases antes de comprobar la lista permitida.
+    if detected is not None:
+        detected = _AUDIO_MIME_ALIASES.get(detected, detected)
+
+    if detected not in ALLOWED_AUDIO_MIMES:
+        fallback = _audio_mime_from_signatures(data)
+        if fallback in ALLOWED_AUDIO_MIMES:
+            if detected != fallback:
+                logger.info(
+                    "upload.audio_mime_fallback",
+                    detected_by_magic=detected,
+                    fallback=fallback,
+                )
+            detected = fallback
+
+    if detected not in ALLOWED_AUDIO_MIMES:
+        raise UploadValidationError(f"Unsupported audio type: {detected or 'unknown'}")
+    return detected

@@ -30,7 +30,7 @@ from tenacity import (
 )
 
 from app.config import Settings, get_settings
-from app.core.errors import ExternalServiceError, LLMCompleteError
+from app.core.errors import ExternalServiceError, LLMCompleteError, ValidationError
 from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
 from app.llm.embeddings import VoyageEmbedder
@@ -51,7 +51,7 @@ _ANTHROPIC_TASKS = frozenset({"classify", "sql"})
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
 # "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
-TaskType = Literal["extraction", "chat", "sql", "classify", "embedding"]
+TaskType = Literal["extraction", "chat", "sql", "classify", "embedding", "transcription"]
 
 # Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
 # 529 es específico de Anthropic ("overloaded"); el resto son estándar.
@@ -71,6 +71,28 @@ _RETRYABLE_MARKERS: tuple[str, ...] = (
     "too many requests",
     "internal server error",
 )
+
+# Indicadores de sobrecarga del proveedor (tras agotar reintentos).
+# Cuando el error técnico coincide, se expone al usuario un mensaje amigable
+# en lugar del mensaje crudo del SDK; el error raw sigue guardándose en BD.
+_PROVIDER_OVERLOAD_MARKERS: tuple[str, ...] = (
+    "503",
+    "high demand",
+    "overloaded",
+    "service unavailable",
+)
+_PROVIDER_OVERLOAD_USER_MSG = (
+    "El servidor de IA tiene muchas solicitudes y ha rechazado la tuya, "
+    "prueba de nuevo un poco más tarde"
+)
+
+
+def _user_facing_llm_error(raw_error: str) -> str:
+    """Devuelve mensaje amigable si el error es sobrecarga del proveedor, si no el raw."""
+    low = raw_error.lower()
+    if any(m in low for m in _PROVIDER_OVERLOAD_MARKERS):
+        return _PROVIDER_OVERLOAD_USER_MSG
+    return raw_error
 
 
 def _is_retryable_provider_error(exc: BaseException) -> bool:
@@ -166,6 +188,8 @@ DEFAULT_MODELS: dict[str, str] = {
     "sql": "claude-sonnet-4-6",
     # "embedding" usa Voyage vía embed(); model_override en settings.knowledge_embedding_model.
     "embedding": "voyage-3-lite",
+    # "transcription" usa Gemini audio nativo; Anthropic no soporta audio directo.
+    "transcription": "gemini-2.5-flash",
 }
 
 # TypeVar acotado a BaseModel: permite que complete() sea genérico y devuelva
@@ -264,6 +288,7 @@ class LLMClient:
             "classify": self._settings.llm_model_classify,
             "sql": self._settings.llm_model_sql,
             "embedding": None,
+            "transcription": self._settings.llm_model_transcription,
         }
         model = overrides.get(task) or DEFAULT_MODELS[task]
         # Heurística de routing por prefijo de modelo:
@@ -516,7 +541,10 @@ class LLMClient:
 
         assert llm_call is not None
         if status == "error":
-            raise LLMCompleteError(error or "LLM call failed", llm_call_id=llm_call.id)
+            raise LLMCompleteError(
+                _user_facing_llm_error(error) if error else "LLM call failed",
+                llm_call_id=llm_call.id,
+            )
 
         assert result is not None
         return LLMCompleteResult(result=result, llm_call_id=llm_call.id)
@@ -552,6 +580,133 @@ class LLMClient:
             anthropic_client=self._anthropic_raw,
             google_client=self._google_raw,
         )
+
+    async def transcribe(
+        self,
+        *,
+        audio: bytes,
+        mime_type: str,
+        tenant_id: UUID,
+        db: AsyncSession,
+        system_prompt: str,
+        prompt_version: str | None = None,
+    ) -> str:
+        """Transcribe audio a texto vía Gemini audio nativo.
+
+        Solo acepta proveedores Google; Anthropic no soporta audio directo.
+        Persiste un LLMCall con task="transcription" y envía traza a Langfuse
+        con el mismo patrón finally que complete().
+
+        Args:
+            audio: Bytes del fichero de audio ya validados.
+            mime_type: MIME normalizado (p. ej. "audio/ogg").
+            tenant_id: Tenant activo (para RLS y coste).
+            db: Sesión async activa.
+            system_prompt: Instrucción de transcripción (cargada en voice_calendar.py).
+            prompt_version: Versión del prompt para audit en llm_calls.
+
+        Returns:
+            Transcripción literal del audio como string.
+
+        Raises:
+            ValidationError: si el modelo resuelto no es Google.
+            LLMCompleteError: si la llamada al SDK falla.
+        """
+        model, provider = self._resolve_model("transcription")
+        if provider != "google":
+            raise ValidationError(
+                f"transcribe() requires a Google model, got provider={provider!r} "
+                f"(model={model!r}). Set LLM_MODEL_TRANSCRIPTION to a gemini-* model."
+            )
+
+        trace_uuid = self._langfuse.create_trace_id()
+        trace_id_str = str(trace_uuid)
+        trace_ctx = TraceContext(trace_id=trace_id_str)
+
+        obs = self._langfuse.start_observation(
+            trace_context=trace_ctx,
+            name="llm.transcription",
+            as_type="generation",
+            metadata={
+                "tenant_id": str(tenant_id),
+                "prompt_version": prompt_version,
+                "provider": provider,
+                "mime_type": mime_type,
+                "audio_bytes": len(audio),
+            },
+            model=model,
+            input={"mime_type": mime_type, "audio_bytes": len(audio)},
+        )
+
+        started = time.perf_counter()
+        status = "ok"
+        error: str | None = None
+        input_tokens = 0
+        output_tokens = 0
+        transcript = ""
+        llm_call: LLMCall | None = None
+
+        try:
+            audio_part = genai.types.Part.from_bytes(data=audio, mime_type=mime_type)
+            # Any: generate_content tiene overloads complejos en el SDK de Google;
+            # la lista mixta [Part, str] es válida en runtime pero mypy no puede
+            # resolverla sin un cast explícito.
+            contents: Any = [audio_part, system_prompt]
+            raw = await self._google_raw.aio.models.generate_content(
+                model=model,
+                contents=contents,
+            )
+            transcript = (raw.text or "").strip()
+            input_tokens, output_tokens = _extract_token_usage(raw)
+        except Exception as exc:
+            status = "error"
+            error = str(exc)[:1000]
+            logger.exception(
+                "llm.transcribe_failed",
+                model=model,
+                tenant_id=str(tenant_id),
+                mime_type=mime_type,
+                error=error,
+            )
+        finally:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            cost = compute_cost_eur(model, input_tokens, output_tokens)
+            llm_call = LLMCall(
+                tenant_id=tenant_id,
+                task="transcription",
+                model=model,
+                provider=provider,
+                prompt_version=prompt_version,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_eur=cost,
+                latency_ms=latency_ms,
+                status=status,
+                error=error,
+                langfuse_trace_id=trace_id_str,
+            )
+            db.add(llm_call)
+            await db.flush()
+
+            obs.update(
+                output={"transcript_chars": len(transcript)},
+                metadata={"latency_ms": latency_ms, "status": status},
+                usage_details={"input": input_tokens, "output": output_tokens},
+                cost_details={"total": float(cost)},
+                level=None if status == "ok" else "ERROR",
+                status_message=error,
+            )
+            obs.end()
+            self._langfuse.flush()
+
+        assert llm_call is not None
+        if status == "error":
+            raise LLMCompleteError(
+                _user_facing_llm_error(error) if error else "Transcription failed",
+                llm_call_id=llm_call.id,
+            )
+
+        return transcript
 
     async def embed(
         self,

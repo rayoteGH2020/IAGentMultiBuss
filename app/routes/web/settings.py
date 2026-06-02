@@ -20,20 +20,17 @@ async def settings_profile(
     user: CurrentUser,
     tenant: CurrentTenant,
 ) -> HTMLResponse:
-    return render(request, full="pages/settings/profile.html", ctx={"user": user, "tenant": tenant})
+    return render(
+        request,
+        full="pages/settings/profile.html",
+        ctx={"user": user, "tenant": tenant, "saved": False},
+    )
 
 
 @router.get("/organization")
-async def settings_organization(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-) -> HTMLResponse:
-    return render(
-        request,
-        full="pages/settings/organization.html",
-        ctx={"user": user, "tenant": tenant, "saved": False},
-    )
+async def settings_organization() -> RedirectResponse:
+    # Los datos de organización se muestran ahora dentro de «Mi cuenta».
+    return RedirectResponse(url="/settings/profile", status_code=302)
 
 
 @router.get("/billing")

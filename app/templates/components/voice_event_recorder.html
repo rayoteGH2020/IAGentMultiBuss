@@ -1,0 +1,115 @@
+{# Grabador de micrófono para creación de eventos por voz.
+   Se incluye en pages/calendar/voice.html y se auto-reemplaza al recibir
+   la respuesta de POST /calendar/voice/transcribe. #}
+
+<div x-data="voiceRecorder(60)" class="space-y-6">
+
+  {# Error de la ruta (transcripción fallida, rate-limit, etc.) #}
+  {% if error_message %}
+    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
+       role="alert">
+      {{ error_message }}
+    </p>
+  {% endif %}
+
+  {# Error del componente Alpine (micrófono, red) #}
+  <p x-show="errorMsg" x-cloak x-text="errorMsg"
+     class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
+     role="alert"></p>
+
+  {# Grabador principal (si MediaRecorder disponible) #}
+  <div x-show="hasMediaRecorder" class="flex flex-col items-center gap-6 py-4">
+
+    {# Botón de micrófono — área táctil ≥ 44px #}
+    <button type="button"
+            @click="micState === 'recording' ? stopRecording() : startRecording()"
+            :disabled="micState === 'uploading'"
+            :class="{
+              'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200': micState === 'recording',
+              'bg-primary-600 hover:bg-primary-700': micState === 'idle' || micState === 'error',
+              'bg-slate-300 cursor-not-allowed': micState === 'uploading'
+            }"
+            class="flex h-20 w-20 cursor-pointer items-center justify-center rounded-full text-white transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-primary-400"
+            :aria-label="micState === 'recording' ? 'Detener grabación' : 'Iniciar grabación'"
+            :aria-pressed="(micState === 'recording').toString()">
+
+      {# Idle / error: icono micrófono #}
+      <svg x-show="micState !== 'recording' && micState !== 'uploading'"
+           class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <rect x="9" y="2" width="6" height="12" rx="3"/>
+        <path d="M5 10a7 7 0 0 0 14 0"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="9"  y1="22" x2="15" y2="22"/>
+      </svg>
+
+      {# Recording: icono stop #}
+      <svg x-show="micState === 'recording'" x-cloak
+           class="h-8 w-8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <rect x="6" y="6" width="12" height="12" rx="2"/>
+      </svg>
+
+      {# Uploading: spinner #}
+      <svg x-show="micState === 'uploading'" x-cloak
+           class="h-8 w-8 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+      </svg>
+    </button>
+
+    {# Etiqueta de estado #}
+    <div class="text-center space-y-1" aria-live="polite">
+      <p x-show="micState === 'idle'"
+         class="text-sm font-medium text-slate-700">Pulsa para dictar tu cita</p>
+      <p x-show="micState === 'recording'" x-cloak
+         class="text-sm font-semibold text-red-600 tabular-nums"
+         x-text="'Grabando… ' + formatElapsed()"></p>
+      <p x-show="micState === 'uploading'" x-cloak
+         class="text-sm text-slate-500">Procesando audio…</p>
+      <p x-show="micState === 'error'" x-cloak
+         class="text-sm text-slate-500">Pulsa para intentarlo de nuevo</p>
+    </div>
+
+    {# Pista de ejemplo #}
+    <p x-show="micState === 'idle'"
+       class="text-xs text-slate-400 text-center max-w-xs leading-relaxed">
+      Ejemplo: <em>"Mañana a las cinco y media reunión con Juan, una hora"</em>
+    </p>
+
+  </div>
+
+  {# Fallback: input de fichero si MediaRecorder no está disponible #}
+  <div x-show="!hasMediaRecorder">
+    <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4">
+      Tu navegador no soporta grabación directa. Sube un fichero de audio:
+    </p>
+    <form method="post"
+          action="/calendar/voice/transcribe"
+          enctype="multipart/form-data"
+          hx-post="/calendar/voice/transcribe"
+          hx-target="#voice-container"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#voice-fallback-spinner"
+          class="space-y-3">
+      <input type="file"
+             name="audio"
+             accept="audio/*"
+             capture="microphone"
+             required
+             class="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0
+                    file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-medium
+                    file:text-primary-700 hover:file:bg-primary-100 cursor-pointer"/>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="btn-primary cursor-pointer">Enviar audio</button>
+        <span id="voice-fallback-spinner"
+              class="htmx-indicator text-sm text-slate-500" aria-live="polite">
+          Procesando…
+        </span>
+      </div>
+    </form>
+  </div>
+
+</div>

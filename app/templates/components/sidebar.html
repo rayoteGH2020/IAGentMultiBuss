@@ -1,7 +1,9 @@
 {# Sidebar de navegación principal. Se incluye desde layouts/dashboard.html.
    hidden lg:flex: oculto en móvil (el layout usa un menú diferente),
    visible como columna fija en pantallas >= 1024px. #}
-<aside class="w-64 bg-white border-r border-slate-200 flex-shrink-0 hidden lg:flex flex-col">
+<aside class="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex-col"
+       :class="sidebarOpen ? 'flex' : 'hidden lg:flex'"
+       :style="sidebarOpen ? 'position:fixed;top:0;left:0;bottom:0;z-index:40;overflow-y:auto;' : ''">
   <div class="h-16 flex items-center px-6 border-b border-slate-200">
     <a href="/" class="text-xl font-bold text-slate-900">Mi SaaS</a>
   </div>
@@ -9,38 +11,31 @@
   <nav class="flex-1 px-4 py-6 space-y-1">
     {# nav_items: lista declarativa de tuplas (href, label, icon).
        Añadir una nueva sección es una sola línea aquí. El tercer elemento
-       (icon) es el nombre del fichero SVG en components/icons/{icon}.html. #}
+       (icon) es el nombre del fichero SVG en components/icons/{icon}.html.
+       Integraciones ya no es ítem de primer nivel: vive dentro de Ajustes. #}
     {% set nav_items = [
       ("/", "Inicio", "home"),
       ("/documents", "Documentos", "invoice"),
       ("/knowledge", "Conocimiento", "book"),
       ("/chat", "Chat", "chat"),
-      ("/settings/integrations", "Integraciones", "integrations"),
-      ("/settings/profile", "Ajustes", "settings"),
+      ("/calendar", "Calendario", "calendar"),
+      ("/settings", "Ajustes", "settings"),
     ] %}
 
     {% for href, label, icon in nav_items %}
       {# Lógica de ítem activo:
          - Para "/" (inicio): comparación exacta. Sin ella, "/" matchearía
            cualquier ruta porque todas empiezan con "/".
-         - Integraciones: solo rutas bajo /settings/integrations.
-         - Ajustes: resto de /settings/* excepto integraciones.
-         - Para el resto: startswith() detecta subrutas activas. #}
-      {% if href == "/settings/integrations" %}
-        {% set active = request.url.path.startswith("/settings/integrations") %}
-      {% elif href == "/settings/profile" %}
-        {% set active = request.url.path.startswith("/settings") and not request.url.path.startswith("/settings/integrations") %}
+         - Para el resto: startswith() detecta subrutas activas (p. ej.
+           "/settings" cubre /settings/profile, /settings/integrations, etc.). #}
+      {% if href == "/" %}
+        {% set active = request.url.path == "/" %}
       {% else %}
-        {% set active = request.url.path == href or (href != "/" and request.url.path.startswith(href)) %}
+        {% set active = request.url.path == href or request.url.path.startswith(href ~ "/") %}
       {% endif %}
       <a href="{{ href }}"
-         {# hx-boost="true": convierte este enlace en una navegación HTMX.
-            En lugar de una recarga completa de página, HTMX hace un GET y
-            reemplaza solo el <body> (o el bloque de contenido configurado
-            en hx-boost), manteniendo el sidebar y el layout estáticos.
-            El servidor detecta HX-Boosted=true y devuelve la página completa
-            (render() en templating.py distingue boost de petición parcial). #}
          hx-boost="true"
+         @click="sidebarOpen = false"
          class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {{ 'bg-primary-50 text-primary-700' if active else 'text-slate-700 hover:bg-slate-100' }}">
         {# ignore missing: si el fichero de icono no existe (icono aún no
@@ -57,6 +52,7 @@
     {% set sadm_active = request.url.path.startswith("/sadm") %}
     <a href="/sadm"
        hx-boost="true"
+       @click="sidebarOpen = false"
        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
               {{ 'bg-amber-50 text-amber-700' if sadm_active else 'text-amber-600 hover:bg-amber-50' }}">
       {% include "components/icons/settings.html" ignore missing %}

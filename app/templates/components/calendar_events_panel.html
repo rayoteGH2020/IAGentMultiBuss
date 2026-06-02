@@ -1,8 +1,11 @@
-<section id="calendar-events-panel" class="space-y-5"
-         {% if is_connected %}x-data="{ createOpen: false }" @keydown.escape.window="createOpen = false"{% endif %}>
+<section id="calendar-events-panel" class="space-y-4"
+         {% if is_connected %}x-data="calendarEventsPanel()" @keydown.escape.window="createOpen = false"{% endif %}>
+
   {% if is_connected %}
     <input type="hidden" id="calendar-week-start" name="week_start" value="{{ week_start }}">
   {% endif %}
+
+  {# ── Cabecera ── #}
   <div>
     <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
       <h4 class="text-sm font-semibold text-slate-900 shrink-0">Eventos del calendario</h4>
@@ -14,14 +17,47 @@
         </button>
         <button type="button"
                 class="inline-flex items-center rounded-lg border border-sky-200/90 bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-white hover:text-primary-900 cursor-pointer shrink-0"
-                hx-get="/settings/integrations/google/events"
+                hx-get="/calendar/events"
                 hx-target="#calendar-events-panel"
                 hx-swap="outerHTML"
                 hx-include="#calendar-week-start">
           Actualizar
         </button>
+
+        {# Botón micrófono: crea evento por voz via Web Speech API #}
+        <button type="button"
+                @click="startVoice()"
+                :class="micState === 'recording'
+                  ? 'border-red-300 bg-red-50 text-red-600 animate-pulse'
+                  : 'border-sky-200/90 bg-white/80 text-slate-500 hover:border-sky-300 hover:bg-white hover:text-slate-700'"
+                class="inline-flex items-center justify-center rounded-lg border px-2 py-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                :title="micState === 'recording' ? 'Grabando… pulsa para detener' : 'Crear evento por voz'"
+                :aria-pressed="(micState === 'recording').toString()"
+                aria-label="Crear evento por voz">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+               aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3"/>
+            <path d="M5 10a7 7 0 0 0 14 0"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="9"  y1="22" x2="15" y2="22"/>
+          </svg>
+        </button>
       {% endif %}
     </div>
+
+    {# Mensaje de error de reconocimiento de voz (se cierra al hacer clic) #}
+    {% if is_connected %}
+      <p x-show="micError"
+         x-cloak
+         x-text="micError"
+         class="mt-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 cursor-pointer"
+         role="alert"
+         @click="micError = ''"
+         title="Haz clic para cerrar">
+      </p>
+    {% endif %}
+
     {% if is_connected %}
       <p class="text-xs text-slate-500 mt-1.5">
         Ventana de 7 días: {{ week_range_label }}
@@ -32,6 +68,39 @@
     {% endif %}
   </div>
 
+  {# ── Navegación semanal (siempre visible encima de los eventos) ── #}
+  {% if is_connected %}
+    <nav class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2"
+         aria-label="Navegación semanal">
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm"
+              hx-get="/calendar/events?week_start={{ week_start_prev }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML">
+        ← Semana anterior
+      </button>
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm {% if is_current_week %}opacity-50 cursor-not-allowed{% endif %}"
+              {% if not is_current_week %}
+              hx-get="/calendar/events?week_start={{ today_week_start }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML"
+              {% else %}
+              disabled
+              {% endif %}>
+        Hoy
+      </button>
+      <button type="button"
+              class="btn-secondary cursor-pointer text-sm"
+              hx-get="/calendar/events?week_start={{ week_start_next }}"
+              hx-target="#calendar-events-panel"
+              hx-swap="outerHTML">
+        Semana siguiente →
+      </button>
+    </nav>
+  {% endif %}
+
+  {# ── Mensajes ── #}
   {% if success_message %}
     <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" role="status">
       {{ success_message }}
@@ -47,7 +116,8 @@
   {% if not is_connected %}
     <p class="text-sm text-slate-500">Conecta Google Calendar para ver y gestionar eventos.</p>
   {% else %}
-    {# Modal crear evento #}
+
+    {# ── Modal crear evento ── #}
     <div x-show="createOpen" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
          @click.self="createOpen = false"
@@ -68,7 +138,7 @@
           </button>
         </div>
         <form class="px-5 py-4 space-y-3"
-              hx-post="/settings/integrations/google/events"
+              hx-post="/calendar/events"
               hx-target="#calendar-events-panel"
               hx-swap="outerHTML"
               hx-indicator="#calendar-create-spinner"
@@ -105,11 +175,14 @@
       </div>
     </div>
 
+    {# ── Lista de eventos (scrollable) ── #}
     {% if events %}
-      <div class="calendar-events-grid">
-        {% for event in events %}
-          {% include "components/calendar_event_row.html" %}
-        {% endfor %}
+      <div class="max-h-[420px] overflow-y-auto rounded-lg border border-slate-100">
+        <div class="calendar-events-grid">
+          {% for event in events %}
+            {% include "components/calendar_event_row.html" %}
+          {% endfor %}
+        </div>
       </div>
     {% else %}
       <p class="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
@@ -117,33 +190,5 @@
       </p>
     {% endif %}
 
-    <nav class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4"
-         aria-label="Navegación semanal">
-      <button type="button"
-              class="btn-secondary cursor-pointer text-sm"
-              hx-get="/settings/integrations/google/events?week_start={{ week_start_prev }}"
-              hx-target="#calendar-events-panel"
-              hx-swap="outerHTML">
-        ← Semana anterior
-      </button>
-      <button type="button"
-              class="btn-secondary cursor-pointer text-sm {% if is_current_week %}opacity-50 cursor-not-allowed{% endif %}"
-              {% if not is_current_week %}
-              hx-get="/settings/integrations/google/events?week_start={{ today_week_start }}"
-              hx-target="#calendar-events-panel"
-              hx-swap="outerHTML"
-              {% else %}
-              disabled
-              {% endif %}>
-        Hoy
-      </button>
-      <button type="button"
-              class="btn-secondary cursor-pointer text-sm"
-              hx-get="/settings/integrations/google/events?week_start={{ week_start_next }}"
-              hx-target="#calendar-events-panel"
-              hx-swap="outerHTML">
-        Semana siguiente →
-      </button>
-    </nav>
   {% endif %}
 </section>

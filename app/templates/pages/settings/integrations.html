@@ -12,99 +12,156 @@
 
 <div class="space-y-6">
 
-  <header class="space-y-1">
-
+  <header>
     <p class="text-sm text-slate-600 leading-relaxed max-w-2xl">
-
       Conecta servicios externos para ampliar lo que puedes hacer desde la plataforma.
-
-      Cada usuario vincula su propia cuenta; los tokens se almacenan cifrados.
-
+      Los tokens se almacenan cifrados.
     </p>
-
   </header>
 
 
 
+  {# ── Banners OAuth callback ── #}
+
   {% if connected_flag == "google" %}
-
     <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 flex items-start gap-2" role="status">
-
       <svg class="h-5 w-5 shrink-0 text-emerald-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-
       </svg>
-
       <span>Google Calendar conectado correctamente.</span>
-
     </p>
-
   {% endif %}
-
-
 
   {% if error_code == "oauth_state" %}
-
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" role="alert">
-
       La sesión de autorización expiró o ya fue usada. Vuelve a pulsar «Conectar con Google».
-
     </p>
-
   {% elif error_code == "oauth_failed" %}
-
     <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
-
       No se pudo completar la conexión con Google. Inténtalo de nuevo.
-
-      Si acabas de cambiar permisos en Google Cloud, desconecta y vuelve a conectar.
-
     </p>
-
   {% elif error_code == "encryption_key" %}
-
     <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
-
       Falta configurar <code class="text-xs font-mono">ENCRYPTION_KEY</code> en Infisical para guardar los tokens de forma segura.
-
     </p>
-
   {% elif error_code == "oauth_not_configured" %}
-
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" role="alert">
-
       Google OAuth no está configurado en el servidor.
-
     </p>
-
   {% endif %}
 
 
 
-  <section aria-labelledby="integrations-available-heading" class="space-y-4">
+  {# ── Tabs ── #}
 
-    <div class="flex items-end justify-between gap-4">
+  <div x-data="{ tab: 'google' }">
 
-      <h2 id="integrations-available-heading" class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    {# Tab bar #}
+    <div role="tablist" aria-label="Integraciones disponibles"
+         class="flex border-b border-slate-200">
 
-        Disponibles
+      {# Google Calendar #}
+      <button role="tab"
+              id="tab-google"
+              aria-controls="panel-google"
+              :aria-selected="(tab === 'google').toString()"
+              @click="tab = 'google'"
+              :class="tab === 'google'
+                ? 'border-b-2 border-primary-600 text-primary-700'
+                : 'border-b-2 border-transparent text-slate-500 hover:text-slate-800'"
+              class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium -mb-px transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 rounded-t">
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Google Calendar
+        {% if is_connected %}
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Conectado" aria-label="Conectado"></span>
+        {% endif %}
+      </button>
 
-      </h2>
+      {# WhatsApp #}
+      <button role="tab"
+              id="tab-whatsapp"
+              aria-controls="panel-whatsapp"
+              :aria-selected="(tab === 'whatsapp').toString()"
+              @click="tab = 'whatsapp'"
+              :class="tab === 'whatsapp'
+                ? 'border-b-2 border-primary-600 text-primary-700'
+                : 'border-b-2 border-transparent text-slate-500 hover:text-slate-800'"
+              class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium -mb-px transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 rounded-t">
+        <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#25D366]" aria-hidden="true">
+          <svg class="h-2.5 w-2.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.107.548 4.086 1.504 5.805L.057 23.25a.75.75 0 00.918.917l5.516-1.434A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.922 0-3.728-.5-5.292-1.375l-.361-.21-3.737.972.994-3.667-.228-.373A9.951 9.951 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
+          </svg>
+        </span>
+        WhatsApp
+        {% if wa_connected %}
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Conectado" aria-label="Conectado"></span>
+        {% endif %}
+      </button>
 
-      <p class="text-xs text-slate-400">Más integraciones próximamente</p>
+      {# Telegram #}
+      <button role="tab"
+              id="tab-telegram"
+              aria-controls="panel-telegram"
+              :aria-selected="(tab === 'telegram').toString()"
+              @click="tab = 'telegram'"
+              :class="tab === 'telegram'
+                ? 'border-b-2 border-primary-600 text-primary-700'
+                : 'border-b-2 border-transparent text-slate-500 hover:text-slate-800'"
+              class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium -mb-px transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 rounded-t">
+        <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#229ED9]" aria-hidden="true">
+          <svg class="h-2.5 w-2.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 13.781l-2.966-.924c-.643-.204-.657-.643.136-.953l11.57-4.46c.538-.194 1.006.131.964.777z"/>
+          </svg>
+        </span>
+        Telegram
+        {% if tg_connected %}
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Conectado" aria-label="Conectado"></span>
+        {% endif %}
+      </button>
 
-    </div>
+    </div>{# /tablist #}
 
 
+    {# ── Tab panels ── #}
 
-    <div class="space-y-4">
+    <div class="pt-5">
 
-      {% include "components/integration_google_calendar.html" %}
+      <div id="panel-google"
+           role="tabpanel"
+           aria-labelledby="tab-google"
+           x-show="tab === 'google'">
+        {% include "components/integration_google_calendar.html" %}
+      </div>
 
-    </div>
+      <div id="panel-whatsapp"
+           role="tabpanel"
+           aria-labelledby="tab-whatsapp"
+           x-show="tab === 'whatsapp'"
+           style="display:none">
+        {% with is_connected=wa_connected, integration=wa_integration %}
+          {% include "components/integration_whatsapp.html" %}
+        {% endwith %}
+      </div>
 
-  </section>
+      <div id="panel-telegram"
+           role="tabpanel"
+           aria-labelledby="tab-telegram"
+           x-show="tab === 'telegram'"
+           style="display:none">
+        {% with is_connected=tg_connected, integration=tg_integration %}
+          {% include "components/integration_telegram.html" %}
+        {% endwith %}
+      </div>
+
+    </div>{# /panels #}
+
+  </div>{# /x-data tabs #}
 
 </div>
 

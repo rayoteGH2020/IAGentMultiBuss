@@ -232,6 +232,16 @@ Toda la especificación arquitectónica de la capa LLM — punto de entrada úni
 
 ## 9. Tests y evals
 
+### Política obligatoria (toda modificación o desarrollo nuevo)
+
+> **Regla dura:** ante **cualquier** cambio de código (nueva funcionalidad, refactor, fix, cambio de rutas/plantillas con lógica, etc.) se deben **crear/actualizar los tests necesarios** y **ejecutarlos** antes de dar la tarea por terminada. No se considera completada una tarea sin tests verdes que la cubran.
+
+- Crear tests en la capa adecuada (unit / integration / e2e según corresponda; ver abajo).
+- Ejecutarlos y dejar constancia del resultado: `infisical run -- uv run pytest <rutas> -q`.
+- Si el cambio afecta a varias capas, cubrir cada una (p. ej. servicio + ruta).
+- Si por alguna razón no se pueden crear o ejecutar tests (entorno sin BD/credenciales, dependencia externa no mockeable), **decirlo explícitamente** indicando qué falta para poder ejecutarlos.
+- Cambios puramente documentales (`*.md`) o de configuración estática están exentos de crear tests, pero conviene indicarlo.
+
 ### Tests
 
 - **Unit** en `tests/unit/`: lógica pura, services con mocks.
@@ -273,6 +283,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 - ✅ Migraciones revisadas a mano antes de commit.
 - ✅ Cifrar credenciales de cliente.
 - ✅ Aplicar RLS en toda tabla con `tenant_id`.
+- ✅ Crear/actualizar y **ejecutar** los tests necesarios en cada modificación o desarrollo nuevo antes de darlo por terminado (ver **§9**).
 - ✅ En cada linea PasoXX.md que el usuario tenga que hacer validaciones/comprobaciones, añadir descripcion y comandos CLI si es necesario.
 
 ### DON'T

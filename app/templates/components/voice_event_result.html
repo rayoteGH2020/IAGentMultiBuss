@@ -1,0 +1,46 @@
+{# Resultado exitoso: evento creado en Google Calendar.
+   Se muestra en #voice-container tras POST /calendar/voice/confirm. #}
+
+<div class="space-y-5 text-center py-4">
+
+  {# Icono de éxito #}
+  <div class="flex justify-center">
+    <span class="flex h-16 w-16 items-center justify-center rounded-full
+                 bg-emerald-50 border-2 border-emerald-200">
+      <svg class="h-8 w-8 text-emerald-600" fill="none" stroke="currentColor"
+           viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </span>
+  </div>
+
+  <div class="space-y-1">
+    <h3 class="text-base font-semibold text-slate-900">Evento creado</h3>
+    {% if created_event and created_event.summary %}
+      <p class="text-sm text-slate-600">"{{ created_event.summary }}"</p>
+    {% endif %}
+    <p class="text-xs text-slate-400">
+      Con recordatorios 24 h y 1 h antes.
+    </p>
+  </div>
+
+  <div class="flex flex-wrap justify-center gap-3 pt-2">
+    {% if created_event and created_event.html_link %}
+      <a href="{{ created_event.html_link }}"
+         target="_blank" rel="noopener noreferrer"
+         class="btn-primary cursor-pointer inline-flex items-center gap-2">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+             aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        Ver en Google Calendar
+      </a>
+    {% endif %}
+    <a href="/calendar/voice" class="btn-secondary cursor-pointer">
+      Dictar otro
+    </a>
+  </div>
+
+</div>

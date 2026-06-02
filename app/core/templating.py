@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from app.core.calendar_datetime import (
     calendar_event_date_chip,
     calendar_event_is_all_day,
+    calendar_event_weekday,
     format_calendar_event_time,
     google_iso_to_local_input,
 )
@@ -25,6 +26,7 @@ templates.env.filters["calendar_event_time"] = format_calendar_event_time
 templates.env.filters["calendar_local_input"] = google_iso_to_local_input
 templates.env.filters["calendar_event_date_chip"] = calendar_event_date_chip
 templates.env.filters["calendar_event_is_all_day"] = calendar_event_is_all_day
+templates.env.filters["calendar_event_weekday"] = calendar_event_weekday
 
 
 def _user_processing_error_filter(raw_error: str | None, filename: str | None = None) -> str:

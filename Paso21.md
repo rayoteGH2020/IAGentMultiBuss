@@ -621,7 +621,7 @@ tests/
 
 ### Sub-módulo D — Configuración de canales
 
-6. [ ] Abrir `/settings/integrations` como `admin` → ver tarjetas WhatsApp y Telegram.
+6. [x] Abrir `/settings/integrations` como `admin` → ver tarjetas WhatsApp y Telegram.
 7. [ ] **WhatsApp:** introducir `phone_number_id` + token → guardar → tarjeta muestra estado conectado + URL de webhook.
 8. [ ] Verificar en BD: `SELECT id, channel, phone_number_id, display_name, status FROM channel_integrations;`
 9. [ ] Verificar que `api_token_enc` ≠ token original (cifrado).

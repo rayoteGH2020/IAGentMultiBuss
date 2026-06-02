@@ -242,6 +242,8 @@ class GoogleCalendarClient:
         }
         if event_data.description:
             body["description"] = event_data.description
+        if event_data.reminders is not None:
+            body["reminders"] = {"useDefault": False, "overrides": event_data.reminders}
 
         url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events"
         response = await self._client.post(

@@ -1,27 +1,22 @@
-"""Rutas web de integraciones externas (Google Calendar, Paso 17)."""
+"""Rutas web de integraciones externas (Google Calendar, Paso 17).
+
+Solo configura la conexión (OAuth conectar/desconectar/estado). La
+visualización y gestión de eventos del calendario vive en ``routes/web/calendar.py``.
+"""
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.calendar_datetime import (
-    format_week_range_label,
-    local_input_to_google_iso,
-    parse_week_start,
-    shift_week_start,
-)
-from app.core.datetime_display import display_today
 from app.core.db import set_tenant_context
 from app.core.errors import (
-    AppError,
     AuthError,
     ExternalServiceError,
     ForbiddenError,
@@ -32,8 +27,7 @@ from app.core.oauth_state import consume_state, generate_state
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, get_db_no_tenant
 from app.models.calendar_integration import CalendarIntegrationStatus
-from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate
-from app.services import calendar_service
+from app.services import calendar_service, channel_integration_service
 from app.services.audit_service import AuditRequestContext
 
 logger = structlog.get_logger(__name__)
@@ -77,85 +71,6 @@ async def _integration_card_ctx(
     }
 
 
-async def _calendar_events_ctx(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    user_id: UUID,
-    week_start: date,
-    success_message: str | None = None,
-    error_message: str | None = None,
-) -> dict[str, object]:
-    ctx = await _integration_card_ctx(db, tenant_id=tenant_id, user_id=user_id)
-    today = display_today()
-    week_start_iso = week_start.isoformat()
-    ctx["events"] = []
-    ctx["week_start"] = week_start_iso
-    ctx["week_start_prev"] = shift_week_start(week_start, -1).isoformat()
-    ctx["week_start_next"] = shift_week_start(week_start, 1).isoformat()
-    ctx["today_week_start"] = today.isoformat()
-    ctx["is_current_week"] = week_start == today
-    ctx["week_range_label"] = format_week_range_label(week_start)
-    ctx["success_message"] = success_message
-    ctx["error_message"] = error_message
-    if ctx["is_connected"]:
-        try:
-            ctx["events"] = await calendar_service.list_events_for_week(
-                db,
-                tenant_id,
-                user_id,
-                week_start,
-                max_results=50,
-            )
-        except AppError as exc:
-            ctx["error_message"] = exc.message
-            logger.warning(
-                "calendar.events.list_failed",
-                tenant_id=str(tenant_id),
-                user_id=str(user_id),
-                error=str(exc),
-            )
-        except Exception as exc:
-            ctx["error_message"] = "No se pudieron cargar los eventos del calendario."
-            logger.exception(
-                "calendar.events.list_failed",
-                tenant_id=str(tenant_id),
-                user_id=str(user_id),
-                error=str(exc),
-            )
-    return ctx
-
-
-def _resolve_week_start(week_start_param: str | None) -> date:
-    try:
-        return parse_week_start(week_start_param)
-    except ValidationError:
-        return display_today()
-
-
-def _event_payload_from_form(
-    *,
-    summary: str,
-    start_local: str,
-    end_local: str,
-    description: str | None,
-) -> CalendarEventCreate:
-    start_iso = local_input_to_google_iso(start_local)
-    end_iso = local_input_to_google_iso(end_local)
-    if end_iso <= start_iso:
-        raise ValidationError("La fecha de fin debe ser posterior al inicio")
-    desc = description.strip() if description and description.strip() else None
-    title = summary.strip()
-    if not title:
-        raise ValidationError("El título es obligatorio")
-    return CalendarEventCreate(
-        summary=title,
-        description=desc,
-        start=start_iso,
-        end=end_iso,
-    )
-
-
 @router.get("")
 async def integrations_index(
     request: Request,
@@ -168,6 +83,16 @@ async def integrations_index(
     ctx = await _integration_card_ctx(db, tenant_id=tenant.id, user_id=user.id)
     ctx["connected_flag"] = connected
     ctx["error_code"] = error
+    ctx["tenant"] = tenant
+    ctx["app_base_url"] = get_settings().app_base_url.rstrip("/")
+
+    wa = await channel_integration_service.get_integration(db, tenant.id, "whatsapp")
+    tg = await channel_integration_service.get_integration(db, tenant.id, "telegram")
+    ctx["wa_integration"] = wa
+    ctx["wa_connected"] = wa is not None and wa.status == "active"
+    ctx["tg_integration"] = tg
+    ctx["tg_connected"] = tg is not None and tg.status == "active"
+
     return render(
         request,
         full="pages/settings/integrations.html",
@@ -239,124 +164,6 @@ async def google_calendar_status(
         request,
         full="components/integration_google_calendar.html",
         partial="components/integration_google_calendar.html",
-        ctx=ctx,
-    )
-
-
-@router.get("/google/events")
-async def google_calendar_events(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    db: AsyncSession = Depends(get_db),
-    week_start: Annotated[str | None, Query()] = None,
-) -> HTMLResponse:
-    ctx = await _calendar_events_ctx(
-        db,
-        tenant_id=tenant.id,
-        user_id=user.id,
-        week_start=_resolve_week_start(week_start),
-    )
-    return render(
-        request,
-        full="components/calendar_events_panel.html",
-        partial="components/calendar_events_panel.html",
-        ctx=ctx,
-    )
-
-
-@router.post("/google/events")
-async def google_calendar_create_event(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    db: AsyncSession = Depends(get_db),
-    summary: Annotated[str, Form()] = "",
-    description: Annotated[str | None, Form()] = None,
-    start_local: Annotated[str, Form(alias="start")] = "",
-    end_local: Annotated[str, Form(alias="end")] = "",
-    week_start: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
-    resolved_week = _resolve_week_start(week_start)
-    success_message: str | None = None
-    error_message: str | None = None
-    try:
-        payload = _event_payload_from_form(
-            summary=summary,
-            start_local=start_local,
-            end_local=end_local,
-            description=description,
-        )
-        await calendar_service.create_calendar_event(
-            db,
-            tenant.id,
-            user.id,
-            payload,
-        )
-        success_message = "Evento creado en Google Calendar."
-    except AppError as exc:
-        error_message = exc.message
-    ctx = await _calendar_events_ctx(
-        db,
-        tenant_id=tenant.id,
-        user_id=user.id,
-        week_start=resolved_week,
-        success_message=success_message,
-        error_message=error_message,
-    )
-    return render(
-        request,
-        full="components/calendar_events_panel.html",
-        partial="components/calendar_events_panel.html",
-        ctx=ctx,
-    )
-
-
-@router.post("/google/events/{event_id}")
-async def google_calendar_update_event(
-    request: Request,
-    event_id: str,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    db: AsyncSession = Depends(get_db),
-    summary: Annotated[str, Form()] = "",
-    description: Annotated[str | None, Form()] = None,
-    start_local: Annotated[str, Form(alias="start")] = "",
-    end_local: Annotated[str, Form(alias="end")] = "",
-    week_start: Annotated[str | None, Form()] = None,
-) -> HTMLResponse:
-    resolved_week = _resolve_week_start(week_start)
-    success_message: str | None = None
-    error_message: str | None = None
-    try:
-        payload = _event_payload_from_form(
-            summary=summary,
-            start_local=start_local,
-            end_local=end_local,
-            description=description,
-        )
-        await calendar_service.update_calendar_event(
-            db,
-            tenant.id,
-            user.id,
-            event_id,
-            CalendarEventUpdate.model_validate(payload.model_dump()),
-        )
-        success_message = "Evento actualizado."
-    except AppError as exc:
-        error_message = exc.message
-    ctx = await _calendar_events_ctx(
-        db,
-        tenant_id=tenant.id,
-        user_id=user.id,
-        week_start=resolved_week,
-        success_message=success_message,
-        error_message=error_message,
-    )
-    return render(
-        request,
-        full="components/calendar_events_panel.html",
-        partial="components/calendar_events_panel.html",
         ctx=ctx,
     )
 

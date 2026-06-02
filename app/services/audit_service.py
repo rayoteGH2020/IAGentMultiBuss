@@ -21,11 +21,15 @@ ACTION_CHAT_TOOL_EXECUTED = "chat.tool_executed"
 ACTION_KNOWLEDGE_CHAT_SEARCH = "knowledge.chat_search"
 ACTION_CALENDAR_INTEGRATION_LINKED = "calendar.integration_linked"
 ACTION_CALENDAR_INTEGRATION_UNLINKED = "calendar.integration_unlinked"
+ACTION_CALENDAR_VOICE_TRANSCRIBED = "calendar.voice_transcribed"
+ACTION_CALENDAR_EVENT_CREATED_FROM_VOICE = "calendar.event_created_from_voice"
 
 RESOURCE_CHAT_MESSAGE = "chat_message"
 RESOURCE_CHAT_THREAD = "chat_thread"
 RESOURCE_KNOWLEDGE = "knowledge"
 RESOURCE_CALENDAR_INTEGRATION = "calendar_integration"
+RESOURCE_VOICE_TRANSCRIPTION = "voice_transcription"
+RESOURCE_CALENDAR_EVENT = "calendar_event"
 
 
 @dataclass(frozen=True, slots=True)

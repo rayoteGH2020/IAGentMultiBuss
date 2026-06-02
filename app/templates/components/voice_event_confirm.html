@@ -1,0 +1,106 @@
+{# Formulario de confirmación editable del borrador de evento de voz.
+   Se auto-reemplaza en #voice-container tras la transcripción.
+   Enviado a POST /calendar/voice/confirm → voice_event_result.html. #}
+
+<div class="space-y-5">
+
+  {# Error de creación (formato inválido, API, etc.) #}
+  {% if error_message %}
+    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
+       role="alert">
+      {{ error_message }}
+    </p>
+  {% endif %}
+
+  {# Aviso de baja confianza o ambigüedad #}
+  {% if draft and (draft.needs_clarification or draft.confidence < 0.5) %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+         role="alert">
+      <p class="font-semibold mb-1">Revisa los datos antes de confirmar</p>
+      {% if draft.clarification_reason %}
+        <p>{{ draft.clarification_reason }}</p>
+      {% else %}
+        <p>La interpretación tiene poca confianza. Comprueba fecha, hora y duración.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {# Transcripción (solo informativa, no se envía) #}
+  {% if draft and draft.transcript %}
+    <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <p class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
+        Lo que entendí
+      </p>
+      <p class="text-sm text-slate-700 italic leading-relaxed">
+        "{{ draft.transcript }}"
+      </p>
+    </div>
+  {% endif %}
+
+  {# Formulario de edición #}
+  <form hx-post="/calendar/voice/confirm"
+        hx-target="#voice-container"
+        hx-swap="innerHTML"
+        hx-indicator="#voice-confirm-spinner"
+        class="space-y-4">
+
+    <div>
+      <label for="vc-summary" class="block text-xs font-medium text-slate-700 mb-1">
+        Título <span class="text-red-500">*</span>
+      </label>
+      <input id="vc-summary" name="summary" type="text" required maxlength="500"
+             value="{{ form_summary if form_summary is defined else (draft.summary if draft else '') }}"
+             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label for="vc-start" class="block text-xs font-medium text-slate-700 mb-1">
+          Inicio <span class="text-red-500">*</span>
+        </label>
+        <input id="vc-start" name="start" type="datetime-local" required
+               value="{{ form_start if form_start is defined else (draft.start | calendar_local_input if draft else '') }}"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+      </div>
+      <div>
+        <label for="vc-end" class="block text-xs font-medium text-slate-700 mb-1">
+          Fin <span class="text-red-500">*</span>
+        </label>
+        <input id="vc-end" name="end" type="datetime-local" required
+               value="{{ form_end if form_end is defined else (draft.end | calendar_local_input if draft else '') }}"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+      </div>
+    </div>
+
+    <div>
+      <label for="vc-description" class="block text-xs font-medium text-slate-700 mb-1">
+        Descripción (opcional)
+      </label>
+      <textarea id="vc-description" name="description" rows="2" maxlength="8000"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-primary-500">{{ form_description if form_description is defined else (draft.description if draft and draft.description else '') }}</textarea>
+    </div>
+
+    <p class="text-xs text-slate-400">
+      El evento se creará con recordatorios automáticos 24 h y 1 h antes.
+    </p>
+
+    <div class="flex flex-wrap items-center gap-3 pt-1">
+      <button type="submit" class="btn-primary cursor-pointer">
+        Crear evento
+      </button>
+      <a href="/calendar/voice" class="btn-secondary cursor-pointer">
+        Descartar
+      </a>
+      <span id="voice-confirm-spinner"
+            class="htmx-indicator text-sm text-slate-500" aria-live="polite">
+        Creando evento…
+      </span>
+    </div>
+
+  </form>
+
+</div>

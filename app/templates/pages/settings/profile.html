@@ -4,24 +4,46 @@
 {% block page_title %}Ajustes{% endblock %}
 
 {% block settings_content %}
-<div class="card space-y-4">
-  <div>
-    <h3 class="font-semibold">Datos personales</h3>
-    <p class="text-sm text-slate-500">Gestionados por Clerk. Para cambiarlos abre tu perfil.</p>
+<div class="space-y-6">
+  <div class="card space-y-4">
+    <div>
+      <h3 class="font-semibold">Datos personales</h3>
+      <p class="text-sm text-slate-500">Gestionados por Clerk. Para cambiarlos abre tu perfil.</p>
+    </div>
+    <dl class="divide-y divide-slate-200">
+      <div class="py-3 flex justify-between gap-4">
+        <dt class="text-sm text-slate-500">Nombre</dt>
+        <dd class="text-sm font-medium">{{ user.name or "—" }}</dd>
+      </div>
+      <div class="py-3 flex justify-between gap-4">
+        <dt class="text-sm text-slate-500">Email</dt>
+        <dd class="text-sm font-medium break-all">{{ user.email }}</dd>
+      </div>
+      <div class="py-3 flex justify-between gap-4">
+        <dt class="text-sm text-slate-500">Cuenta creada</dt>
+        <dd class="text-sm font-medium">{{ user.created_at | local_datetime("%d/%m/%Y") }}</dd>
+      </div>
+    </dl>
   </div>
-  <dl class="divide-y divide-slate-200">
-    <div class="py-3 flex justify-between gap-4">
-      <dt class="text-sm text-slate-500">Nombre</dt>
-      <dd class="text-sm font-medium">{{ user.name or "—" }}</dd>
+
+  {# ── Organización ── #}
+  <section class="space-y-4 border-t border-slate-200 pt-6">
+    <div>
+      <h2 class="text-base font-semibold text-slate-900">Organización</h2>
+      <p class="text-sm text-slate-500">Datos de la organización a la que perteneces.</p>
     </div>
-    <div class="py-3 flex justify-between gap-4">
-      <dt class="text-sm text-slate-500">Email</dt>
-      <dd class="text-sm font-medium break-all">{{ user.email }}</dd>
+
+    {% include "components/tenant_info.html" %}
+
+    <div class="card space-y-2">
+      <h3 class="font-semibold">Plan</h3>
+      <p class="text-sm">Actualmente en <span class="font-medium capitalize">{{ tenant.plan }}</span>.</p>
     </div>
-    <div class="py-3 flex justify-between gap-4">
-      <dt class="text-sm text-slate-500">Cuenta creada</dt>
-      <dd class="text-sm font-medium">{{ user.created_at | local_datetime("%d/%m/%Y") }}</dd>
+
+    <div class="card space-y-2">
+      <h3 class="font-semibold">Miembros del equipo</h3>
+      <p class="text-sm text-slate-500">Para invitar a más usuarios, usa el menú de organización de Clerk.</p>
     </div>
-  </dl>
+  </section>
 </div>
 {% endblock %}

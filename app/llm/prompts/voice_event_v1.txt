@@ -1,0 +1,33 @@
+Extrae los datos de un evento de Google Calendar a partir de la transcripción de voz que aparece a continuación.
+
+Transcripción:
+{transcript}
+
+Contexto:
+- Fecha y hora actuales: {now_iso}
+- Zona horaria: {timezone}
+- Duración predeterminada si no se indica: {default_duration_min} minutos
+
+Reglas para fecha y hora:
+- Resuelve todas las referencias relativas («mañana», «el próximo viernes», «en dos horas», «pasado mañana») usando la fecha y hora actuales indicadas arriba.
+- Genera siempre `start` y `end` como ISO 8601 con offset de {timezone}.
+  Ejemplo correcto: «2025-06-03T17:30:00+02:00»
+- Si el usuario no indica hora de fin ni duración, establece `end` = `start` + {default_duration_min} minutos.
+- Horas ambiguas (sin AM/PM): interpreta siempre en horario diurno/laboral (08:00–20:00).
+  Ejemplos: «a las cinco» → 17:00; «a las ocho» → 08:00; «a las diez» → 10:00; «a las doce» → 12:00.
+- Si el evento es de todo el día (sin hora concreta), establece `all_day` = true y usa formato YYYY-MM-DD en `start` y `end`.
+
+Reglas para el título (`summary`):
+- Extrae el asunto principal de lo que dijo el usuario: la actividad o el nombre del evento.
+- Máximo 15 palabras, sin artículos innecesarios.
+- Ejemplos:
+  - «Mañana a las tres reunión con el equipo de ventas» → «Reunión con el equipo de ventas»
+  - «El viernes cita con el médico a las diez» → «Cita con el médico»
+  - «Llamada con Juan el lunes a las nueve» → «Llamada con Juan»
+
+Otras reglas:
+- No inventes asistentes, ubicación ni detalles que no estén en la transcripción.
+- Establece `needs_clarification` = true si la fecha o la hora son ambiguas o están completamente ausentes.
+  En ese caso, rellena `clarification_reason` explicando brevemente qué falta.
+- Establece `confidence` entre 0 y 1 según tu certeza. Usa valores bajos si la transcripción es poco clara, ambigua o le faltan datos clave.
+- Incluye `description` solo si el usuario aportó contexto adicional relevante (no repitas el título).
