@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.schemas.chat import ChatCitation, ChatMessageRead
 from app.services.chat_citations import (
     CITATION_SNIPPET_MAX_CHARS,
@@ -29,9 +29,22 @@ def _chunk_payload(*, score: float = 0.5, content: str = "texto") -> dict[str, o
     }
 
 
+def _cosine_threshold_settings() -> Settings:
+    """Umbral tipo coseno para tests de filtrado (independiente del default RRF 0.0)."""
+    return Settings(
+        app_secret_key="test-secret",  # pragma: allowlist secret
+        database_url="postgresql+asyncpg://x@localhost/db",  # pragma: allowlist secret
+        redis_url="redis://localhost:6379/0",
+        knowledge_chat_min_score_threshold=0.35,
+    )
+
+
 def test_extract_citations_from_tool_results() -> None:
     data = {"chunks": [_chunk_payload(score=0.9), _chunk_payload(score=0.1)]}
-    cites = extract_citations_from_search_data(data)
+    cites = extract_citations_from_search_data(
+        data,
+        settings=_cosine_threshold_settings(),
+    )
     assert len(cites) == 1
     assert cites[0].score == 0.9
     assert "embedding" not in cites[0].model_dump()
@@ -64,7 +77,7 @@ def test_citations_sorted_by_score() -> None:
 
 
 def test_citations_below_threshold_excluded() -> None:
-    settings = get_settings()
+    settings = _cosine_threshold_settings()
     threshold = settings.knowledge_chat_min_score_threshold
     above = _chunk_payload(score=threshold + 0.1)
     below = _chunk_payload(score=max(0.0, threshold - 0.2))
