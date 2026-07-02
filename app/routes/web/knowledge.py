@@ -28,8 +28,11 @@ from app.core.templating import render
 from app.core.uploads import UploadValidationError
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
 from app.jobs.queue import enqueue_knowledge_indexing
-from app.models.knowledge import KnowledgeDocument, KnowledgeDocumentKind, KnowledgeDocumentStatus
-from app.schemas.knowledge import KnowledgeDocumentFilters
+from app.schemas.knowledge import (
+    KnowledgeDocumentFilters,
+    KnowledgeDocumentKind,
+    KnowledgeDocumentStatus,
+)
 from app.services import knowledge_document_service
 
 logger = structlog.get_logger(__name__)
@@ -321,29 +324,17 @@ async def knowledge_faq_edit(
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Devuelve el formulario de edición de pares FAQ para un documento existente."""
-    from sqlalchemy import select as sa_select
-
-    from app.core.errors import NotFoundError
-
-    doc_orm = (
-        await db.execute(
-            sa_select(KnowledgeDocument).where(
-                KnowledgeDocument.id == document_id,
-                KnowledgeDocument.tenant_id == tenant.id,
-            )
-        )
-    ).scalar_one_or_none()
-
-    if doc_orm is None:
-        raise NotFoundError(f"KnowledgeDocument {document_id} not found")
-
-    pairs = knowledge_document_service.get_faq_pairs(doc_orm)
+    doc, pairs = await knowledge_document_service.get_faq_edit_context(
+        db,
+        tenant_id=tenant.id,
+        document_id=document_id,
+    )
     pairs_json = json.dumps([p.model_dump() for p in pairs])
     return render(
         request,
         full="components/knowledge_faq_edit_panel.html",
         partial="components/knowledge_faq_edit_panel.html",
-        ctx={"document": doc_orm, "pairs_json": pairs_json, "kinds": list(KnowledgeDocumentKind)},
+        ctx={"document": doc, "pairs_json": pairs_json, "kinds": list(KnowledgeDocumentKind)},
     )
 
 

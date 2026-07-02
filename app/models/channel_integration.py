@@ -20,16 +20,12 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.schemas.channel import ChannelIntegrationStatus
 
 
 class ChannelType(enum.StrEnum):
     whatsapp = "whatsapp"
     telegram = "telegram"
-
-
-class ChannelIntegrationStatus(enum.StrEnum):
-    active = "active"
-    revoked = "revoked"
 
 
 class ChannelIntegration(Base):
@@ -71,3 +67,10 @@ class ChannelIntegration(Base):
         # Fast lookup in WhatsApp webhook handler (cross-tenant, uses webhook_select policy)
         Index("ix_channel_integrations_phone_number_id", "phone_number_id"),
     )
+
+
+__all__ = [
+    "ChannelIntegration",
+    "ChannelIntegrationStatus",
+    "ChannelType",
+]

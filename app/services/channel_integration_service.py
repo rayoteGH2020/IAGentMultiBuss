@@ -12,8 +12,10 @@ from app.config import get_settings
 from app.core.crypto import decrypt_token as _crypto_decrypt
 from app.core.crypto import encrypt_token
 from app.core.errors import NotFoundError, ValidationError
-from app.models.channel_integration import ChannelIntegration, ChannelIntegrationStatus
+from app.models.channel_integration import ChannelIntegration
 from app.models.tenant import Tenant
+from app.schemas.channel import ChannelIntegrationRead, ChannelIntegrationStatus
+from app.schemas.tenant import TenantRead
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -213,3 +215,41 @@ def decrypt_webhook_secret(integration: ChannelIntegration) -> str:
     if not integration.webhook_secret_enc:
         raise ValidationError("Missing encrypted webhook secret")
     return _crypto_decrypt(integration.webhook_secret_enc, _require_encryption_key())
+
+
+def _integration_to_read(integration: ChannelIntegration | None) -> ChannelIntegrationRead | None:
+    if integration is None:
+        return None
+    return ChannelIntegrationRead.model_validate(integration)
+
+
+async def list_tenants_for_admin(db: AsyncSession) -> list[TenantRead]:
+    """Lista tenants para el panel superadmin (tabla sin RLS)."""
+    stmt = select(Tenant).order_by(Tenant.name)
+    result = await db.execute(stmt)
+    return [TenantRead.model_validate(t) for t in result.scalars().all()]
+
+
+async def get_tenant_for_admin(db: AsyncSession, tenant_id: UUID) -> TenantRead:
+    """Carga un tenant por id para operaciones admin."""
+    stmt = select(Tenant).where(Tenant.id == tenant_id)
+    tenant = (await db.execute(stmt)).scalar_one_or_none()
+    if tenant is None:
+        raise NotFoundError(f"Tenant {tenant_id} not found")
+    return TenantRead.model_validate(tenant)
+
+
+async def build_admin_integrations_context(
+    db: AsyncSession,
+    tenant: TenantRead,
+) -> dict[str, object]:
+    """Contexto Jinja para tarjetas WhatsApp/Telegram de un tenant."""
+    wa = _integration_to_read(await get_integration(db, tenant.id, "whatsapp"))
+    tg = _integration_to_read(await get_integration(db, tenant.id, "telegram"))
+    return {
+        "tenant": tenant,
+        "whatsapp_integration": wa,
+        "whatsapp_connected": wa is not None and wa.status == ChannelIntegrationStatus.active.value,
+        "telegram_integration": tg,
+        "telegram_connected": tg is not None and tg.status == ChannelIntegrationStatus.active.value,
+    }

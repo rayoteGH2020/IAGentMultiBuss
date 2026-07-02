@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -24,27 +23,10 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.schemas.knowledge import KnowledgeDocumentKind, KnowledgeDocumentStatus
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-
-class KnowledgeDocumentStatus(enum.StrEnum):
-    pending = "pending"  # subido, job encolado, sin procesar aún
-    indexing = "indexing"  # worker extrayendo, troceando y embebiendo
-    ready = "ready"  # indexación completada; chunks disponibles para búsqueda
-    failed = "failed"  # error; error_message contiene el detalle visible en UI
-
-
-class KnowledgeDocumentKind(enum.StrEnum):
-    contract = "contract"  # Contrato (marco, SLA…)
-    terms = "terms"  # Condiciones generales, privacidad
-    schedule = "schedule"  # Horarios comerciales, turnos
-    services = "services"  # Catálogo de servicios, tarifas
-    policy = "policy"  # Políticas internas de la empresa
-    faq = "faq"  # Preguntas frecuentes
-    manual = "manual"  # Manuales y procedimientos
-    other = "other"  # Resto de documentos
 
 
 class KnowledgeDocument(Base):
@@ -166,3 +148,11 @@ class KnowledgeChunk(Base):
             "position",
         ),
     )
+
+
+__all__ = [
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "KnowledgeDocumentKind",
+    "KnowledgeDocumentStatus",
+]

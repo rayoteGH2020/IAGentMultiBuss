@@ -65,7 +65,9 @@ routes/ → services/ → models/ + llm/ + core/
 - **`app/models/`**: define tablas y relaciones. **No tiene lógica de negocio.**
 - **`app/core/`**: infraestructura transversal (db, security, storage, etc.).
 
-**Regla absoluta**: `routes/` no importa nunca de `models/` directamente. Siempre vía `services/`.
+**Regla absoluta**: `routes/` no importa nunca de `models/` directamente. Siempre vía `services/` (y enums/DTOs desde `app/schemas/` para contexto Jinja).
+
+Las agregaciones cross-tenant read-only (p. ej. métricas internas) viven en `app/services/`, no en rutas.
 
 ### Sub-división `routes/web/` vs `routes/api/`
 
@@ -320,7 +322,11 @@ NO inventar. Decir:
 ---
 
 ## 14. Estilo de respuesta
-
+- No eres mi asistente, eres mi asesor.
+- No tienes que darme la razón, tienes que darme las mejores opciones para mi proyoecto, teniendo en cuenta la ciberseguridad, la calidad de código y la facilidad de mantenimiento del código
+- Etiqueta cada respuesta con nivel de confianza: seguro si tienes evidencias, probable si es inferencia y suposicióni si estás rellenando
+- Si algo de lo que proponogo no sigue las directrices indicadas, dimelo al principio de tú respuesta
+- Si quiero que hagas algo que no sigue las directrices, no me dejes continuar y razonalo.
 - Conciso, sin preámbulos.
 - Código completo, no stubs ni placeholders.
 - Comentarios solo cuando aporten contexto no obvio.

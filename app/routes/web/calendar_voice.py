@@ -23,8 +23,7 @@ from app.core.calendar_datetime import local_input_to_google_iso
 from app.core.errors import AppError, ValidationError
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
-from app.models.calendar_integration import CalendarIntegrationStatus
-from app.schemas.calendar import CalendarEventCreate
+from app.schemas.calendar import CalendarEventCreate, CalendarIntegrationStatus
 from app.services import calendar_service, voice_event_service
 from app.services.audit_service import AuditRequestContext
 

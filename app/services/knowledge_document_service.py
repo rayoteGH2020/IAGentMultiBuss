@@ -20,12 +20,13 @@ from app.core.keys import document_key, knowledge_faq_key
 from app.core.knowledge_uploads import validate_knowledge_upload
 from app.core.storage import get_storage
 from app.core.uploads import original_upload_filename
-from app.models.knowledge import (
-    KnowledgeDocument,
+from app.models.knowledge import KnowledgeDocument
+from app.schemas.knowledge import (
+    KnowledgeDocumentFilters,
     KnowledgeDocumentKind,
+    KnowledgeDocumentRead,
     KnowledgeDocumentStatus,
 )
-from app.schemas.knowledge import KnowledgeDocumentFilters, KnowledgeDocumentRead
 from app.schemas.pagination import Page
 from app.services import audit_service
 
@@ -207,7 +208,29 @@ async def update_faq_pairs(
 
 def get_faq_pairs(doc: KnowledgeDocument) -> list[FaqPair]:
     """Parsea faq_content de un documento FAQ a lista de FaqPair."""
-    return deserialize_faq(doc.faq_content or "")
+    return get_faq_pairs_from_content(doc.faq_content)
+
+
+def get_faq_pairs_from_content(faq_content: str | None) -> list[FaqPair]:
+    """Parsea faq_content serializado a pares Q/A."""
+    return deserialize_faq(faq_content or "")
+
+
+async def get_faq_edit_context(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_id: UUID,
+) -> tuple[KnowledgeDocumentRead, list[FaqPair]]:
+    """Documento FAQ y pares Q/A para el panel de edición (sin ORM en rutas)."""
+    doc = await get_document(
+        db,
+        tenant_id=tenant_id,
+        document_id=document_id,
+        include_download_url=False,
+    )
+    pairs = get_faq_pairs_from_content(doc.faq_content)
+    return doc, pairs
 
 
 async def list_documents(

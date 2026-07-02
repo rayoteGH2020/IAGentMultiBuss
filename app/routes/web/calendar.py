@@ -29,8 +29,7 @@ from app.core.datetime_display import display_today
 from app.core.errors import AppError, ValidationError
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, get_db
-from app.models.calendar_integration import CalendarIntegrationStatus
-from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate
+from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate, CalendarIntegrationStatus
 from app.services import calendar_service
 
 logger = structlog.get_logger(__name__)

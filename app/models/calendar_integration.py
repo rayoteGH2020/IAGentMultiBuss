@@ -20,16 +20,11 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.schemas.calendar import CalendarIntegrationStatus
 
 
 class CalendarIntegrationProvider(enum.StrEnum):
     google = "google"
-
-
-class CalendarIntegrationStatus(enum.StrEnum):
-    active = "active"
-    revoked = "revoked"
-    error = "error"
 
 
 class CalendarIntegration(Base):
@@ -90,3 +85,10 @@ class CalendarIntegration(Base):
         ),
         Index("ix_calendar_integrations_tenant_user", "tenant_id", "user_id"),
     )
+
+
+__all__ = [
+    "CalendarIntegration",
+    "CalendarIntegrationProvider",
+    "CalendarIntegrationStatus",
+]

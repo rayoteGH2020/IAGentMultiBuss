@@ -12,7 +12,6 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -21,46 +20,11 @@ from app.core.db import set_tenant_context
 from app.core.errors import AppError, NotFoundError
 from app.core.templating import render
 from app.deps import SuperAdmin, get_db_no_tenant
-from app.models.channel_integration import ChannelIntegrationStatus
-from app.models.tenant import Tenant
 from app.services import channel_integration_service
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/admin/integrations", tags=["admin-integrations"])
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-async def _get_target_tenant(db: AsyncSession, tenant_id: UUID) -> Tenant:
-    """Load a tenant by id (tenants table has no RLS — safe from no-tenant session)."""
-    stmt = select(Tenant).where(Tenant.id == tenant_id)
-    result = await db.execute(stmt)
-    tenant = result.scalar_one_or_none()
-    if tenant is None:
-        raise NotFoundError(f"Tenant {tenant_id} not found")
-    return tenant
-
-
-async def _channel_ctx(db: AsyncSession, tenant: Tenant) -> dict[str, object]:
-    """Build context for both integration cards of a tenant."""
-    wa = await channel_integration_service.get_integration(db, tenant.id, "whatsapp")
-    tg = await channel_integration_service.get_integration(db, tenant.id, "telegram")
-    return {
-        "tenant": tenant,
-        "whatsapp_integration": wa,
-        "whatsapp_connected": wa is not None and wa.status == ChannelIntegrationStatus.active.value,
-        "telegram_integration": tg,
-        "telegram_connected": tg is not None and tg.status == ChannelIntegrationStatus.active.value,
-    }
-
-
-# ---------------------------------------------------------------------------
-# List — all tenants
-# ---------------------------------------------------------------------------
 
 
 @router.get("")
@@ -69,20 +33,13 @@ async def admin_integrations_list(
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
-    stmt = select(Tenant).order_by(Tenant.name)
-    result = await db.execute(stmt)
-    tenants = result.scalars().all()
+    tenants = await channel_integration_service.list_tenants_for_admin(db)
     return render(
         request,
         full="pages/admin/channel_integrations_list.html",
         partial="pages/admin/channel_integrations_list.html",
         ctx={"tenants": tenants},
     )
-
-
-# ---------------------------------------------------------------------------
-# Detail — manage integrations for a specific tenant
-# ---------------------------------------------------------------------------
 
 
 @router.get("/{tenant_id}")
@@ -92,20 +49,15 @@ async def admin_integrations_detail(
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
-    tenant = await _get_target_tenant(db, tenant_id)
+    tenant = await channel_integration_service.get_tenant_for_admin(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
-    ctx = await _channel_ctx(db, tenant)
+    ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     return render(
         request,
         full="pages/admin/channel_integrations_detail.html",
         partial="pages/admin/channel_integrations_detail.html",
         ctx=ctx,
     )
-
-
-# ---------------------------------------------------------------------------
-# WhatsApp — save
-# ---------------------------------------------------------------------------
 
 
 @router.post("/{tenant_id}/whatsapp/save")
@@ -119,7 +71,7 @@ async def admin_whatsapp_save(
     display_name: Annotated[str, Form()] = "",
     confidence_threshold: Annotated[float, Form()] = 0.5,
 ) -> HTMLResponse:
-    tenant = await _get_target_tenant(db, tenant_id)
+    tenant = await channel_integration_service.get_tenant_for_admin(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
     error: str | None = None
     try:
@@ -135,7 +87,7 @@ async def admin_whatsapp_save(
         logger.info("admin.whatsapp.saved", tenant_id=str(tenant_id))
     except AppError as exc:
         error = exc.message
-    ctx = await _channel_ctx(db, tenant)
+    ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
         request,
@@ -143,11 +95,6 @@ async def admin_whatsapp_save(
         partial="components/integration_whatsapp.html",
         ctx=ctx,
     )
-
-
-# ---------------------------------------------------------------------------
-# WhatsApp — disconnect
-# ---------------------------------------------------------------------------
 
 
 @router.post("/{tenant_id}/whatsapp/disconnect")
@@ -157,7 +104,7 @@ async def admin_whatsapp_disconnect(
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
-    tenant = await _get_target_tenant(db, tenant_id)
+    tenant = await channel_integration_service.get_tenant_for_admin(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
     error: str | None = None
     try:
@@ -165,7 +112,7 @@ async def admin_whatsapp_disconnect(
         logger.info("admin.whatsapp.revoked", tenant_id=str(tenant_id))
     except (AppError, NotFoundError) as exc:
         error = exc.message
-    ctx = await _channel_ctx(db, tenant)
+    ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
         request,
@@ -173,11 +120,6 @@ async def admin_whatsapp_disconnect(
         partial="components/integration_whatsapp.html",
         ctx=ctx,
     )
-
-
-# ---------------------------------------------------------------------------
-# Telegram — save
-# ---------------------------------------------------------------------------
 
 
 @router.post("/{tenant_id}/telegram/save")
@@ -190,7 +132,7 @@ async def admin_telegram_save(
     display_name: Annotated[str, Form()] = "",
     confidence_threshold: Annotated[float, Form()] = 0.5,
 ) -> HTMLResponse:
-    tenant = await _get_target_tenant(db, tenant_id)
+    tenant = await channel_integration_service.get_tenant_for_admin(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
     error: str | None = None
     try:
@@ -202,7 +144,6 @@ async def admin_telegram_save(
             display_name=display_name.strip() or None,
             confidence_threshold=confidence_threshold,
         )
-        # Registrar el webhook en Telegram con el secret generado
         if plain_webhook_secret:
             settings = get_settings()
             webhook_url = f"{settings.app_base_url}/api/webhooks/telegram/{integration.id}"
@@ -225,7 +166,7 @@ async def admin_telegram_save(
         )
     except AppError as exc:
         error = exc.message
-    ctx = await _channel_ctx(db, tenant)
+    ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
         request,
@@ -235,11 +176,6 @@ async def admin_telegram_save(
     )
 
 
-# ---------------------------------------------------------------------------
-# Telegram — disconnect
-# ---------------------------------------------------------------------------
-
-
 @router.post("/{tenant_id}/telegram/disconnect")
 async def admin_telegram_disconnect(
     request: Request,
@@ -247,11 +183,10 @@ async def admin_telegram_disconnect(
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
-    tenant = await _get_target_tenant(db, tenant_id)
+    tenant = await channel_integration_service.get_tenant_for_admin(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
     error: str | None = None
     try:
-        # Intentar deleteWebhook antes de revocar (necesitamos el token antes de borrarlo)
         existing = await channel_integration_service.get_integration(db, tenant_id, "telegram")
         if existing and existing.api_token_enc:
             try:
@@ -263,7 +198,7 @@ async def admin_telegram_disconnect(
         logger.info("admin.telegram.revoked", tenant_id=str(tenant_id))
     except (AppError, NotFoundError) as exc:
         error = exc.message
-    ctx = await _channel_ctx(db, tenant)
+    ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
         request,

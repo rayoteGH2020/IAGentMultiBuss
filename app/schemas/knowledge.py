@@ -2,12 +2,29 @@
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.knowledge import KnowledgeDocumentKind, KnowledgeDocumentStatus
+
+class KnowledgeDocumentStatus(enum.StrEnum):
+    pending = "pending"
+    indexing = "indexing"
+    ready = "ready"
+    failed = "failed"
+
+
+class KnowledgeDocumentKind(enum.StrEnum):
+    contract = "contract"
+    terms = "terms"
+    schedule = "schedule"
+    services = "services"
+    policy = "policy"
+    faq = "faq"
+    manual = "manual"
+    other = "other"
 
 
 class KnowledgeDocumentCreate(BaseModel):

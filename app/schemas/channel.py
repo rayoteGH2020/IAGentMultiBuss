@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+
+
+class ChannelIntegrationStatus(enum.StrEnum):
+    active = "active"
+    revoked = "revoked"
 
 
 class ChannelResponse(BaseModel):
