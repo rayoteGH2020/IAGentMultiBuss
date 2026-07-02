@@ -86,10 +86,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libmagic1
+        run: sudo apt-get update && sudo apt-get install -y libmagic1 postgresql-client
 
       - name: Sync dependencies
         run: uv sync --frozen
+
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: saas  # pragma: allowlist secret
+        run: psql -h localhost -U saas -d saas -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Apply DB migrations
         run: uv run alembic upgrade head
