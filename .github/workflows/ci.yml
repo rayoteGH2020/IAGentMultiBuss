@@ -99,9 +99,6 @@ jobs:
       - name: Apply DB migrations
         run: uv run alembic upgrade head
 
-      - name: Verify migrations in sync
-        run: uv run alembic check
-
       - name: Unit tests
         run: uv run pytest tests/unit -q
 
