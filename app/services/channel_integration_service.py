@@ -71,6 +71,17 @@ async def save_integration(
     generated plain-text secret for Telegram's setWebhook call, or None for
     WhatsApp (which does not use a per-integration webhook secret).
     """
+    settings = get_settings()
+    if (
+        channel == "whatsapp"
+        and settings.app_env in ("staging", "production")
+        and not settings.whatsapp_app_secret.get_secret_value().strip()
+    ):
+        raise ValidationError(
+            "WHATSAPP_APP_SECRET must be configured before saving WhatsApp "
+            "integrations in staging/production"
+        )
+
     enc_key = _require_encryption_key()
     api_token_enc = encrypt_token(api_token, enc_key)
 

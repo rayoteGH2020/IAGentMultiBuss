@@ -261,7 +261,7 @@ Regresiones de tipos, estilo y tests no se detectan en PR → riesgo alto en un 
 
 ### Comprobaciones finales (punto 3)
 
-- [ ] Abrir PR → workflow `CI` verde en GitHub Actions (validar en remoto).
+- [X] Abrir PR → workflow `CI` verde en GitHub Actions (validar en remoto).
 - [x] Simulación local lint: ruff + mypy verdes.
 - [x] Marker `real_llm` registrado en `pyproject.toml`.
 
@@ -313,41 +313,41 @@ En **production**, un atacante que conozca la URL del webhook puede:
 webhook_allow_unsigned: bool = False  # True solo en dev local; env WEBHOOK_ALLOW_UNSIGNED
 ```
 
-- [ ] Default `False`.
-- [ ] En prod: nunca `True` (validar en startup si `app_env == "production"` y flag True → log error / raise).
+- [x] Default `False`.
+- [x] En prod: nunca `True` (validar en startup si `app_env == "production"` y flag True → log error / raise).
 
 #### 4.2 — WhatsApp POST
 
-- [ ] Tras leer `app_secret`:
+- [x] Tras leer `app_secret`:
   - Si `not app_secret.strip()`:
     - Si `settings.is_dev and settings.webhook_allow_unsigned`: log warning y continuar (comportamiento actual).
     - Else: log `critical`, return `Response(status_code=503)` o `401` **sin** encolar job.
   - Si hay secret pero firma inválida: mantener 200 a Meta (no revelar) **pero no procesar** — ya ocurre; verificar que no encola.
 
-- [ ] GET verify (`whatsapp_verify`): si `whatsapp_verify_token` vacío en prod → 403 (ya falla si `expected` vacío).
+- [x] GET verify (`whatsapp_verify`): si `whatsapp_verify_token` vacío en prod → 403 (ya falla si `expected` vacío).
 
 #### 4.3 — Telegram POST
 
-- [ ] Tras cargar integración:
+- [x] Tras cargar integración:
   - Si `not integration.webhook_secret_enc`:
     - Dev + `webhook_allow_unsigned` → continuar con warning.
     - Prod → log critical, return 200 **sin encolar** (Telegram reintenta; alternativa 403 si se prefiere fail-fast).
   - Si hay secret pero header inválido: mantener 200 sin encolar (comportamiento actual OK).
 
-- [ ] Mover imports al tope (punto 1).
+- [x] Mover imports al tope (punto 1).
 
 #### 4.4 — Alta de integraciones (preventivo)
 
-- [ ] En flujo superadmin que crea integración Telegram: **generar y persistir** `webhook_secret_enc` siempre (ya debería ocurrir en Paso 21 — verificar).
-- [ ] Documentar en UI admin: WhatsApp requiere `WHATSAPP_APP_SECRET` en Infisical prod.
+- [x] En flujo superadmin que crea integración Telegram: **generar y persistir** `webhook_secret_enc` siempre (ya debería ocurrir en Paso 21 — verificar).
+- [x] Documentar en UI admin: WhatsApp requiere `WHATSAPP_APP_SECRET` en Infisical prod.
 
 ### Tests a actualizar
 
-- [ ] `test_whatsapp_webhook.py`:
+- [x] `test_whatsapp_webhook.py`:
   - Nuevo: `APP_ENV=production`, secret vacío, POST firmado/no → **no** debe encolar (`enqueue` not called).
   - Nuevo: `APP_ENV=development`, `WEBHOOK_ALLOW_UNSIGNED=true`, secret vacío → puede encolar (comportamiento dev).
 
-- [ ] `test_telegram_webhook.py`:
+- [x] `test_telegram_webhook.py`:
   - Hoy existe test con `with_secret=False` que espera 200 sin encolar (sticker case). **Separar** caso “sin secret en prod” → no encolar + log.
   - Nuevo: prod + integración sin `webhook_secret_enc` → no encolar aunque haya texto válido.
 
@@ -363,9 +363,9 @@ uv run pytest tests/integration/test_whatsapp_webhook.py tests/integration/test_
 
 **Criterio de cierre:**
 
-- [ ] En `app_env=production`, imposible procesar mensaje sin verificación criptográfica configurada.
-- [ ] Dev local sigue funcionando con `WEBHOOK_ALLOW_UNSIGNED=true` documentado en `Leeme.txt` / `docs/environment-variables.md`.
-- [ ] Tests de integración cubren prod vs dev.
+- [x] En `app_env=production`, imposible procesar mensaje sin verificación criptográfica configurada.
+- [x] Dev local sigue funcionando con `WEBHOOK_ALLOW_UNSIGNED=true` documentado en `Leeme.txt` / `docs/environment-variables.md`.
+- [x] Tests de integración cubren prod vs dev.
 
 ---
 

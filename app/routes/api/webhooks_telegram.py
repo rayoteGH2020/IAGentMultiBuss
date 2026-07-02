@@ -88,8 +88,9 @@ async def telegram_webhook(
             return Response(status_code=200)
 
         # Verificar webhook secret (X-Telegram-Bot-Api-Secret-Token)
+        settings = get_settings()
         if integration.webhook_secret_enc:
-            enc_key = get_settings().encryption_key.get_secret_value()
+            enc_key = settings.encryption_key.get_secret_value()
             expected_secret = decrypt_token(integration.webhook_secret_enc, enc_key)
             if not verify_webhook_secret(x_telegram_bot_api_secret_token, expected_secret):
                 logger.warning(
@@ -97,6 +98,19 @@ async def telegram_webhook(
                     integration_id=str(integration_id),
                 )
                 return Response(status_code=200)  # No exponer el fallo a Telegram
+        elif settings.allows_unsigned_webhooks:
+            logger.warning(
+                "telegram.webhook.unsigned_allowed",
+                integration_id=str(integration_id),
+                app_env=settings.app_env,
+            )
+        else:
+            logger.critical(
+                "telegram.webhook.no_webhook_secret",
+                integration_id=str(integration_id),
+                app_env=settings.app_env,
+            )
+            return Response(status_code=200)
 
         tenant_id = str(integration.tenant_id)
         integration_id_str = str(integration_id)

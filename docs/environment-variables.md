@@ -74,6 +74,9 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 |----------|:-----------:|----------------|
 | `ENCRYPTION_KEY` | En prod | Clave AES-256 (32 bytes en base64) para cifrar campos sensibles en BD (conexiones de clientes, tokens OAuth). |
 | `METRICS_TOKEN` | No | Bearer token para el endpoint `GET /metrics/module1`. Autenticación máquina-a-máquina (CI, dashboards internos); no es auth de usuario. |
+| `WEBHOOK_ALLOW_UNSIGNED` | No | Default `false`. Si `true` **y** `APP_ENV=development`, permite procesar webhooks de WhatsApp/Telegram sin verificación criptográfica (solo dev local). Prohibido en staging/production (la app no arranca). |
+| `WHATSAPP_APP_SECRET` | En prod | Secreto de la app Meta para validar `X-Hub-Signature-256` en POST `/api/webhooks/whatsapp`. Obligatorio en staging/production antes de guardar integraciones WhatsApp. |
+| `WHATSAPP_VERIFY_TOKEN` | En prod | Token arbitrario que Meta devuelve en la verificación GET del webhook. |
 
 ## Ejemplos no secretos (dev local, Paso 02)
 
@@ -86,6 +89,7 @@ Solo guía al rellenar Infisical; credenciales de ejemplo del compose local:
 - `LANGFUSE_SECRET_KEY=sk-lf-mi-saas-dev-local`
 - `R2_ENDPOINT_URL=http://localhost:9000` (MinIO local)
 - `APP_ENV=development`
+- `WEBHOOK_ALLOW_UNSIGNED=true` (solo dev local; nunca en staging/production)
 
 ## GitHub Actions (CI)
 

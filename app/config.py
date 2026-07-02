@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -184,6 +184,10 @@ class Settings(BaseSettings):
     whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
     whatsapp_max_response_chars: int = 1000
 
+    # Webhooks externos (WhatsApp / Telegram) — fail-closed en staging/prod (Paso CDX 4).
+    # True solo en dev local explícito; nunca en staging/production (validado abajo).
+    webhook_allow_unsigned: bool = False
+
     # Telegram Bot API (Paso 21 F)
     telegram_api_url: str = "https://api.telegram.org"
 
@@ -253,6 +257,19 @@ class Settings(BaseSettings):
     @property
     def is_dev(self) -> bool:
         return self.app_env == "development"
+
+    @property
+    def allows_unsigned_webhooks(self) -> bool:
+        """Permite omitir verificación criptográfica solo en dev con flag explícito."""
+        return self.is_dev and self.webhook_allow_unsigned
+
+    @model_validator(mode="after")
+    def _reject_unsigned_webhooks_outside_dev(self) -> Self:
+        if self.webhook_allow_unsigned and not self.is_dev:
+            raise ValueError(
+                "WEBHOOK_ALLOW_UNSIGNED must be false when APP_ENV is staging or production"
+            )
+        return self
 
 
 # Singleton de configuración: se construye una sola vez leyendo el entorno y
