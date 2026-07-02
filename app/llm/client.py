@@ -51,7 +51,9 @@ _ANTHROPIC_TASKS = frozenset({"classify", "sql"})
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
 # "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
-TaskType = Literal["extraction", "chat", "sql", "classify", "embedding", "transcription"]
+TaskType = Literal[
+    "extraction", "chat", "sql", "classify", "embedding", "transcription", "translate"
+]
 
 # Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
 # 529 es específico de Anthropic ("overloaded"); el resto son estándar.
@@ -190,6 +192,8 @@ DEFAULT_MODELS: dict[str, str] = {
     "embedding": "voyage-3-lite",
     # "transcription" usa Gemini audio nativo; Anthropic no soporta audio directo.
     "transcription": "gemini-2.5-flash",
+    # "translate" usa Gemini para traducción de texto.
+    "translate": "gemini-2.5-flash",
 }
 
 # TypeVar acotado a BaseModel: permite que complete() sea genérico y devuelva
@@ -289,6 +293,7 @@ class LLMClient:
             "sql": self._settings.llm_model_sql,
             "embedding": None,
             "transcription": self._settings.llm_model_transcription,
+            "translate": self._settings.llm_model_translate,
         }
         model = overrides.get(task) or DEFAULT_MODELS[task]
         # Heurística de routing por prefijo de modelo:
@@ -741,7 +746,7 @@ class LLMClient:
                 raise ExternalServiceError(
                     "VOYAGE_API_KEY is not configured. Add it in Infisical and restart the worker."
                 )
-            model = self._settings.knowledge_embedding_model
+            model = self._settings.resolved_knowledge_embedding_model
             dims = self._settings.knowledge_embedding_dimensions
             self._voyage_embedder = VoyageEmbedder(
                 api_key=api_key,
@@ -749,7 +754,7 @@ class LLMClient:
                 output_dimension=dims,
             )
 
-        model = self._settings.knowledge_embedding_model
+        model = self._settings.resolved_knowledge_embedding_model
         expected_dims = self._settings.knowledge_embedding_dimensions
 
         # Un trace_id compartido por todos los batches del mismo embed() call

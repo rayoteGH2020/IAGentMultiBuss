@@ -78,17 +78,26 @@ class Settings(BaseSettings):
 
     # Overrides opcionales del router de modelos (arquitectura.md §8).
     # Si son None, LLMClient usa los DEFAULT_MODELS definidos en llm/client.py.
-    # Útil para cambiar el modelo en staging sin tocar código.
+    # Cada campo se inyecta vía Infisical con su nombre en MAYÚSCULAS
+    # (p. ej. LLM_MODEL_EXTRACTION) y tiene prioridad sobre el default.
+    # El proveedor se infiere del prefijo del modelo en _resolve_model:
+    # "claude-*" → Anthropic, "voyage-*" → Voyage, resto → Google.
+    # Permite cambiar de modelo/proveedor en staging o prod sin redeploy.
     llm_model_extraction: str | None = None
     llm_model_chat: str | None = None
     llm_model_classify: str | None = None
     llm_model_sql: str | None = None
+    llm_model_translate: str | None = None
+    # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
+    llm_model_transcription: str | None = None
 
     # Knowledge / RAG ingesta (Paso 18)
     knowledge_max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
     knowledge_chunk_target_tokens: int = 600
     knowledge_chunk_overlap_tokens: int = 100
-    knowledge_embedding_model: str = "voyage-3-lite"
+    # Default en runtime: voyage-3-lite (ver resolved_knowledge_embedding_model).
+    # Override vía KNOWLEDGE_EMBEDDING_MODEL en Infisical.
+    knowledge_embedding_model: str | None = None
     # voyage-3-lite solo admite 512 dimensiones; debe coincidir con vector(N) en BD.
     knowledge_embedding_dimensions: int = 512
     knowledge_index_max_concurrent_per_tenant: int = 3
@@ -117,6 +126,7 @@ class Settings(BaseSettings):
     # Chunks devueltos al LLM tras el merge. top_k ≤ max_top_k siempre.
     knowledge_default_top_k: int = 10
     knowledge_max_top_k: int = 25  # techo para evitar saturar el contexto LLM
+
     # Rate-limit de búsqueda por tenant (peticiones/minuto); ventana deslizante en Redis.
     knowledge_search_rpm_limit: int = 120
 
@@ -234,8 +244,11 @@ class Settings(BaseSettings):
     voice_event_min_confidence: float = 0.5
     # Rate-limit por usuario: notas de voz por hora (ventana deslizante en Redis).
     voice_rate_limit_per_hour: int = 30
-    # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
-    llm_model_transcription: str | None = None
+
+    @property
+    def resolved_knowledge_embedding_model(self) -> str:
+        """Modelo Voyage para RAG; fallback al default de LLMClient si no hay override."""
+        return self.knowledge_embedding_model or "voyage-3-lite"
 
     @property
     def is_dev(self) -> bool:

@@ -86,3 +86,37 @@ Solo guía al rellenar Infisical; credenciales de ejemplo del compose local:
 - `LANGFUSE_SECRET_KEY=sk-lf-mi-saas-dev-local`
 - `R2_ENDPOINT_URL=http://localhost:9000` (MinIO local)
 - `APP_ENV=development`
+
+## GitHub Actions (CI)
+
+El workflow `.github/workflows/ci.yml` se ejecuta en cada PR y en push a `main`. **No** usa Infisical: inyecta variables de entorno de prueba en el job.
+
+| Job | Qué verifica | Infra |
+|-----|--------------|-------|
+| `lint-and-typecheck` | `ruff check`, `ruff format --check`, `mypy app` | Ninguna |
+| `test` | `alembic upgrade head`, `alembic check`, `pytest tests/unit`, `pytest tests/integration -m "integration and not real_llm"` | Postgres (pgvector) + Redis |
+
+Variables mínimas del job `test` (valores fijos en el YAML, no secretos):
+
+| Variable | Valor CI | Notas |
+|----------|----------|-------|
+| `APP_SECRET_KEY` | `ci-not-secret` | Solo CI; no usar en prod |
+| `DATABASE_URL` | `postgresql+asyncpg://saas:saas@localhost:5432/saas` | Superusuario para migraciones |
+| `RLS_TEST_DATABASE_URL` | `postgresql+asyncpg://saas_app:saas@localhost:5432/saas` | Rol RLS para fixtures de tests |
+| `REDIS_URL` | `redis://localhost:6379/0` | Servicio Redis del workflow |
+| `ENCRYPTION_KEY` | Clave Fernet fija en `ci.yml` | Tests de cifrado / webhooks |
+
+**No** se inyectan claves LLM ni R2 en CI principal. Tests marcados `real_llm` o gateados por `RUN_LLM_TESTS` / `RUN_R2_TESTS` quedan excluidos.
+
+Los **evals LLM** (coste API) siguen en `.github/workflows/evals.yml` con path filter; requieren secrets de repositorio: `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, etc.
+
+Simular CI localmente:
+
+```bash
+uv run ruff check app tests
+uv run ruff format --check app tests
+uv run mypy app
+# Con Postgres + Redis levantados (docker compose) y migraciones aplicadas:
+uv run pytest tests/unit -q
+uv run pytest tests/integration -q -m "integration and not real_llm"
+```

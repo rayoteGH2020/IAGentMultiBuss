@@ -12,11 +12,13 @@ cada bot de Telegram apunta a una URL única por integración.
 from __future__ import annotations
 
 import json
-import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
+import structlog
 from fastapi import APIRouter, Depends, Header, Request, Response
 
+from app.config import get_settings
+from app.core.crypto import decrypt_token
 from app.core.telegram_client import verify_webhook_secret
 from app.deps import get_db_no_tenant
 from app.jobs.queue import enqueue_channel_message
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks/telegram", tags=["webhooks-telegram"])
 
@@ -84,21 +86,18 @@ async def telegram_webhook(
         if integration is None or integration.status != "active":
             logger.warning(
                 "telegram.webhook.unknown_integration",
-                extra={"integration_id": str(integration_id)},
+                integration_id=str(integration_id),
             )
             return Response(status_code=200)
 
         # Verificar webhook secret (X-Telegram-Bot-Api-Secret-Token)
         if integration.webhook_secret_enc:
-            from app.core.crypto import decrypt_token
-            from app.config import get_settings
-
             enc_key = get_settings().encryption_key.get_secret_value()
             expected_secret = decrypt_token(integration.webhook_secret_enc, enc_key)
             if not verify_webhook_secret(x_telegram_bot_api_secret_token, expected_secret):
                 logger.warning(
                     "telegram.webhook.invalid_secret",
-                    extra={"integration_id": str(integration_id)},
+                    integration_id=str(integration_id),
                 )
                 return Response(status_code=200)  # No exponer el fallo a Telegram
 

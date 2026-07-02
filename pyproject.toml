@@ -189,6 +189,7 @@ markers = [
     "integration: requiere infra (postgres, redis)",
     "e2e: requiere navegador",
     "slow: tarda más de 1s",
+    "real_llm: llamada a API LLM o storage real (excluido en CI principal)",
 ]
 
 [tool.pydantic-mypy]

@@ -63,7 +63,15 @@ def rls_database_url() -> str:
 
 @pytest.fixture
 async def db_session(rls_database_url: str) -> AsyncIterator[AsyncSession]:
+    """Sesión async con rol RLS. Skip si Postgres no está levantado."""
     engine = create_async_engine(rls_database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except (SQLAlchemyError, OSError):
+        await engine.dispose()
+        pytest.skip("Postgres no disponible para tests de integración.")
+
     sm = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
     async with sm() as session:
         yield session
