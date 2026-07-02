@@ -31,6 +31,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1
+
       - name: Sync dependencies
         run: uv sync --frozen
 
@@ -107,6 +110,9 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           python-version: "3.12"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1
 
       - name: Sync dependencies
         # --frozen: usa las versiones exactas de uv.lock sin intentar resolver
