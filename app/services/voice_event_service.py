@@ -125,7 +125,7 @@ async def draft_from_audio(
     integration = await calendar_service.get_integration(db, tenant_id, user_id)
     if integration is None or integration.status != CalendarIntegrationStatus.active.value:
         raise NotFoundError(
-            "Google Calendar no está conectado. " "Ve a Ajustes > Integraciones para vincularlo."
+            "Google Calendar no está conectado. Ve a Ajustes > Integraciones para vincularlo."
         )
 
     # 3. Validar audio (MIME real por magic bytes + tamaño)
