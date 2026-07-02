@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from uuid import UUID  # noqa: TC003 — Pydantic requiere UUID en runtime para model_validate
 
 from pydantic import BaseModel, ConfigDict
-
-if TYPE_CHECKING:
-    from uuid import UUID
 
 
 class TenantRead(BaseModel):
