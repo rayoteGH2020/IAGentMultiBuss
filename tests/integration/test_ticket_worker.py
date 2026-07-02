@@ -74,8 +74,9 @@ async def test_process_ticket_persists_extraction_mock(
         mime_type: str,
         tenant_id: UUID,
         db: AsyncSession,
+        source_filename: str | None = None,
     ) -> TicketExtractionResult:
-        _ = file_bytes, mime_type, tenant_id, db
+        _ = file_bytes, mime_type, tenant_id, db, source_filename
         return TicketExtractionResult(
             ticket=TicketRecibo(
                 fecha=date(2025, 3, 10),

@@ -6,12 +6,14 @@ Superadmin configures WhatsApp and Telegram integrations on behalf of each tenan
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import telegram_client
@@ -22,11 +24,6 @@ from app.deps import SuperAdmin, get_db_no_tenant
 from app.models.channel_integration import ChannelIntegrationStatus
 from app.models.tenant import Tenant
 from app.services import channel_integration_service
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

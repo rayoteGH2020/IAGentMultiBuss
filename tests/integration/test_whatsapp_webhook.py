@@ -135,12 +135,11 @@ async def test_webhook_post_enqueues_job(app_client: AsyncClient) -> None:
 
     with (
         patch(
-            "app.routes.api.webhooks_whatsapp.channel_integration_service"
-            ".get_integration_by_phone_number_id",
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
             new=AsyncMock(return_value=fake_integration),
         ),
         patch(
-            "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+            "app.jobs.queue.enqueue_channel_message",
             new=mock_enqueue,
         ),
     ):
@@ -170,7 +169,7 @@ async def test_webhook_post_invalid_signature_returns_200_silently(
     mock_enqueue = AsyncMock()
 
     with patch(
-        "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+        "app.jobs.queue.enqueue_channel_message",
         new=mock_enqueue,
     ):
         async with app_client as client:
@@ -196,12 +195,11 @@ async def test_webhook_post_unknown_phone_number_id_returns_200(
 
     with (
         patch(
-            "app.routes.api.webhooks_whatsapp.channel_integration_service"
-            ".get_integration_by_phone_number_id",
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
             new=AsyncMock(return_value=None),
         ),
         patch(
-            "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+            "app.jobs.queue.enqueue_channel_message",
             new=mock_enqueue,
         ),
     ):

@@ -12,10 +12,12 @@ cada bot de Telegram apunta a una URL única por integración.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Header, Request, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.crypto import decrypt_token
@@ -23,11 +25,6 @@ from app.core.telegram_client import verify_webhook_secret
 from app.deps import get_db_no_tenant
 from app.jobs.queue import enqueue_channel_message
 from app.services import channel_integration_service
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

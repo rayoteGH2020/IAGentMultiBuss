@@ -15,16 +15,14 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.deps import get_db_no_tenant
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

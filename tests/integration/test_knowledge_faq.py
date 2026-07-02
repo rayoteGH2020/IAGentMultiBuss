@@ -114,14 +114,16 @@ async def test_create_faq_and_index_full_flow(
 
     fake_storage = _FakeStorage()
 
-    import app.llm.client as llm_mod
     import app.services.audit_service as audit_mod
     import app.services.knowledge_document_service as kds
     import app.services.knowledge_index_service as kis
 
     monkeypatch.setattr(kis, "get_storage", lambda: fake_storage)
     monkeypatch.setattr(kds, "get_storage", lambda: fake_storage)
-    monkeypatch.setattr(llm_mod, "get_llm_client", lambda: _FakeLLMClient())
+    monkeypatch.setattr(
+        "app.services.knowledge_index_service.get_llm_client",
+        lambda: _FakeLLMClient(),
+    )
 
     async def _noop_log(*a: Any, **kw: Any) -> None:
         pass

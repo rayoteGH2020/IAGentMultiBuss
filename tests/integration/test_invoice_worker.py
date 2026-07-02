@@ -101,8 +101,9 @@ async def test_process_invoice_persists_extraction_mock(
         mime_type: str,
         tenant_id: UUID,
         db: AsyncSession,
+        source_filename: str | None = None,
     ) -> Factura:
-        _ = file_bytes, mime_type, tenant_id, db
+        _ = file_bytes, mime_type, tenant_id, db, source_filename
         return Factura(
             fecha=date(2025, 1, 15),
             proveedor="Test S.L.",
