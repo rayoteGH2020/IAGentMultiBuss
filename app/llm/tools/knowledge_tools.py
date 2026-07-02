@@ -220,17 +220,21 @@ def build_channel_registry() -> ToolRegistry:
     """Registry exclusivo para canales externos (WhatsApp, Telegram).
 
     Garantías de seguridad (defensa en profundidad):
-      1. Solo registra tools de ``ToolFamily.knowledge`` — las tools documentales
-         (facturas, tickets) no existen en este registry; ``execute()`` devuelve
-         "Unknown tool" si el LLM intentase llamarlas por inyección de prompt.
-      2. ``allowed_families=frozenset({ToolFamily.knowledge})`` en el registry:
-         aunque en el futuro se registrase accidentalmente una tool de otra familia,
-         ``execute()`` la rechazaría antes de invocar su executor.
+      1. Solo registra tools de ``ToolFamily.knowledge`` y ``ToolFamily.calendar`` —
+         las tools documentales (facturas, tickets) no existen en este registry;
+         ``execute()`` devuelve "Unknown tool" si el LLM intentase llamarlas.
+      2. ``allowed_families`` acota la familia permitida: aunque se registrase
+         accidentalmente una tool documental, ``execute()`` la rechazaría.
       3. RLS de tenant activo en ``execute()`` vía ``set_tenant_context``: el
          cliente externo solo ve datos del tenant asociado a su número de teléfono.
     """
-    registry = ToolRegistry(allowed_families=frozenset({ToolFamily.knowledge}))
+    from app.llm.tools.calendar_tools import register_calendar_tools
+
+    registry = ToolRegistry(
+        allowed_families=frozenset({ToolFamily.knowledge, ToolFamily.calendar}),
+    )
     register_knowledge_tools(registry)
+    register_calendar_tools(registry)
     return registry
 
 

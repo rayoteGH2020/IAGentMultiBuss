@@ -1,7 +1,7 @@
 # CorreccionesCDX — Plan de implementación
 
 > Documento de trabajo para corregir **5 hallazgos** del análisis externo (CDX).
-> **Estado:** pendiente de implementación — usar este fichero como checklist cuando se ejecute el trabajo.
+> **Estado:** puntos 1–4 cerrados en código; punto 5 (multi-IVA) implementado salvo evals con fixtures reales y export CSV futuro.
 > **Referencia cruzada:** `Documentacion/Todo202607.md` (backlog general), `Documentacion/PendienteImplementar.md` §3 bis (multi-IVA).
 
 ---
@@ -103,7 +103,7 @@ pre-commit run --files app/config.py app/llm/client.py app/routes/api/webhooks_t
 
 ## Punto 2 — Regla de capas: `routes/` no debe importar `models/`
 
-### Problema detectado
+> **Estado:** implementado (2026-06-30).
 
 `Agents.md` §3: **`routes/` no importa `models/` directamente** — siempre vía `services/`.
 
@@ -149,7 +149,7 @@ Importaciones actuales (no exhaustivo):
 
 **Cambio:**
 
-- [ ] Añadir en `knowledge_document_service.py` algo equivalente a:
+- [x] Añadir en `knowledge_document_service.py` algo equivalente a:
 
 ```python
 async def get_document_orm(
@@ -160,26 +160,26 @@ async def get_document_orm(
 
   **O mejor (preferido):** usar el `get_document()` existente que ya devuelve `KnowledgeDocumentRead` y adaptar el template `knowledge_faq_edit_panel.html` para no necesitar ORM.
 
-- [ ] Eliminar de `knowledge.py`:
+- [x] Eliminar de `knowledge.py`:
   - import de `KnowledgeDocument` (si ya no hace falta)
   - bloque `sa_select(KnowledgeDocument)...`
   - import inline `from sqlalchemy import select`
 
-- [ ] Mantener en ruta solo: llamada a servicio + `render()`.
+- [x] Mantener en ruta solo: llamada a servicio + `render()`.
 
 #### 2.2 — Enums para templates (prioridad media)
 
-- [ ] Crear literales/enums en schemas, p. ej.:
+- [x] Crear literales/enums en schemas, p. ej.:
   - `KnowledgeDocumentKind`, `KnowledgeDocumentStatus` → re-export desde `app/schemas/knowledge.py` (o mover desde models y dejar models con String + check constraint — **decidir una sola fuente**).
   - `CalendarIntegrationStatus` → `app/schemas/calendar.py`
   - `ChannelIntegrationStatus` → `app/schemas/channel.py`
 
-- [ ] Actualizar imports en:
+- [x] Actualizar imports en:
   - `knowledge.py` (listas `kinds`/`statuses` en contexto Jinja)
   - `calendar.py`, `integrations.py`, `calendar_voice.py`
   - `admin_channel_integrations.py`
 
-- [ ] Models pueden importar los mismos enums desde schemas **o** mantener valores string en BD; evitar duplicar definiciones.
+- [x] Models pueden importar los mismos enums desde schemas **o** mantener valores string en BD; evitar duplicar definiciones.
 
 #### 2.3 — `metrics.py` (prioridad media)
 
@@ -187,7 +187,7 @@ async def get_document_orm(
 
 **Cambio (elegir A o B):**
 
-- **A (preferida):** crear `app/services/metrics_service.py` con funciones `get_module1_metrics(db) -> dict` que contengan los `select()` sobre `Invoice` y `LLMCall`. La ruta solo valida token y devuelve JSON/HTML.
+- [x] **A (preferida):** crear `app/services/metrics_service.py` con funciones `get_module1_metrics(db) -> dict` que contengan los `select()` sobre `Invoice` y `LLMCall`. La ruta solo valida token y devuelve JSON/HTML.
 
 - **B (mínima):** dejar lógica en ruta pero añadir en `Agents.md` §3:
 
@@ -195,14 +195,14 @@ async def get_document_orm(
 
 #### 2.4 — `admin_channel_integrations.py`
 
-- [ ] Devolver desde servicio DTOs/schemas (`TenantRead`, `ChannelIntegrationRead`) en lugar de pasar ORM `Tenant` al template.
-- [ ] Mover queries a `channel_integration_service` o `admin_service`.
+- [x] Devolver desde servicio DTOs/schemas (`TenantRead`, `ChannelIntegrationRead`) en lugar de pasar ORM `Tenant` al template.
+- [x] Mover queries a `channel_integration_service` o `admin_service`.
 
 ### Tests a tocar / crear
 
-- [ ] `tests/integration/test_knowledge_faq.py` — debe seguir pasando tras mover query.
-- [ ] `tests/unit/test_metrics_token.py` — métricas.
-- [ ] Añadir test unitario: ningún fichero en `app/routes/` importa `app.models` excepto lista blanca (opcional, script grep en CI).
+- [x] `tests/integration/test_knowledge_faq.py` — debe seguir pasando tras mover query.
+- [x] `tests/unit/test_metrics_token.py` — métricas.
+- [x] Añadir test unitario: ningún fichero en `app/routes/` importa `app.models` excepto lista blanca (opcional, script grep en CI).
 
 ### Comprobaciones finales (punto 2)
 
@@ -217,9 +217,9 @@ uv run mypy app/routes/web/knowledge.py app/routes/api/metrics.py
 
 **Criterio de cierre:**
 
-- [ ] `knowledge.py` no contiene `select(` ni import de `KnowledgeDocument` (salvo que quede excepción documentada temporal).
-- [ ] Enums en rutas vienen de `app/schemas/`.
-- [ ] `Agents.md` lista excepciones explícitas (metrics y/o SADM si aplica).
+- [x] `knowledge.py` no contiene `select(` ni import de `KnowledgeDocument` (salvo que quede excepción documentada temporal).
+- [x] Enums en rutas vienen de `app/schemas/`.
+- [x] `Agents.md` lista excepciones explícitas (metrics y/o SADM si aplica).
 
 ---
 
@@ -268,6 +268,8 @@ Regresiones de tipos, estilo y tests no se detectan en PR → riesgo alto en un 
 ---
 
 ## Punto 4 — Seguridad fail-open en webhooks (WhatsApp y Telegram)
+
+> **Estado:** implementado (2026-06-30).
 
 ### Problema detectado
 
@@ -371,6 +373,8 @@ uv run pytest tests/integration/test_whatsapp_webhook.py tests/integration/test_
 
 ## Punto 5 — Facturas multi-IVA (limitación funcional)
 
+> **Estado:** implementado en código (JSONB + prompt v2 + UI); pendiente evals con PDFs reales y baseline ≥ 95 %.
+
 ### Problema detectado
 
 El schema `Factura` solo tiene **un** `iva_percent` y **un** `iva_amount` escalares. Facturas con tipos mixtos (4 % / 10 % / 21 %) pierden desglose fiscal.
@@ -386,7 +390,7 @@ El schema `Factura` solo tiene **un** `iva_percent` y **un** `iva_amount` escala
 ### Decisión de producto (marcar antes de implementar)
 
 - [ ] **Opción A — MVP:** documentar limitación; no cambiar schema (solo mejorar prompt para suma correcta de `iva_amount`).
-- [ ] **Opción B — Contabilidad real (recomendado si cliente gestoría):** implementar desglose completo (este plan asume **Opción B**).
+- [x] **Opción B — Contabilidad real (recomendado si cliente gestoría):** implementar desglose completo (este plan asume **Opción B**).
 
 ### Ficheros afectados (Opción B)
 
@@ -403,7 +407,7 @@ El schema `Factura` solo tiene **un** `iva_percent` y **un** `iva_amount` escala
 
 #### 5.1 — Schema Pydantic (`app/schemas/invoice.py`)
 
-- [ ] Añadir modelo:
+- [x] Añadir modelo:
 
 ```python
 class DesgloseIVA(BaseModel):
@@ -412,7 +416,7 @@ class DesgloseIVA(BaseModel):
     amount: Decimal = Field(ge=0, description="Cuota IVA de este tramo")
 ```
 
-- [ ] En `Factura`:
+- [x] En `Factura`:
   - Añadir `desgloses_iva: list[DesgloseIVA] = Field(default_factory=list)`
   - Mantener `iva_percent` / `iva_amount` como **derivados** (compatibilidad):
     - `iva_amount` = sum(d.amount for d in desgloses) si lista no vacía
@@ -421,50 +425,50 @@ class DesgloseIVA(BaseModel):
 
 #### 5.2 — Prompt
 
-- [ ] Completar/usar `app/llm/prompts/extraction_v2.txt`: pedir **todos** los tramos de IVA con base, % y cuota; few-shot factura mixta hostelería.
-- [ ] En `extraction.py`: `PROMPT_VERSION = "extraction_v2"`.
-- [ ] Conservar `extraction_v1.txt` para comparar en evals (A/B).
+- [x] Completar/usar `app/llm/prompts/extraction_v2.txt`: pedir **todos** los tramos de IVA con base, % y cuota; few-shot factura mixta hostelería.
+- [x] En `extraction.py`: `PROMPT_VERSION = "extraction_v2"`.
+- [x] Conservar `extraction_v1.txt` para comparar en evals (A/B).
 
 #### 5.3 — Base de datos
 
 **Opción mínima (JSONB):**
 
-- [ ] Columna `vat_breakdown JSONB NULL` en `invoices` con array `[{base, percent, amount}]`.
-- [ ] Seguir rellenando `iva_percent` / `iva_amount` agregados para dashboards legacy.
+- [x] Columna `vat_breakdown JSONB NULL` en `invoices` con array `[{base, percent, amount}]`.
+- [x] Seguir rellenando `iva_percent` / `iva_amount` agregados para dashboards legacy.
 
-**Opción queryable (más trabajo):**
+**Opción queryable (más trabajo — diferido, no requerido para CDX):**
 
-- [ ] Tabla `invoice_vat_breakdown` (invoice_id FK, tenant_id, base, percent, amount, position).
+- [ ] Tabla `invoice_vat_breakdown` (invoice_id FK, tenant_id, base, percent, amount, position). *Decisión: usar JSONB `vat_breakdown` (Opción mínima) — esta tabla queda fuera de alcance CDX.*
 
-- [ ] Migración Alembic + RLS si tabla hija tiene `tenant_id`.
+- [ ] Migración Alembic + RLS si tabla hija tiene `tenant_id`. *N/A con JSONB.*
 
 #### 5.4 — Servicio
 
-- [ ] `apply_extraction_result`: persistir desglose desde `factura.desgloses_iva`.
-- [ ] Si lista vacía pero campos escalares presentes (extracciones viejas): migrar a un solo tramo en lectura.
+- [x] `apply_extraction_result`: persistir desglose desde `factura.desgloses_iva`.
+- [x] Si lista vacía pero campos escalares presentes (extracciones viejas): migrar a un solo tramo en lectura.
 
 #### 5.5 — UI
 
-- [ ] Mostrar tabla desglose en panel detalle factura (solo lectura al inicio; edición inline opcional fase 2).
+- [x] Mostrar tabla desglose en panel detalle factura (solo lectura al inicio; edición inline opcional fase 2).
 - [ ] Export CSV futuro (Todo202607 B.2) debe incluir columnas o filas por tramo.
 
 #### 5.6 — Evals
 
-- [ ] Ampliar `_compare` en `extraction.py` para comparar listas de desgloses (tolerancia decimal).
-- [ ] Añadir 3–5 PDFs/PNGs multi-IVA a dataset con ground truth explícito por tramo.
+- [x] Ampliar `_compare` en `extraction.py` para comparar listas de desgloses (tolerancia decimal).
+- [ ] Añadir 3–5 PDFs/PNGs multi-IVA a dataset con ground truth explícito por tramo (`invoices_v2.json` esqueleto creado).
 - [ ] Ejecutar runner y fijar baseline antes de merge.
 
 ### Tests a crear / actualizar
 
-- [ ] Unit: validator `_check_totals_coherent` con 2 tramos IVA.
-- [ ] Unit: `apply_extraction_result` persiste JSONB/tabla.
-- [ ] Unit: extracción mock con `desgloses_iva` de 2 elementos.
-- [ ] Evals: casos multi-IVA en dataset.
+- [x] Unit: validator `_check_totals_coherent` con 2 tramos IVA.
+- [x] Unit: `apply_extraction_result` persiste JSONB/tabla.
+- [x] Unit: extracción mock con `desgloses_iva` de 2 elementos (`test_extraction_eval.py`).
+- [ ] Evals: casos multi-IVA en dataset (pendiente fixtures reales).
 
 ### Comprobaciones finales (punto 5)
 
 ```powershell
-uv run alembic upgrade head
+infisical run -- uv run alembic upgrade head
 uv run pytest tests/unit/test_extraction.py tests/unit/test_invoice_service.py -q
 infisical run -- uv run python -m app.evals.runners.extraction <tenant_uuid>
 
@@ -473,20 +477,20 @@ infisical run -- uv run python -m app.evals.runners.extraction <tenant_uuid>
 
 **Criterio de cierre:**
 
-- [ ] Factura con dos tipos de IVA guarda desglose queryable.
-- [ ] Evals multi-IVA ≥ umbral acordado (p. ej. accuracy campos críticos ≥ 95 % en tramos).
-- [ ] `PendienteImplementar.md` §3 bis marcado como resuelto o referencia a este punto.
+- [x] Factura con dos tipos de IVA guarda desglose queryable (JSONB `vat_breakdown`).
+- [ ] Evals multi-IVA ≥ umbral acordado (p. ej. accuracy campos críticos ≥ 95 % en tramos) — **requiere fixtures reales en `invoices_v2.json`**.
+- [ ] `Documentacion/PendienteImplementar.md` §3 bis — fichero local/gitignored; anotar allí o en backlog cuando exista fixture eval.
 
 ---
 
 ## Checklist global post-implementación
 
-Cuando los 5 puntos estén hechos:
+Estado al cierre de la sesión CDX:
 
-- [ ] `pre-commit run --all-files` verde
-- [ ] CI GitHub Actions (`ci.yml` + `evals.yml`) verde en PR
-- [ ] Actualizar `Documentacion/Todo202607.md` — marcar ítems cerrados
-- [ ] Actualizar `Documentacion/PendienteImplementar.md` — corregir estado módulo 1.5 y multi-IVA
+- [ ] `pre-commit run --all-files` verde — **ejecutar en local** (ver comandos abajo).
+- [ ] CI GitHub Actions (`ci.yml` + `evals.yml`) verde en PR — **validar en remoto** tras push.
+- [ ] `Documentacion/Todo202607.md` — **no existe en el repo**; crear o actualizar backlog alternativo si aplica.
+- [ ] `Documentacion/PendienteImplementar.md` — local/gitignored; anotar multi-IVA resuelto (Opción B JSONB) manualmente.
 - [ ] Commit(s) convencionales separados por punto (recomendado):
   - `fix: resolve embedding model type and ruff issues`
   - `ci: add ruff mypy pytest workflow`
@@ -503,8 +507,8 @@ Hallazgos reportados por revisión externa (CDX), validados contra el código en
 **Documentos relacionados:**
 
 - `Documentacion/arquitectura.md` — §6 módulo 1, §8 LLM, §9 seguridad
-- `Documentacion/Agents.md` — §3 capas, §9 tests
-- `Documentacion/Todo202607.md` — backlog completo
+- `Agents.md` — §3 capas, §9 tests
+- Backlog multi-IVA / export CSV: ver comentarios en `CorreccionesCDX.md` punto 5 (Todo202607 no versionado)
 
 ---
 

@@ -1,4 +1,4 @@
-"""Registro de tools LLM por familia (document | knowledge)."""
+"""Registro de tools LLM por familia (document | knowledge | calendar)."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from app.core.errors import ValidationError
 class ToolFamily(enum.StrEnum):
     document = "document"
     knowledge = "knowledge"
+    calendar = "calendar"
 
 
 @dataclass(frozen=True, slots=True)

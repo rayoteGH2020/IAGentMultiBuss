@@ -333,16 +333,17 @@ async def test_low_confidence_does_not_store_in_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_knowledge_tools_only_no_invoice_tools() -> None:
-    """build_channel_registry() solo incluye tools de la familia knowledge."""
+def test_channel_registry_excludes_document_tools() -> None:
+    """build_channel_registry() incluye knowledge + calendar, nunca document."""
     registry = build_channel_registry()
 
     all_tools = registry.list_definitions()
     assert len(all_tools) > 0, "El registry de canal debe tener al menos una tool"
 
+    allowed = {ToolFamily.knowledge, ToolFamily.calendar}
     for tool in all_tools:
-        assert tool.family == ToolFamily.knowledge, (
-            f"Tool '{tool.name}' tiene familia '{tool.family}' en lugar de 'knowledge'"
+        assert tool.family in allowed, (
+            f"Tool '{tool.name}' tiene familia '{tool.family}' no permitida en canal"
         )
 
     # Las tools documentales no deben existir en el registry de canal
@@ -356,5 +357,4 @@ def test_knowledge_tools_only_no_invoice_tools() -> None:
             f"Tool documental '{doc_tool_name}' no debería estar en el channel registry"
         )
 
-    # El family guard también rechaza tools de otra familia aunque estén registradas
-    assert registry.allowed_families == frozenset({ToolFamily.knowledge})
+    assert registry.allowed_families == frozenset({ToolFamily.knowledge, ToolFamily.calendar})

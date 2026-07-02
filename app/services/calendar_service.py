@@ -372,3 +372,152 @@ async def update_calendar_event(
     finally:
         if owns_client:
             await cal_client.aclose()
+
+
+async def _resolve_tenant_calendar_integration(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    user_id: UUID | None = None,
+    provider: str = CalendarIntegrationProvider.google.value,
+) -> tuple[CalendarIntegration, UUID]:
+    """Resuelve la integración activa de calendario para un tenant (canales externos).
+
+    Si ``user_id`` está presente en el contexto del tool, se usa esa integración.
+    Si no, se toma la integración activa más reciente del tenant (calendario del negocio).
+    """
+    if user_id is not None:
+        integration = await get_integration(db, tenant_id, user_id, provider=provider)
+        if integration is None or integration.status != CalendarIntegrationStatus.active.value:
+            raise NotFoundError("Google Calendar integration not found or inactive")
+        return integration, user_id
+
+    stmt = (
+        select(CalendarIntegration)
+        .where(
+            CalendarIntegration.tenant_id == tenant_id,
+            CalendarIntegration.provider == provider,
+            CalendarIntegration.status == CalendarIntegrationStatus.active.value,
+        )
+        .order_by(CalendarIntegration.updated_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    integration = result.scalar_one_or_none()
+    if integration is None:
+        raise NotFoundError("Google Calendar integration not found or inactive")
+    return integration, integration.user_id
+
+
+async def check_tenant_availability(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    time_min: str,
+    time_max: str,
+    user_id: UUID | None = None,
+    max_results: int = 50,
+    client: GoogleCalendarClient | None = None,
+) -> list[CalendarEvent]:
+    """Lista eventos en un rango concreto usando el calendario del tenant."""
+    integration, _ = await _resolve_tenant_calendar_integration(
+        db,
+        tenant_id,
+        user_id=user_id,
+    )
+    access_token = await ensure_fresh_token(db, integration, client=client)
+    owns_client = client is None
+    cal_client = client or GoogleCalendarClient()
+    try:
+        return await cal_client.list_events(
+            access_token,
+            integration.google_calendar_id,
+            time_min=time_min,
+            time_max=time_max,
+            max_results=max_results,
+        )
+    finally:
+        if owns_client:
+            await cal_client.aclose()
+
+
+async def list_tenant_upcoming_events(
+    db: AsyncSession,
+    tenant_id: UUID,
+    days_ahead: int = 7,
+    *,
+    user_id: UUID | None = None,
+    max_results: int = 25,
+    client: GoogleCalendarClient | None = None,
+) -> list[CalendarEvent]:
+    """Lista citas próximas del calendario activo del tenant."""
+    _integration, resolved_user_id = await _resolve_tenant_calendar_integration(
+        db,
+        tenant_id,
+        user_id=user_id,
+    )
+    return await list_upcoming_events(
+        db,
+        tenant_id,
+        resolved_user_id,
+        days_ahead,
+        max_results=max_results,
+        client=client,
+    )
+
+
+async def create_tenant_calendar_event(
+    db: AsyncSession,
+    tenant_id: UUID,
+    event_data: CalendarEventCreate,
+    *,
+    user_id: UUID | None = None,
+    client: GoogleCalendarClient | None = None,
+) -> CalendarEvent:
+    """Crea una cita en el calendario activo del tenant."""
+    _integration, resolved_user_id = await _resolve_tenant_calendar_integration(
+        db,
+        tenant_id,
+        user_id=user_id,
+    )
+    return await create_calendar_event(
+        db,
+        tenant_id,
+        resolved_user_id,
+        event_data,
+        client=client,
+    )
+
+
+async def cancel_tenant_calendar_event(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    event_id: str,
+    user_id: UUID | None = None,
+    client: GoogleCalendarClient | None = None,
+) -> None:
+    """Cancela (elimina) una cita del calendario activo del tenant."""
+    integration, resolved_user_id = await _resolve_tenant_calendar_integration(
+        db,
+        tenant_id,
+        user_id=user_id,
+    )
+    access_token = await ensure_fresh_token(db, integration, client=client)
+    owns_client = client is None
+    cal_client = client or GoogleCalendarClient()
+    try:
+        await cal_client.delete_event(
+            access_token,
+            integration.google_calendar_id,
+            event_id,
+        )
+        logger.info(
+            "calendar.event.deleted",
+            tenant_id=str(tenant_id),
+            user_id=str(resolved_user_id),
+            event_id=event_id,
+        )
+    finally:
+        if owns_client:
+            await cal_client.aclose()
