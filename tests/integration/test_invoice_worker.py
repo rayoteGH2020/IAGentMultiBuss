@@ -21,6 +21,7 @@ import pytest
 from app.core.db import set_tenant_context
 from app.core.storage import reset_storage_for_tests
 from app.jobs import invoice_jobs
+from app.llm.extraction import ExtractionResult
 from app.models import Tenant
 from app.models.invoice import InvoiceStatus
 from app.schemas.invoice import Factura
@@ -102,17 +103,20 @@ async def test_process_invoice_persists_extraction_mock(
         tenant_id: UUID,
         db: AsyncSession,
         source_filename: str | None = None,
-    ) -> Factura:
+    ) -> ExtractionResult:
         _ = file_bytes, mime_type, tenant_id, db, source_filename
-        return Factura(
-            fecha=date(2025, 1, 15),
-            proveedor="Test S.L.",
-            cif_nif="00000000T",
-            base_imponible=Decimal("100.00"),
-            iva_percent=Decimal("21.00"),
-            iva_amount=Decimal("21.00"),
-            total=Decimal("121.00"),
-            confidence=0.95,
+        return ExtractionResult(
+            factura=Factura(
+                fecha=date(2025, 1, 15),
+                proveedor="Test S.L.",
+                cif_nif="00000000T",
+                base_imponible=Decimal("100.00"),
+                iva_percent=Decimal("21.00"),
+                iva_amount=Decimal("21.00"),
+                total=Decimal("121.00"),
+                confidence=0.95,
+            ),
+            llm_call_id=UUID("00000000-0000-0000-0000-000000000001"),
         )
 
     monkeypatch.setattr(invoice_jobs, "extract_invoice", fake_extract)
