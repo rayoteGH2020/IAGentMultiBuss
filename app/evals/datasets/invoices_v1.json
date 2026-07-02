@@ -1,307 +1,331 @@
 {
-  "_comment": "Dataset de evals del módulo 1. JSON puro (sin comentarios nativos); los campos '_comment' son documentación y son ignorados por el runner.",
-  "version": "v1",
-  "_version_comment": "Versión del dataset, no del modelo. Al cambiar la estructura del ground_truth o añadir campos nuevos se incrementa a v2 y se crea un fichero separado. El runner carga el dataset por nombre (invoices_v1.json), por lo que v1 y v2 pueden coexistir.",
-  "model_target": "gemini-2.5-flash",
-  "_model_target_comment": "Modelo LLM contra el que se anotan los ground truths. Si se cambia el modelo por defecto en DEFAULT_MODELS (llm/client.py), los ground truths deben re-validarse con el nuevo modelo porque los valores extraídos pueden diferir.",
-  "notes": "Ground-truth placeholder. Rellenar a mano con los valores reales de cada factura en tests/fixtures/invoices/. Casos con ground_truth a null se omiten en el runner (marcados como 'skipped', no como 'failed'). Ver _ground_truth_schema para el formato esperado.",
-  "_ground_truth_schema": {
-    "_comment": "Esquema de cada objeto ground_truth. Todos los valores son strings para facilitar la comparación sin conversiones de tipo en el runner.",
-    "fecha": "YYYY-MM-DD — fecha de emisión en formato ISO-8601",
-    "proveedor": "Razón social o nombre comercial del emisor (comparación por substring bidireccional)",
-    "cif_nif": "CIF/NIF/NIE del emisor en mayúsculas, sin guiones (comparación case-insensitive)",
-    "total": "Importe total con IVA en euros, como string decimal (p. ej. '121.00'). Tolerancia ±0.01 EUR.",
-    "base_imponible": "Base imponible sin IVA como string decimal. Tolerancia ±0.01 EUR.",
-    "iva_amount": "Importe del IVA como string decimal. Tolerancia ±0.01 EUR."
-  },
-  "cases": [
-    {
-      "id": "inv_001",
-      "file": "ejemplo_01.png",
-	  "ground_truth": {
-		"fecha": "2023-08-21",
-		"proveedor": "IKEA",
-		"cif_nif": "A28812618",
-		"base_imponible": "15.26",
-		"iva_amount": "3.21",
-		"total": "18.47"
-	  }
+    "_comment": "Dataset de evals del módulo 1. JSON puro (sin comentarios nativos); los campos '_comment' son documentación y son ignorados por el runner.",
+    "version": "v1",
+    "_version_comment": "Versión del dataset, no del modelo. Al cambiar la estructura del ground_truth o añadir campos nuevos se incrementa a v2 y se crea un fichero separado. El runner carga el dataset por nombre (invoices_v1.json), por lo que v1 y v2 pueden coexistir.",
+    "model_target": "gemini-2.5-flash",
+    "_model_target_comment": "Modelo LLM contra el que se anotan los ground truths. Si se cambia el modelo por defecto en DEFAULT_MODELS (llm/client.py), los ground truths deben re-validarse con el nuevo modelo porque los valores extraídos pueden diferir.",
+    "notes": "Ground-truth placeholder. Rellenar a mano con los valores reales de cada factura en tests/fixtures/invoices/. Casos con ground_truth a null se omiten en el runner (marcados como 'skipped', no como 'failed'). Ver _ground_truth_schema para el formato esperado.",
+    "_ground_truth_schema": {
+        "_comment": "Esquema de cada objeto ground_truth. Todos los valores son strings para facilitar la comparación sin conversiones de tipo en el runner.",
+        "fecha": "YYYY-MM-DD — fecha de emisión en formato ISO-8601",
+        "proveedor": "Razón social o nombre comercial del emisor (comparación por substring bidireccional)",
+        "cif_nif": "CIF/NIF/NIE del emisor en mayúsculas, sin guiones (comparación case-insensitive)",
+        "total": "Importe total con IVA en euros, como string decimal (p. ej. '121.00'). Tolerancia ±0.01 EUR.",
+        "base_imponible": "Base imponible sin IVA como string decimal. Tolerancia ±0.01 EUR.",
+        "iva_amount": "Importe del IVA como string decimal. Tolerancia ±0.01 EUR."
     },
-    {
-      "id": "inv_002",
-      "file": "ejemplo_02.png",
-      "ground_truth": {
-		  "fecha": "2023-08-21",
-		  "proveedor": "IKEA",
-		  "cif_nif": "A28812618",
-		  "base_imponible": "17.33",
-		  "iva_amount": "3.64",
-		  "total": "20.97"
-	  }
-    },
-    {
-      "id": "inv_003",
-      "file": "ejemplo_03.jpg",
-      "ground_truth":{
-	  "fecha": "2023-09-15",
-	  "proveedor": "ALDI",
-	  "cif_nif": "B84160233",
-	  "base_imponible": "24.85",
-	  "iva_amount": "21",
-	  "total": "27.65"}
-    },
-	{
-      "id": "inv_004",
-      "file": "ejemplo_04.png",
-      "ground_truth": {
-	  "fecha": "2023-07-26",
-	  "proveedor": "COLEGIO CARDENAL SPINOLA",
-	  "cif_nif": "52P",
-	  "base_imponible": "31.2",
-	  "iva_amount": "1.9",
-	  "total": "33.1"}
-    },
-    {
-      "id": "inv_005",
-      "file": "ejemplo_05.png",
-      "ground_truth": {
-	  "fecha": "",
-	  "proveedor": "",
-	  "cif_nif": "",
-	  "base_imponible": "",
-	  "iva_amount": "",
-	  "total": ""}
-    },
-    {
-      "id": "inv_006",
-      "file": "ejemplo_06.png",
-      "ground_truth": {
-	  "fecha": "2024-11-25",
-	  "proveedor": "pccomponentes",
-	  "cif_nif": "b73347494",
-	  "base_imponible": "371.06",
-	  "iva_amount": "77.92",
-	  "total": "448.98"}
-    },
-	    {
-      "id": "inv_007",
-      "file": "ejemplo_07.png",
-      "ground_truth": {
-	  "fecha": "2024-10-08",
-	  "proveedor": "conforama",
-	  "cif_nif": "a79103222",
-	  "base_imponible": "197.69",
-	  "iva_amount": "41.51",
-	  "total": "239.20"}
-    },
-    {
-      "id": "inv_008",
-      "file": "ejemplo_08.png",
-      "ground_truth": {
-	  "fecha": "2024-07-24",
-	  "proveedor": "polar",
-	  "cif_nif": "nl858683118b01",
-	  "base_imponible": "53.72",
-	  "iva_amount": "11.28",
-	  "total": "65.0"}
-    },
-    {
-      "id": "inv_009",
-      "file": "ejemplo_09.png",
-      "ground_truth": {
-	  "fecha": "2023-09-01",
-	  "proveedor": "la mata",
-	  "cif_nif": "b10267409",
-	  "base_imponible": "111.27",
-	  "iva_amount": "11.13",
-	  "total": "122.40"}
-    },
-	    {
-      "id": "inv_010",
-      "file": "ejemplo_10.jpg",
-      "ground_truth": {
-	  "fecha": "2023-08-28",
-	  "proveedor": "la mata",
-	  "cif_nif": "b10267409",
-	  "base_imponible": "98.91",
-	  "iva_amount": "9.89",
-	  "total": "108.8"}
-    },
-    {
-      "id": "inv_011",
-      "file": "ejemplo_11.png",
-      "ground_truth": {
-	  "fecha": "2023-07-24",
-	  "proveedor": "decathlon",
-	  "cif_nif": "",
-	  "base_imponible": "55.80",
-	  "iva_amount": "11.72",
-	  "total": "67.52"}
-    },
-    {
-      "id": "inv_0012",
-      "file": "ejemplo_12.pdf",
-      "ground_truth": {
-	  "fecha": "2026-04-28",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "63.61",
-	  "iva_amount": "6.36",
-	  "total": "69.97"}
-    },
-    {
-      "id": "inv_013",
-      "file": "ejemplo_13.pdf",
-      "ground_truth": {
-	  "fecha": "2025-11-03",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "20.80",
-	  "iva_amount": "4.37",
-	  "total": "25.17"}
-    },
-    {
-      "id": "inv_014",
-      "file": "ejemplo_14.pdf",
-      "ground_truth": {
-	  "fecha": "2025-02-21",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "110.08",
-	  "iva_amount": "23.12",
-	  "total": "133.20"}
-    },
-    {
-      "id": "inv_015",
-      "file": "ejemplo_15.pdf",
-      "ground_truth":{
-	  "fecha": "2025-02-21",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "33.69",
-	  "iva_amount": "7.07",
-	  "total": "40.76"}
-    },
-	    {
-      "id": "inv_016",
-      "file": "ejemplo_16.pdf",
-      "ground_truth": {
-	  "fecha": "2023-12-21",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "130.75",
-	  "iva_amount": "6.54",
-	  "total": "137.29"}
-    },
-    {
-      "id": "inv_017",
-      "file": "ejemplo_17.pdf",
-      "ground_truth": {
-	  "fecha": "2026-05-04",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "34.61",
-	  "iva_amount": "3.46",
-	  "total": "38.07"}
-    },
-    {
-      "id": "inv_018",
-      "file": "ejemplo_18.pdf",
-      "ground_truth": {
-	  "fecha": "2026-03-02",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "38.69",
-	  "iva_amount": "8.12",
-	  "total": "46.81"}
-    },
-	    {
-      "id": "inv_019",
-      "file": "ejemplo_19.pdf",
-      "ground_truth": {
-	  "fecha": "2025-08-01",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "39.56",
-	  "iva_amount": "8.31",
-	  "total": "47.87"}
-    },
-    {
-      "id": "inv_020",
-      "file": "ejemplo_20.pdf",
-      "ground_truth": {
-	  "fecha": "2024-11-29",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "40.14",
-	  "iva_amount": "4.01",
-	  "total": "44.15"}
-    },
-    {
-      "id": "inv_021",
-      "file": "ejemplo_21.pdf",
-      "ground_truth": {
-	  "fecha": "2024-04-30",
-	  "proveedor": "asenergy",
-	  "cif_nif": "a42785949",
-	  "base_imponible": "29.47",
-	  "iva_amount": "6.19",
-	  "total": "35.66"}
-    },
-	    {
-      "id": "inv_022",
-      "file": "ejemplo_22.pdf",
-      "ground_truth": {
-	  "fecha": "2022-06-03",
-	  "proveedor": "comercializador de ultimo recurso",
-	  "cif_nif": "A95554630",
-	  "base_imponible": "3.44",
-	  "iva_amount": "0.72",
-	  "total": "4.16"}
-    },
-    {
-      "id": "inv_023",
-      "file": "ejemplo_23.pdf",
-      "ground_truth": {
-	  "fecha": "2025-04-07",
-	  "proveedor": "comercializador de ultimo recurso",
-	  "cif_nif": "A95554630",
-	  "base_imponible": "32.45",
-	  "iva_amount": "6.81",
-	  "total": "39.26"}
-    },
-    {
-      "id": "inv_024",
-      "file": "ejemplo_24.pdf",
-      "ground_truth": {
-	  "fecha": "2025-08-12",
-	  "proveedor": "comercializador de ultimo recurso",
-	  "cif_nif": "A95554630",
-	  "base_imponible": "11.33",
-	  "iva_amount": "2.38",
-	  "total": "13.71"}
-    },
-	{
-      "id": "inv_025",
-      "file": "ejemplo_25.pdf",
-      "ground_truth":{
-	  "fecha": "2025-12-10",
-	  "proveedor": "comercializador de ultimo recurso",
-	  "cif_nif": "A95554630",
-	  "base_imponible": "24.16",
-	  "iva_amount": "5.07",
-	  "total": "29.23"}
-    },
-    {
-      "id": "inv_026",
-      "file": "ejemplo_26.pdf",
-      "ground_truth": {
-	  "fecha": "2025-10-14",
-	  "proveedor": "comercializador de ultimo recurso",
-	  "cif_nif": "A95554630",
-	  "base_imponible": "9.09",
-	  "iva_amount": "1.91",
-	  "total": "11.0"}
-    }
-  ]
+    "cases": [
+        {
+            "id": "inv_001",
+            "file": "ejemplo_01.png",
+            "ground_truth": {
+                "fecha": "2023-08-21",
+                "proveedor": "IKEA",
+                "cif_nif": "A28812618",
+                "base_imponible": "15.26",
+                "iva_amount": "3.21",
+                "total": "18.47"
+            }
+        },
+        {
+            "id": "inv_002",
+            "file": "ejemplo_02.png",
+            "ground_truth": {
+                "fecha": "2023-08-21",
+                "proveedor": "IKEA",
+                "cif_nif": "A28812618",
+                "base_imponible": "17.33",
+                "iva_amount": "3.64",
+                "total": "20.97"
+            }
+        },
+        {
+            "id": "inv_003",
+            "file": "ejemplo_03.jpg",
+            "ground_truth": {
+                "fecha": "2023-09-15",
+                "proveedor": "ALDI",
+                "cif_nif": "B84160233",
+                "base_imponible": "24.85",
+                "iva_amount": "21",
+                "total": "27.65"
+            }
+        },
+        {
+            "id": "inv_004",
+            "file": "ejemplo_04.png",
+            "ground_truth": {
+                "fecha": "2023-07-26",
+                "proveedor": "COLEGIO CARDENAL SPINOLA",
+                "cif_nif": "52P",
+                "base_imponible": "31.2",
+                "iva_amount": "1.9",
+                "total": "33.1"
+            }
+        },
+        {
+            "id": "inv_005",
+            "file": "ejemplo_05.png",
+            "ground_truth": {
+                "fecha": "",
+                "proveedor": "",
+                "cif_nif": "",
+                "base_imponible": "",
+                "iva_amount": "",
+                "total": ""
+            }
+        },
+        {
+            "id": "inv_006",
+            "file": "ejemplo_06.png",
+            "ground_truth": {
+                "fecha": "2024-11-25",
+                "proveedor": "pccomponentes",
+                "cif_nif": "b73347494",
+                "base_imponible": "371.06",
+                "iva_amount": "77.92",
+                "total": "448.98"
+            }
+        },
+        {
+            "id": "inv_007",
+            "file": "ejemplo_07.png",
+            "ground_truth": {
+                "fecha": "2024-10-08",
+                "proveedor": "conforama",
+                "cif_nif": "a79103222",
+                "base_imponible": "197.69",
+                "iva_amount": "41.51",
+                "total": "239.20"
+            }
+        },
+        {
+            "id": "inv_008",
+            "file": "ejemplo_08.png",
+            "ground_truth": {
+                "fecha": "2024-07-24",
+                "proveedor": "polar",
+                "cif_nif": "nl858683118b01",
+                "base_imponible": "53.72",
+                "iva_amount": "11.28",
+                "total": "65.0"
+            }
+        },
+        {
+            "id": "inv_009",
+            "file": "ejemplo_09.png",
+            "ground_truth": {
+                "fecha": "2023-09-01",
+                "proveedor": "la mata",
+                "cif_nif": "b10267409",
+                "base_imponible": "111.27",
+                "iva_amount": "11.13",
+                "total": "122.40"
+            }
+        },
+        {
+            "id": "inv_010",
+            "file": "ejemplo_10.jpg",
+            "ground_truth": {
+                "fecha": "2023-08-28",
+                "proveedor": "la mata",
+                "cif_nif": "b10267409",
+                "base_imponible": "98.91",
+                "iva_amount": "9.89",
+                "total": "108.8"
+            }
+        },
+        {
+            "id": "inv_011",
+            "file": "ejemplo_11.png",
+            "ground_truth": {
+                "fecha": "2023-07-24",
+                "proveedor": "decathlon",
+                "cif_nif": "",
+                "base_imponible": "55.80",
+                "iva_amount": "11.72",
+                "total": "67.52"
+            }
+        },
+        {
+            "id": "inv_0012",
+            "file": "ejemplo_12.pdf",
+            "ground_truth": {
+                "fecha": "2026-04-28",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "63.61",
+                "iva_amount": "6.36",
+                "total": "69.97"
+            }
+        },
+        {
+            "id": "inv_013",
+            "file": "ejemplo_13.pdf",
+            "ground_truth": {
+                "fecha": "2025-11-03",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "20.80",
+                "iva_amount": "4.37",
+                "total": "25.17"
+            }
+        },
+        {
+            "id": "inv_014",
+            "file": "ejemplo_14.pdf",
+            "ground_truth": {
+                "fecha": "2025-02-21",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "110.08",
+                "iva_amount": "23.12",
+                "total": "133.20"
+            }
+        },
+        {
+            "id": "inv_015",
+            "file": "ejemplo_15.pdf",
+            "ground_truth": {
+                "fecha": "2025-02-21",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "33.69",
+                "iva_amount": "7.07",
+                "total": "40.76"
+            }
+        },
+        {
+            "id": "inv_016",
+            "file": "ejemplo_16.pdf",
+            "ground_truth": {
+                "fecha": "2023-12-21",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "130.75",
+                "iva_amount": "6.54",
+                "total": "137.29"
+            }
+        },
+        {
+            "id": "inv_017",
+            "file": "ejemplo_17.pdf",
+            "ground_truth": {
+                "fecha": "2026-05-04",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "34.61",
+                "iva_amount": "3.46",
+                "total": "38.07"
+            }
+        },
+        {
+            "id": "inv_018",
+            "file": "ejemplo_18.pdf",
+            "ground_truth": {
+                "fecha": "2026-03-02",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "38.69",
+                "iva_amount": "8.12",
+                "total": "46.81"
+            }
+        },
+        {
+            "id": "inv_019",
+            "file": "ejemplo_19.pdf",
+            "ground_truth": {
+                "fecha": "2025-08-01",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "39.56",
+                "iva_amount": "8.31",
+                "total": "47.87"
+            }
+        },
+        {
+            "id": "inv_020",
+            "file": "ejemplo_20.pdf",
+            "ground_truth": {
+                "fecha": "2024-11-29",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "40.14",
+                "iva_amount": "4.01",
+                "total": "44.15"
+            }
+        },
+        {
+            "id": "inv_021",
+            "file": "ejemplo_21.pdf",
+            "ground_truth": {
+                "fecha": "2024-04-30",
+                "proveedor": "asenergy",
+                "cif_nif": "a42785949",
+                "base_imponible": "29.47",
+                "iva_amount": "6.19",
+                "total": "35.66"
+            }
+        },
+        {
+            "id": "inv_022",
+            "file": "ejemplo_22.pdf",
+            "ground_truth": {
+                "fecha": "2022-06-03",
+                "proveedor": "comercializador de ultimo recurso",
+                "cif_nif": "A95554630",
+                "base_imponible": "3.44",
+                "iva_amount": "0.72",
+                "total": "4.16"
+            }
+        },
+        {
+            "id": "inv_023",
+            "file": "ejemplo_23.pdf",
+            "ground_truth": {
+                "fecha": "2025-04-07",
+                "proveedor": "comercializador de ultimo recurso",
+                "cif_nif": "A95554630",
+                "base_imponible": "32.45",
+                "iva_amount": "6.81",
+                "total": "39.26"
+            }
+        },
+        {
+            "id": "inv_024",
+            "file": "ejemplo_24.pdf",
+            "ground_truth": {
+                "fecha": "2025-08-12",
+                "proveedor": "comercializador de ultimo recurso",
+                "cif_nif": "A95554630",
+                "base_imponible": "11.33",
+                "iva_amount": "2.38",
+                "total": "13.71"
+            }
+        },
+        {
+            "id": "inv_025",
+            "file": "ejemplo_25.pdf",
+            "ground_truth": {
+                "fecha": "2025-12-10",
+                "proveedor": "comercializador de ultimo recurso",
+                "cif_nif": "A95554630",
+                "base_imponible": "24.16",
+                "iva_amount": "5.07",
+                "total": "29.23"
+            }
+        },
+        {
+            "id": "inv_026",
+            "file": "ejemplo_26.pdf",
+            "ground_truth": {
+                "fecha": "2025-10-14",
+                "proveedor": "comercializador de ultimo recurso",
+                "cif_nif": "A95554630",
+                "base_imponible": "9.09",
+                "iva_amount": "1.91",
+                "total": "11.0"
+            }
+        }
+    ]
 }

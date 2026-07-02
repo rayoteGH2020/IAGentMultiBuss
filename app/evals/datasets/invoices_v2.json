@@ -1,0 +1,17 @@
+{
+    "_comment": "Dataset v2 con casos multi-IVA. Complementa invoices_v1.json.",
+    "version": "v2",
+    "model_target": "gemini-2.5-flash",
+    "notes": "Casos con desgloses_iva en ground_truth. Requiere prompt extraction_v2.",
+    "_ground_truth_schema": {
+        "desgloses_iva": "Lista de tramos {base, percent, amount} como strings decimales."
+    },
+    "cases": [
+        {
+            "id": "inv_mix_001",
+            "file": "ejemplo_01.png",
+            "ground_truth": null,
+            "_comment": "Placeholder: anotar manualmente cuando exista fixture multi-IVA real."
+        }
+    ]
+}

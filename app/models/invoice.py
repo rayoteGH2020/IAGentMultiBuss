@@ -94,6 +94,7 @@ class Invoice(Base):
     # pero se usa 5 dígitos para no comprometer tipos de IVA de otros países.
     iva_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     iva_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    vat_breakdown: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     # String(3): código ISO 4217, siempre 3 caracteres (EUR, USD, GBP…).
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")

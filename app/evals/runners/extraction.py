@@ -23,15 +23,13 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from statistics import median
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
 
 from app.core.db import session_factory_for_worker
 from app.llm.extraction import extract_invoice
-
-if TYPE_CHECKING:
-    from app.schemas.invoice import Factura
+from app.schemas.invoice import DesgloseIVA, Factura  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 
@@ -82,7 +80,29 @@ def _decimal_eq(a: str, b: str, tolerance: Decimal = Decimal("0.01")) -> bool:
         return False
 
 
-def _compare(factura: Factura, gt: dict[str, str]) -> list[FieldResult]:
+def _vat_breakdown_eq(expected: list[dict[str, str]], actual: list[DesgloseIVA]) -> bool:
+    if len(expected) != len(actual):
+        return False
+
+    def _sort_key_dict(d: dict[str, str]) -> tuple[str, str]:
+        return (str(d.get("percent", "")), str(d.get("base", "")))
+
+    def _sort_key_model(d: DesgloseIVA) -> tuple[str, str]:
+        return (str(d.percent), str(d.base))
+
+    exp_sorted = sorted(expected, key=_sort_key_dict)
+    act_sorted = sorted(actual, key=_sort_key_model)
+    for exp, act in zip(exp_sorted, act_sorted, strict=True):
+        if not _decimal_eq(str(exp["base"]), str(act.base)):
+            return False
+        if not _decimal_eq(str(exp["percent"]), str(act.percent)):
+            return False
+        if not _decimal_eq(str(exp["amount"]), str(act.amount)):
+            return False
+    return True
+
+
+def _compare(factura: Factura, gt: dict[str, Any]) -> list[FieldResult]:
     # Compara únicamente los campos críticos definidos en arquitectura.md §6:
     # fecha, CIF/NIF y total son los que tienen objetivo ≥95% de accuracy.
     # base_imponible e iva_amount se incluyen para detectar errores de desglose
@@ -136,6 +156,19 @@ def _compare(factura: Factura, gt: dict[str, str]) -> list[FieldResult]:
             _decimal_eq(gt["iva_amount"], str(factura.iva_amount)),
         ),
     ]
+    desgloses_gt = gt.get("desgloses_iva")
+    if isinstance(desgloses_gt, list) and desgloses_gt:
+        out.append(
+            FieldResult(
+                "desgloses_iva",
+                json.dumps(desgloses_gt, ensure_ascii=False),
+                json.dumps(
+                    [d.model_dump(mode="json") for d in factura.desgloses_iva],
+                    ensure_ascii=False,
+                ),
+                _vat_breakdown_eq(desgloses_gt, factura.desgloses_iva),
+            ),
+        )
     return out
 
 
@@ -312,11 +345,24 @@ def _format_summary_for_stdout(summary: dict[str, Any]) -> str:
 
 def main() -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    # El tenant_id se acepta como argumento para poder correr evals contra un
-    # tenant real con sus propios límites de RLS, o generar uno aleatorio para
-    # entornos de CI donde no existe ningún tenant concreto.
-    tenant_id = uuid.UUID(sys.argv[1]) if len(sys.argv) > 1 else uuid.uuid4()
-    summary = asyncio.run(run_evals(tenant_id))
+    if len(sys.argv) > 1:
+        try:
+            tenant_id = uuid.UUID(sys.argv[1])
+        except ValueError as exc:
+            msg = (
+                f"tenant_uuid inválido: {sys.argv[1]!r}. "
+                "Usa un UUID de la tabla tenants (sin <>). "
+                "Ejemplo: infisical run -- uv run python -m app.evals.runners.extraction "
+                "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            )
+            raise SystemExit(msg) from exc
+    else:
+        tenant_id = uuid.uuid4()
+    try:
+        summary = asyncio.run(run_evals(tenant_id))
+    except json.JSONDecodeError as exc:
+        msg = f"Dataset JSON inválido ({DATASET}): {exc}"
+        raise SystemExit(msg) from exc
     # El timestamp en el nombre de fichero evita sobreescribir runs anteriores y
     # permite comparar la evolución de métricas a lo largo del tiempo sin
     # necesidad de un sistema de versionado externo.

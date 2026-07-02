@@ -28,7 +28,7 @@ logger = structlog.get_logger(__name__)
 # app/llm/prompts/ (extraction_v1.txt). Cambiar aquí automáticamente actualiza
 # el campo prompt_version en llm_calls, permitiendo correlacionar resultados
 # con la versión del prompt en el dashboard de métricas.
-PROMPT_VERSION = "extraction_v1"
+PROMPT_VERSION = "extraction_v2"
 TICKET_PROMPT_VERSION = "ticket_extraction_v1"
 
 

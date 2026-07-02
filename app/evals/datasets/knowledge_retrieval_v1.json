@@ -1,80 +1,77 @@
 {
-  "version": "1",
-  "description": "Eval set de retrieval híbrido RAG (Paso 19). Métricas: Recall@5 y MRR@10.",
-  "targets": {
-    "recall_at_5_min": 0.75,
-    "mrr_at_10_min": 0.6
-  },
-  "cases": [
-    {
-      "id": "schedule_hours",
-      "query": "¿Cuál es el horario de atención al cliente?",
-      "relevant_content_substrings": ["Martes a viernes", "9:30"],
-      "document_kind": "schedule",
-      "notes": "Pregunta directa sobre horario comercial"
-    },
-    {
-      "id": "schedule_saturday",
-      "query": "horario sábados peluquería",
-      "relevant_content_substrings": ["Sábados", "9:00"],
-      "document_kind": "schedule",
-      "notes": "Horario fin de semana"
-    },
-    {
-      "id": "contract_payment",
-      "query": "importe mensual contrato EUR",
-      "relevant_content_substrings": ["99 EUR", "mensual"],
-      "document_kind": "contract",
-      "notes": "Cláusula de precio en contrato"
-    },
-    {
-      "id": "contract_reference_code",
-      "query": "CODIGOCONTRATO4242 facturación",
-      "relevant_content_substrings": ["CODIGOCONTRATO4242"],
-      "document_kind": "contract",
-      "notes": "Término exacto BM25"
-    },
-    {
-      "id": "policy_uniform",
-      "query": "política vestimenta uniforme sala",
-      "relevant_content_substrings": ["uniforme oscuro"],
-      "document_kind": "policy",
-      "notes": "Política interna"
-    },
-    {
-      "id": "faq_cancellation",
-      "query": "cancelar cita 24 horas antelación",
-      "relevant_content_substrings": ["24 horas"],
-      "document_kind": "faq",
-      "notes": "FAQ citas (fixture Peluquería)"
-    },
-    {
-      "id": "faq_payment_methods",
-      "query": "formas de pago efectivo tarjeta bizum",
-      "relevant_content_substrings": ["Bizum", "tarjeta"],
-      "document_kind": "faq",
-      "notes": "Métodos de pago"
-    },
-    {
-      "id": "services_mens_cut",
-      "query": "precio corte caballero desde euros",
-      "relevant_content_substrings": ["12 €", "caballero"],
-      "document_kind": "services",
-      "notes": "Tarifas servicios"
-    },
-    {
-      "id": "hybrid_unique_term",
-      "query": "ZETATERMINO789 horario comercial",
-      "relevant_content_substrings": ["ZETATERMINO789"],
-      "document_kind": "schedule",
-      "notes": "Caso híbrido: término raro + semántica horario"
-    },
-    {
-      "id": "terms_privacy",
-      "query": "condiciones generales privacidad datos",
-      "relevant_content_substrings": ["privacidad", "datos"],
-      "document_kind": "terms",
-      "notes": "Documentos legales"
-    }
-  ]
+    "version": "1",
+    "description": "Eval set de retrieval híbrido RAG (Paso 19). Métricas: Recall@5 y MRR@10.",
+    "targets": {"recall_at_5_min": 0.75, "mrr_at_10_min": 0.6},
+    "cases": [
+        {
+            "id": "schedule_hours",
+            "query": "¿Cuál es el horario de atención al cliente?",
+            "relevant_content_substrings": ["Martes a viernes", "9:30"],
+            "document_kind": "schedule",
+            "notes": "Pregunta directa sobre horario comercial"
+        },
+        {
+            "id": "schedule_saturday",
+            "query": "horario sábados peluquería",
+            "relevant_content_substrings": ["Sábados", "9:00"],
+            "document_kind": "schedule",
+            "notes": "Horario fin de semana"
+        },
+        {
+            "id": "contract_payment",
+            "query": "importe mensual contrato EUR",
+            "relevant_content_substrings": ["99 EUR", "mensual"],
+            "document_kind": "contract",
+            "notes": "Cláusula de precio en contrato"
+        },
+        {
+            "id": "contract_reference_code",
+            "query": "CODIGOCONTRATO4242 facturación",
+            "relevant_content_substrings": ["CODIGOCONTRATO4242"],
+            "document_kind": "contract",
+            "notes": "Término exacto BM25"
+        },
+        {
+            "id": "policy_uniform",
+            "query": "política vestimenta uniforme sala",
+            "relevant_content_substrings": ["uniforme oscuro"],
+            "document_kind": "policy",
+            "notes": "Política interna"
+        },
+        {
+            "id": "faq_cancellation",
+            "query": "cancelar cita 24 horas antelación",
+            "relevant_content_substrings": ["24 horas"],
+            "document_kind": "faq",
+            "notes": "FAQ citas (fixture Peluquería)"
+        },
+        {
+            "id": "faq_payment_methods",
+            "query": "formas de pago efectivo tarjeta bizum",
+            "relevant_content_substrings": ["Bizum", "tarjeta"],
+            "document_kind": "faq",
+            "notes": "Métodos de pago"
+        },
+        {
+            "id": "services_mens_cut",
+            "query": "precio corte caballero desde euros",
+            "relevant_content_substrings": ["12 €", "caballero"],
+            "document_kind": "services",
+            "notes": "Tarifas servicios"
+        },
+        {
+            "id": "hybrid_unique_term",
+            "query": "ZETATERMINO789 horario comercial",
+            "relevant_content_substrings": ["ZETATERMINO789"],
+            "document_kind": "schedule",
+            "notes": "Caso híbrido: término raro + semántica horario"
+        },
+        {
+            "id": "terms_privacy",
+            "query": "condiciones generales privacidad datos",
+            "relevant_content_substrings": ["privacidad", "datos"],
+            "document_kind": "terms",
+            "notes": "Documentos legales"
+        }
+    ]
 }

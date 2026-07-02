@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.invoice import DesgloseIVA
 from app.schemas.pagination import Page
 
 
@@ -67,6 +68,7 @@ class InvoiceRead(BaseModel):
     base_imponible: Decimal | None = None
     iva_percent: Decimal | None = None
     iva_amount: Decimal | None = None
+    desgloses_iva: list[DesgloseIVA] = Field(default_factory=list)
     total: Decimal | None = None
     currency: str = "EUR"
     confidence: Decimal | None = None

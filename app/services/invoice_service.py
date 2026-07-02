@@ -29,22 +29,20 @@ from app.schemas.document_query import (
     InvoiceLineRead,
     InvoiceRead,
 )
+from app.schemas.invoice import (
+    DesgloseIVA,
+    Factura,
+    vat_breakdown_from_json,
+    vat_breakdown_to_json,
+)
 from app.schemas.pagination import Page
 from app.services import doc_type_service
 
-# Los imports dentro de TYPE_CHECKING solo se evalúan por mypy/pyright, no en
-# runtime. Permite usar anotaciones de Sequence, UUID, AsyncSession y Factura
-# sin introducir dependencias circulares ni coste de importación en producción.
-# `from __future__ import annotations` (arriba) hace que Python trate todas las
-# anotaciones como strings hasta que se evalúen explícitamente, lo que es
-# compatible con este patrón.
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.schemas.invoice import Factura
 
 logger = structlog.get_logger(__name__)
 
@@ -261,6 +259,9 @@ async def apply_extraction_result(
     invoice.base_imponible = factura.base_imponible
     invoice.iva_percent = factura.iva_percent
     invoice.iva_amount = factura.iva_amount
+    invoice.vat_breakdown = (
+        vat_breakdown_to_json(factura.desgloses_iva) if factura.desgloses_iva else None
+    )
     invoice.total = factura.total
     # ISO 4217: los códigos de moneda son siempre 3 caracteres (EUR, USD…).
     # El truncado protege ante respuestas inesperadas del LLM.
@@ -337,6 +338,26 @@ async def mark_failed(
     invoice.updated_at = datetime.now(tz=UTC)
 
 
+def get_vat_breakdown(invoice: Invoice) -> list[DesgloseIVA]:
+    """Desglose IVA de una factura; reconstruye un tramo si solo hay campos legacy."""
+    parsed = vat_breakdown_from_json(invoice.vat_breakdown)
+    if parsed:
+        return parsed
+    if (
+        invoice.base_imponible is not None
+        and invoice.iva_percent is not None
+        and invoice.iva_amount is not None
+    ):
+        return [
+            DesgloseIVA(
+                base=invoice.base_imponible,
+                percent=invoice.iva_percent,
+                amount=invoice.iva_amount,
+            ),
+        ]
+    return []
+
+
 def _invoice_to_read(invoice: Invoice, *, include_lines: bool) -> InvoiceRead:
     lineas = (
         [
@@ -355,6 +376,7 @@ def _invoice_to_read(invoice: Invoice, *, include_lines: bool) -> InvoiceRead:
         base_imponible=invoice.base_imponible,
         iva_percent=invoice.iva_percent,
         iva_amount=invoice.iva_amount,
+        desgloses_iva=get_vat_breakdown(invoice),
         total=invoice.total,
         currency=invoice.currency,
         confidence=invoice.confidence,
