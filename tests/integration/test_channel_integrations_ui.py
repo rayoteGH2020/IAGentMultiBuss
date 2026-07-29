@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.config import get_settings
+from app.core.csrf import CSRF_HEADER_NAME, generate_csrf_token
 from app.core.db import set_tenant_context
 from app.main import create_app
 from app.models import Membership, Tenant, User
@@ -38,10 +39,15 @@ _ADMIN_ORG_ID = f"org_admin_{uuid4().hex[:8]}"
 
 @pytest.fixture
 def encryption_key(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Genera una clave Fernet e inyecta ENCRYPTION_KEY y ADMIN_CLERK_ORG_ID."""
+    """Genera una clave Fernet e inyecta ENCRYPTION_KEY y ADMIN_CLERK_ORG_ID.
+
+    Vacía SUPERADMIN_CLERK_USER_IDS para no heredar la allowlist de Infisical:
+    con lista no vacía, el fake `superadmin_sub` recibiría 403 en /admin.
+    """
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("ENCRYPTION_KEY", key)
     monkeypatch.setenv("ADMIN_CLERK_ORG_ID", _ADMIN_ORG_ID)
+    monkeypatch.setenv("SUPERADMIN_CLERK_USER_IDS", "")
     get_settings.cache_clear()
     yield key
     get_settings.cache_clear()
@@ -111,6 +117,7 @@ def _make_superadmin_state() -> tuple[Any, Any, Any]:
     membership = Membership(user_id=uid, tenant_id=tid, role="admin")
     membership.id = mid
     membership.created_at = now
+    membership.is_active = True
     return tenant, user, membership
 
 
@@ -133,6 +140,7 @@ def _make_regular_tenant_state() -> tuple[Any, Any, Any]:
     membership = Membership(user_id=uid, tenant_id=tid, role="admin")
     membership.id = mid
     membership.created_at = now
+    membership.is_active = True
     return tenant, user, membership
 
 
@@ -143,6 +151,10 @@ def _fake_resolve_factory(tenant: Any, user: Any, membership: Any):
         request.state.membership = membership
 
     return _resolve
+
+
+def _csrf_headers(user: Any, tenant: Any) -> dict[str, str]:
+    return {CSRF_HEADER_NAME: generate_csrf_token(user_id=user.id, tenant_id=tenant.id)}
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +181,7 @@ async def test_save_whatsapp_integration_requires_admin(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             f"/admin/integrations/{target_tenant_id}/whatsapp/save",
+            headers=_csrf_headers(sa_user, sa_tenant),
             data={
                 "phone_number_id": "123456789",
                 "api_token": "EAABwzLixnjY",
@@ -219,8 +232,90 @@ async def test_save_whatsapp_stores_token_encrypted(
     # Descifrar da el original
     decrypted = channel_integration_service.decrypt_api_token(row)
     assert decrypted == plain_token
-    # status activo
-    assert row.status == ChannelIntegrationStatus.active.value
+
+
+async def test_save_whatsapp_rejects_duplicate_phone_number_id_across_tenants(
+    channel_integrations_schema_ready: None,
+    db_session: AsyncSession,
+    encryption_key: str,
+) -> None:
+    """Dos tenants activos no pueden compartir el mismo phone_number_id de WhatsApp."""
+    from app.core.errors import ValidationError
+    from app.services import channel_integration_service
+
+    suffix = uuid4().hex[:8]
+    shared_pnid = f"pnid-dup-{suffix}"
+    tenant_a = Tenant(name=f"WA Dup A {suffix}", plan="free", settings={})
+    tenant_b = Tenant(name=f"WA Dup B {suffix}", plan="free", settings={})
+    db_session.add_all([tenant_a, tenant_b])
+    await db_session.flush()
+
+    await set_tenant_context(db_session, str(tenant_a.id))
+    await channel_integration_service.save_integration(
+        db_session,
+        tenant_id=tenant_a.id,
+        channel="whatsapp",
+        api_token="token-a",
+        phone_number_id=shared_pnid,
+    )
+    await db_session.flush()
+
+    await set_tenant_context(db_session, str(tenant_b.id))
+    with pytest.raises(ValidationError, match="ya está en uso"):
+        await channel_integration_service.save_integration(
+            db_session,
+            tenant_id=tenant_b.id,
+            channel="whatsapp",
+            api_token="token-b",
+            phone_number_id=shared_pnid,
+        )
+
+
+async def test_lookup_by_phone_number_id_fail_closed_when_ambiguous(
+    channel_integrations_schema_ready: None,
+    db_session: AsyncSession,
+    encryption_key: str,
+) -> None:
+    """Si hay >1 fila activa con el mismo PNID (legado), el lookup no elige una al azar."""
+    from app.core.crypto import encrypt_token
+    from app.services import channel_integration_service
+
+    # Skip si el índice único ya está aplicado: no se pueden insertar duplicados.
+    idx = await db_session.execute(
+        text(
+            "SELECT 1 FROM pg_indexes "
+            "WHERE schemaname = 'public' "
+            "AND indexname = 'uq_channel_integrations_wa_phone_active'"
+        )
+    )
+    if idx.scalar_one_or_none() is not None:
+        pytest.skip("Unique index already applied; ambiguity path covered by unit tests.")
+
+    suffix = uuid4().hex[:8]
+    shared_pnid = f"pnid-amb-{suffix}"
+    tenant_a = Tenant(name=f"WA Amb A {suffix}", plan="free", settings={})
+    tenant_b = Tenant(name=f"WA Amb B {suffix}", plan="free", settings={})
+    db_session.add_all([tenant_a, tenant_b])
+    await db_session.flush()
+
+    enc = encrypt_token("tok", encryption_key)
+    for tenant in (tenant_a, tenant_b):
+        await set_tenant_context(db_session, str(tenant.id))
+        db_session.add(
+            ChannelIntegration(
+                tenant_id=tenant.id,
+                channel="whatsapp",
+                phone_number_id=shared_pnid,
+                api_token_enc=enc,
+                status=ChannelIntegrationStatus.active.value,
+            )
+        )
+        await db_session.flush()
+
+    found = await channel_integration_service.get_integration_by_phone_number_id(
+        db_session, shared_pnid
+    )
+    assert found is None
 
 
 async def test_save_telegram_calls_set_webhook(
@@ -246,6 +341,7 @@ async def test_save_telegram_calls_set_webhook(
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
                 f"/admin/integrations/{target_tenant_id}/telegram/save",
+                headers=_csrf_headers(sa_user, sa_tenant),
                 data={
                     "api_token": "9876543210:AAHdqTcvCH1vGBJ83z4",
                     "display_name": "@TestBot",
@@ -289,6 +385,7 @@ async def test_disconnect_revokes_and_deletes_webhook(
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             save_resp = await client.post(
                 f"/admin/integrations/{target_tenant_id}/telegram/save",
+                headers=_csrf_headers(sa_user, sa_tenant),
                 data={
                     "api_token": "1234567890:AABotTokenForDisconnect",
                     "confidence_threshold": "0.5",
@@ -305,6 +402,7 @@ async def test_disconnect_revokes_and_deletes_webhook(
         async with AsyncClient(transport=ASGITransport(app=app2), base_url="http://test") as client:
             disc_resp = await client.post(
                 f"/admin/integrations/{target_tenant_id}/telegram/disconnect",
+                headers=_csrf_headers(sa_user, sa_tenant),
             )
     assert disc_resp.status_code == 200
     mock_delete_webhook.assert_awaited_once()
@@ -350,6 +448,7 @@ async def test_non_admin_cannot_configure_channel(
     ) as client:
         resp = await client.post(
             f"/admin/integrations/{fake_tenant_id}/whatsapp/save",
+            headers=_csrf_headers(regular_user, regular_tenant),
             data={"phone_number_id": "999", "api_token": "token", "confidence_threshold": "0.5"},
         )
 

@@ -63,7 +63,15 @@ def rls_database_url() -> str:
 
 @pytest.fixture
 async def db_session(rls_database_url: str) -> AsyncIterator[AsyncSession]:
+    """Sesión async con rol RLS. Skip si Postgres no está levantado."""
     engine = create_async_engine(rls_database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except (SQLAlchemyError, OSError):
+        await engine.dispose()
+        pytest.skip("Postgres no disponible para tests de integración.")
+
     sm = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
     async with sm() as session:
         yield session
@@ -112,10 +120,80 @@ async def invoices_schema_ready(db_session: AsyncSession) -> None:
     )
     if tickets.scalar_one_or_none() is None:
         pytest.skip("Run Paso11 migration (`uv run alembic upgrade head`).")
+    vat_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'vat_breakdown'"
+        ),
+    )
+    if vat_col.scalar_one_or_none() is None:
+        pytest.skip("Run p51_invoice_vat_breakdown migration (`uv run alembic upgrade head`).")
+    dismissed_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'dismissed_at'"
+        ),
+    )
+    if dismissed_col.scalar_one_or_none() is None:
+        pytest.skip("Run p52_document_retry_dismiss migration (`uv run alembic upgrade head`).")
+    attempts = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'document_processing_attempts'"
+        ),
+    )
+    if attempts.scalar_one_or_none() is None:
+        pytest.skip("Run p52_document_retry_dismiss migration (`uv run alembic upgrade head`).")
+    error_code_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'error_code'"
+        ),
+    )
+    if error_code_col.scalar_one_or_none() is None:
+        pytest.skip("Run p56_doc_limits_charges migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def processing_charges_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si falta la tabla de cargos por procesado excepcional (p56)."""
+    result = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'processing_charges'"
+        ),
+    )
+    if result.scalar_one_or_none() is None:
+        pytest.skip("Run p56_doc_limits_charges migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def scheduling_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si Postgres no tiene tablas de scheduling (migración p30 pendiente)."""
+    for table in (
+        "appointments",
+        "business_hours",
+        "professionals",
+        "professional_working_hours",
+        "services",
+        "schedule_exceptions",
+    ):
+        result = await db_session.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                f"WHERE table_schema = 'public' AND table_name = '{table}'"
+            ),
+        )
+        if result.scalar_one_or_none() is None:
+            pytest.skip("Run Paso30 migration (`uv run alembic upgrade head`).")
 
 
 @pytest.fixture
 async def chat_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si Postgres no tiene tablas de chat (migración p16/p20 pendiente)."""
     for table in ("chat_threads", "chat_messages"):
         result = await db_session.execute(
             text(

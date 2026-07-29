@@ -1,0 +1,40 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Servicios{% endblock %}
+{% block page_title %}Servicios{% endblock %}
+
+{% block settings_content %}
+<div class="space-y-6">
+  <section class="card space-y-4">
+    <h3 class="font-semibold">Nuevo servicio</h3>
+    <form hx-post="/settings/services" hx-target="#services-list" hx-swap="beforeend"
+          class="flex flex-wrap items-end gap-3">
+      <label class="text-sm">
+        <span class="text-slate-600">Nombre</span>
+        <input type="text" name="name" required class="mt-1 block rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <label class="text-sm">
+        <span class="text-slate-600">Duración (min)</span>
+        <input type="number" name="duration_minutes" min="15" max="240" value="30" required
+               class="mt-1 block rounded-lg border border-slate-300 px-3 py-2 w-24">
+      </label>
+      <button type="submit" class="btn-primary cursor-pointer">Añadir</button>
+    </form>
+  </section>
+
+  <div class="card p-0 overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr><th>Nombre</th><th>Duración</th><th>Estado</th><th></th></tr>
+      </thead>
+      <tbody id="services-list">
+        {% for service in services %}
+          {% include "components/scheduling/service_row.html" %}
+        {% else %}
+        <tr><td colspan="4" class="text-center text-slate-500 py-6 text-sm">Sin servicios.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

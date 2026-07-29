@@ -7,7 +7,7 @@ Pipeline de una búsqueda:
   1. Valida query y clipa top_k al techo configurado.
   2. Rate-limit por tenant: 120 req/min (Redis, ventana deslizante por minuto UTC).
   3. Embebe el query con LLMClient.embed() — registra en llm_calls automáticamente.
-  4. Dense query (HNSW) + sparse query (BM25) en secuencia (misma AsyncSession).
+  4. Dense query (HNSW) + sparse query (BM25) en paralelo (AsyncSession independientes).
   5. Reciprocal Rank Fusion: score = Σ 1/(k + rank_i) con k=60.
   6. Ordena por RRF desc, toma top_k.
   7. Traza Langfuse (span 'knowledge_search') + audit_log (query_hash SHA-256).
@@ -20,6 +20,7 @@ Funciones exportadas:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from datetime import UTC, datetime
@@ -34,8 +35,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.db import session_factory_for_worker
 from app.core.errors import RateLimitError, ValidationError
 from app.core.text_normalization import normalize_search_text
+from app.llm.observability import trace_text
 from app.llm.tracing import get_langfuse
 from app.models.knowledge import KnowledgeDocumentKind, KnowledgeDocumentStatus
 from app.schemas.knowledge_search import (
@@ -133,7 +136,9 @@ async def search(
         name="search_knowledge",
         as_type="span",
         metadata={"tenant_id": str(tenant_id)},
-        input={"query": query[:200], "top_k": top_k},
+        # Solo longitud de la consulta: el texto es contenido del usuario final
+        # y no sale de la BD (arquitectura.md §8). El audit log guarda su hash.
+        input={"query": trace_text(query), "top_k": top_k},
     )
 
     dense_rows: list[dict[str, Any]] = []
@@ -148,25 +153,17 @@ async def search(
         )
         query_vector: list[float] = embedding_vecs[0]
 
-        # 6. Dense + sparse en paralelo
+        # 6. Dense + sparse en paralelo (sesiones DB separadas; asyncpg no permite
+        # execute concurrente sobre la misma AsyncSession).
         filter_sql, filter_params = _build_filters_sql(filters)
-
-        # Secuencial: AsyncSession (asyncpg) no permite execute concurrente en la misma sesión.
-        dense_rows = await _dense_search(
-            db,
+        dense_rows, sparse_rows = await _fetch_dense_sparse_parallel(
             tenant_id=tenant_id,
             query_vector=query_vector,
-            filter_sql=filter_sql,
-            filter_params=filter_params,
-            limit=settings.knowledge_dense_candidates,
-        )
-        sparse_rows = await _sparse_search(
-            db,
-            tenant_id=tenant_id,
             query=query,
             filter_sql=filter_sql,
             filter_params=filter_params,
-            limit=settings.knowledge_sparse_candidates,
+            dense_limit=settings.knowledge_dense_candidates,
+            sparse_limit=settings.knowledge_sparse_candidates,
         )
 
         # 7. Reciprocal Rank Fusion
@@ -280,6 +277,43 @@ def _build_filters_sql(
         clauses.append(f"AND c.document_id IN ({placeholders})")
 
     return " ".join(clauses), params
+
+
+async def _fetch_dense_sparse_parallel(
+    *,
+    tenant_id: UUID,
+    query_vector: list[float],
+    query: str,
+    filter_sql: str,
+    filter_params: dict[str, Any],
+    dense_limit: int,
+    sparse_limit: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Ejecuta dense y sparse en paralelo, cada uno con su propia AsyncSession + RLS."""
+
+    async def run_dense() -> list[dict[str, Any]]:
+        async with session_factory_for_worker(tenant_id) as dense_db:
+            return await _dense_search(
+                dense_db,
+                tenant_id=tenant_id,
+                query_vector=query_vector,
+                filter_sql=filter_sql,
+                filter_params=filter_params,
+                limit=dense_limit,
+            )
+
+    async def run_sparse() -> list[dict[str, Any]]:
+        async with session_factory_for_worker(tenant_id) as sparse_db:
+            return await _sparse_search(
+                sparse_db,
+                tenant_id=tenant_id,
+                query=query,
+                filter_sql=filter_sql,
+                filter_params=filter_params,
+                limit=sparse_limit,
+            )
+
+    return await asyncio.gather(run_dense(), run_sparse())
 
 
 async def _dense_search(

@@ -13,6 +13,8 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass, field
 
+from app.config import get_settings
+
 
 @dataclass
 class ExtractedTextResult:
@@ -44,8 +46,12 @@ def extract_document_text(file_bytes: bytes, mime_type: str) -> str:
     except Exception:
         return ""
 
+    # Tope de páginas: esta función corre sobre documentos de negocio, que ya
+    # pasan por el límite de core/media_limits. El corte es una red de
+    # seguridad por si se invoca fuera de ese flujo.
+    max_pages = get_settings().document_max_pdf_pages
     parts: list[str] = []
-    for page in reader.pages:
+    for page in reader.pages[:max_pages]:
         try:
             text = page.extract_text() or ""
         except Exception:
@@ -101,18 +107,40 @@ def _extract_pdf(file_bytes: bytes) -> ExtractedTextResult:
             warnings=[f"pdf_parse_error:{exc!s:.200}"],
         )
 
+    settings = get_settings()
     page_count = len(reader.pages)
+    # Fail-closed: un PDF de 5.000 páginas tumbaría el worker recorriéndolo
+    # página a página. Se rechaza entero en lugar de indexar un trozo, que
+    # daría respuestas RAG incompletas sin que nadie lo sepa.
+    if page_count > settings.knowledge_max_pdf_pages:
+        return ExtractedTextResult(
+            text="",
+            char_count=0,
+            page_count=page_count,
+            warnings=[f"too_many_pages:{page_count}"],
+        )
+
+    max_chars = settings.knowledge_max_extracted_chars
     parts: list[str] = []
+    total_chars = 0
+    truncated = False
     for page in reader.pages:
         try:
             text = page.extract_text() or ""
         except Exception:
             continue
-        if text.strip():
-            parts.append(text)
+        if not text.strip():
+            continue
+        parts.append(text)
+        total_chars += len(text)
+        if total_chars >= max_chars:
+            truncated = True
+            break
 
-    full_text = "\n".join(parts)
+    full_text = "\n".join(parts)[:max_chars]
     warnings: list[str] = []
+    if truncated:
+        warnings.append(f"text_truncated:{max_chars}")
     # PDF escaneado: pypdf no puede extraer texto de imágenes embebidas.
     # El worker debe rechazar el documento con un mensaje claro al usuario.
     if not full_text.strip():

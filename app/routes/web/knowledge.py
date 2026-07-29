@@ -25,11 +25,14 @@ from app.core.errors import RateLimitError, ValidationError
 from app.core.faq_serializer import FaqPair
 from app.core.rate_limiter import check_knowledge_upload_rate
 from app.core.templating import render
-from app.core.uploads import UploadValidationError
+from app.core.uploads import UploadValidationError, read_upload_limited
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
 from app.jobs.queue import enqueue_knowledge_indexing
-from app.models.knowledge import KnowledgeDocument, KnowledgeDocumentKind, KnowledgeDocumentStatus
-from app.schemas.knowledge import KnowledgeDocumentFilters
+from app.schemas.knowledge import (
+    KnowledgeDocumentFilters,
+    KnowledgeDocumentKind,
+    KnowledgeDocumentStatus,
+)
 from app.services import knowledge_document_service
 
 logger = structlog.get_logger(__name__)
@@ -57,6 +60,42 @@ async def _list_ctx(
         "statuses": list(KnowledgeDocumentStatus),
         "upload_errors": upload_errors or [],
     }
+
+
+def _upload_result_message(*, created: int, errors: list[dict[str, str]]) -> dict[str, object]:
+    """Payload de HX-Trigger para el modal de subida knowledge.
+
+    ok=True → el cliente cierra el modal (al menos un documento creado).
+    ok=False → el modal permanece abierto y muestra el mensaje.
+    """
+    if created > 0:
+        return {"ok": True, "created": created, "errors": errors}
+    if not errors:
+        return {"ok": False, "message": "No se ha podido completar la subida.", "errors": []}
+    if len(errors) == 1:
+        return {"ok": False, "message": errors[0]["error"], "errors": errors}
+    joined = "; ".join(f"{err['filename']}: {err['error']}" for err in errors)
+    return {"ok": False, "message": joined, "errors": errors}
+
+
+def _knowledge_upload_response(
+    request: Request,
+    ctx: dict[str, object],
+    *,
+    created: int,
+    errors: list[dict[str, str]],
+) -> HTMLResponse:
+    """Lista HTML + HX-Trigger knowledge-upload-result para el modal Alpine."""
+    response = render(
+        request,
+        full="pages/knowledge/index.html",
+        partial="components/knowledge_rows.html",
+        ctx=ctx,
+    )
+    response.headers["HX-Trigger"] = json.dumps(
+        {"knowledge-upload-result": _upload_result_message(created=created, errors=errors)}
+    )
+    return response
 
 
 @router.get("")
@@ -109,50 +148,26 @@ async def upload_knowledge(
 ) -> HTMLResponse:
     named_files = [f for f in (files or []) if f.filename]
 
-    # --- Validaciones de batch ---
+    # --- Validaciones de batch (modal permanece abierto vía HX-Trigger ok=false) ---
     if not named_files:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[{"filename": "—", "error": "No se ha seleccionado ningún fichero."}],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
+        batch_errors = [{"filename": "—", "error": "No se ha seleccionado ningún fichero."}]
+        ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
+        return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
     if len(named_files) > _MAX_FILES_PER_UPLOAD:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[
-                {"filename": "—", "error": f"Máximo {_MAX_FILES_PER_UPLOAD} ficheros por subida."}
-            ],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
+        batch_errors = [
+            {"filename": "—", "error": f"Máximo {_MAX_FILES_PER_UPLOAD} ficheros por subida."}
+        ]
+        ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
+        return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
     doc_kind = _parse_kind(kind)
     if doc_kind is None:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[
-                {"filename": "—", "error": "Debes seleccionar una categoría para el documento."}
-            ],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
+        batch_errors = [
+            {"filename": "—", "error": "Debes seleccionar una categoría para el documento."}
+        ]
+        ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
+        return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
     # --- Rate limit diario por tenant ---
     settings = get_settings()
@@ -164,25 +179,21 @@ async def upload_knowledge(
             n_files=len(named_files),
         )
     except RateLimitError as exc:
-        ctx = await _list_ctx(
-            db,
-            tenant.id,
-            upload_errors=[{"filename": "—", "error": str(exc)}],
-        )
-        return render(
-            request,
-            full="pages/knowledge/index.html",
-            partial="components/knowledge_rows.html",
-            ctx=ctx,
-        )
+        batch_errors = [{"filename": "—", "error": str(exc)}]
+        ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
+        return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
     # --- Procesado por fichero ---
-    errors: list[dict[str, str]] = []
+    file_errors: list[dict[str, str]] = []
+    created = 0
 
     for upload in named_files:
         display_name = upload.filename or "file"
         try:
-            data = await upload.read()
+            data = await read_upload_limited(
+                upload,
+                max_bytes=settings.knowledge_max_file_size_bytes,
+            )
             doc = await knowledge_document_service.create_from_upload(
                 db,
                 tenant_id=tenant.id,
@@ -196,9 +207,10 @@ async def upload_knowledge(
             # commit en condición de carga extrema, pero es el mismo patrón
             # aceptado en document_upload_service.py para facturas y tickets.
             await enqueue_knowledge_indexing(doc.id, tenant.id)
+            created += 1
 
         except UploadValidationError as exc:
-            errors.append({"filename": display_name, "error": str(exc)})
+            file_errors.append({"filename": display_name, "error": str(exc)})
             logger.warning(
                 "knowledge.upload.rejected",
                 filename=display_name,
@@ -207,7 +219,7 @@ async def upload_knowledge(
             )
 
         except Exception as exc:
-            errors.append(
+            file_errors.append(
                 {
                     "filename": display_name,
                     "error": "Error al procesar el fichero. Inténtalo de nuevo.",
@@ -220,13 +232,8 @@ async def upload_knowledge(
                 error=str(exc),
             )
 
-    ctx = await _list_ctx(db, tenant.id, upload_errors=errors)
-    return render(
-        request,
-        full="pages/knowledge/index.html",
-        partial="components/knowledge_rows.html",
-        ctx=ctx,
-    )
+    ctx = await _list_ctx(db, tenant.id, upload_errors=file_errors)
+    return _knowledge_upload_response(request, ctx, created=created, errors=file_errors)
 
 
 @router.post("/faq")
@@ -321,29 +328,17 @@ async def knowledge_faq_edit(
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Devuelve el formulario de edición de pares FAQ para un documento existente."""
-    from sqlalchemy import select as sa_select
-
-    from app.core.errors import NotFoundError
-
-    doc_orm = (
-        await db.execute(
-            sa_select(KnowledgeDocument).where(
-                KnowledgeDocument.id == document_id,
-                KnowledgeDocument.tenant_id == tenant.id,
-            )
-        )
-    ).scalar_one_or_none()
-
-    if doc_orm is None:
-        raise NotFoundError(f"KnowledgeDocument {document_id} not found")
-
-    pairs = knowledge_document_service.get_faq_pairs(doc_orm)
+    doc, pairs = await knowledge_document_service.get_faq_edit_context(
+        db,
+        tenant_id=tenant.id,
+        document_id=document_id,
+    )
     pairs_json = json.dumps([p.model_dump() for p in pairs])
     return render(
         request,
         full="components/knowledge_faq_edit_panel.html",
         partial="components/knowledge_faq_edit_panel.html",
-        ctx={"document": doc_orm, "pairs_json": pairs_json, "kinds": list(KnowledgeDocumentKind)},
+        ctx={"document": doc, "pairs_json": pairs_json, "kinds": list(KnowledgeDocumentKind)},
     )
 
 

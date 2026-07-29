@@ -15,6 +15,7 @@ No hace commit; el job wrapper gestiona la transacción.
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID, uuid4
 
 import structlog
@@ -98,12 +99,17 @@ async def run_index_pipeline(
                 db,
                 tenant_id=tenant_id,
                 document_id=document_id,
-                error_message=f"{_ERR_EXTRACT}: OCR falló — {exc}",
+                error_message=(
+                    f"{_ERR_EXTRACT}: No se pudo leer el texto de la imagen. "
+                    "Comprueba que sea legible."
+                ),
             )
             return
     else:
         try:
-            extracted = extract_knowledge_text(file_bytes, source_mime)
+            # pypdf recorre el PDF página a página consumiendo CPU: fuera del
+            # event loop para no bloquear al resto de jobs del worker.
+            extracted = await asyncio.to_thread(extract_knowledge_text, file_bytes, source_mime)
         except Exception as exc:
             logger.warning(
                 "knowledge.index.extract_failed",
@@ -115,11 +121,31 @@ async def run_index_pipeline(
                 db,
                 tenant_id=tenant_id,
                 document_id=document_id,
-                error_message=f"{_ERR_EXTRACT}: {exc}",
+                error_message=(
+                    f"{_ERR_EXTRACT}: No se pudo extraer texto del documento. "
+                    "Comprueba que el archivo sea legible y tenga un formato compatible."
+                ),
             )
             return
 
-    # --- Paso 3: Validación de texto no vacío ---
+    # --- Paso 3: Validación de límites y texto no vacío ---
+    too_many_pages = next(
+        (w for w in extracted.warnings if w.startswith("too_many_pages")),
+        None,
+    )
+    if too_many_pages is not None:
+        max_pages = get_settings().knowledge_max_pdf_pages
+        await mark_failed(
+            db,
+            tenant_id=tenant_id,
+            document_id=document_id,
+            error_message=(
+                f"{_ERR_EXTRACT}: El documento tiene {extracted.page_count} páginas y el "
+                f"máximo admitido son {max_pages}. Divídelo en partes más pequeñas."
+            ),
+        )
+        return
+
     if not extracted.text.strip():
         if source_mime == "application/pdf":
             hint = (
@@ -180,7 +206,10 @@ async def run_index_pipeline(
             db,
             tenant_id=tenant_id,
             document_id=document_id,
-            error_message=f"{_ERR_EMBED}: {exc}",
+            error_message=(
+                f"{_ERR_EMBED}: No se pudo indexar el documento para busquedas. "
+                "Intentalo de nuevo mas tarde."
+            ),
         )
         return
 

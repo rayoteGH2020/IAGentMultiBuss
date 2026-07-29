@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -13,8 +14,13 @@ import structlog
 from instructor.processing.multimodal import PDF, Image
 from pydantic import BaseModel, Field
 
+from app.core.document_processing_errors import DocumentErrorCode
+from app.core.media_limits import MediaLimitExceeded
 from app.llm.client import get_llm_client
+from app.llm.extraction_media import prepare_invoice_media
 from app.llm.prompts_loader import load_prompt
+from app.schemas.contract import ContratoDocumento
+from app.schemas.insurance import SeguroPoliza
 from app.schemas.invoice import Factura
 from app.schemas.ticket import TicketRecibo
 
@@ -28,8 +34,10 @@ logger = structlog.get_logger(__name__)
 # app/llm/prompts/ (extraction_v1.txt). Cambiar aquí automáticamente actualiza
 # el campo prompt_version en llm_calls, permitiendo correlacionar resultados
 # con la versión del prompt en el dashboard de métricas.
-PROMPT_VERSION = "extraction_v1"
+PROMPT_VERSION = "extraction_v3"
 TICKET_PROMPT_VERSION = "ticket_extraction_v1"
+CONTRACT_PROMPT_VERSION = "contract_extraction_v1"
+INSURANCE_PROMPT_VERSION = "insurance_extraction_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +53,22 @@ class TicketExtractionResult:
     """Datos extraídos de ticket y referencia a la llamada LLM asociada."""
 
     ticket: TicketRecibo
+    llm_call_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class ContractExtractionResult:
+    """Datos extraídos de contrato y referencia a la llamada LLM asociada."""
+
+    contract: ContratoDocumento
+    llm_call_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class InsuranceExtractionResult:
+    """Datos extraídos de póliza y referencia a la llamada LLM asociada."""
+
+    insurance: SeguroPoliza
     llm_call_id: UUID
 
 
@@ -91,6 +115,44 @@ def _build_extraction_messages(
     ]
 
 
+MAX_PAYLOAD_BYTES = 20 * 1024 * 1024
+
+
+async def _prepare_media(
+    file_bytes: bytes,
+    mime_type: str,
+    *,
+    max_pdf_pages: int | None,
+) -> tuple[bytes, str]:
+    """Valida límites y optimiza el fichero fuera del event loop.
+
+    Pillow y pypdf son síncronos y consumen CPU durante cientos de milisegundos
+    con documentos grandes: ejecutarlos en el loop bloquearía al resto de jobs
+    del worker.
+    """
+    # Límite de 20 MB: Anthropic rechaza payloads multimodales mayores. Se
+    # valida aquí (antes de la llamada HTTP) para dar un error claro y evitar
+    # el coste de red de subir un fichero que será rechazado igualmente.
+    if len(file_bytes) > MAX_PAYLOAD_BYTES:
+        raise MediaLimitExceeded(
+            "File too large (>20MB)",
+            error_code=DocumentErrorCode.file_too_large,
+        )
+
+    prepared, prepared_mime, _inspection = await asyncio.to_thread(
+        prepare_invoice_media,
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
+    if len(prepared) > MAX_PAYLOAD_BYTES:
+        raise MediaLimitExceeded(
+            "Prepared payload exceeds provider limit",
+            error_code=DocumentErrorCode.file_too_large,
+        )
+    return prepared, prepared_mime
+
+
 async def extract_invoice(
     *,
     file_bytes: bytes,
@@ -98,13 +160,14 @@ async def extract_invoice(
     tenant_id: UUID,
     db: AsyncSession,
     source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
 ) -> ExtractionResult:
     """Extrae datos estructurados de una factura usando el router LLM (`task='extraction'`)."""
-    # Límite de 20 MB: Anthropic rechaza payloads multimodales mayores. Se
-    # valida aquí (antes de la llamada HTTP) para dar un error claro y evitar
-    # el coste de red de subir un fichero que será rechazado igualmente.
-    if len(file_bytes) > 20 * 1024 * 1024:
-        raise ValueError("File too large (>20MB)")
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
 
     messages = _build_extraction_messages(
         system_prompt=load_prompt(PROMPT_VERSION),
@@ -124,9 +187,6 @@ async def extract_invoice(
         db=db,
         prompt_version=PROMPT_VERSION,
         source_filename=source_filename,
-        # max_retries=2: Instructor reintenta si el LLM no devuelve JSON
-        # válido conforme al schema Factura. 2 reintentos = hasta 3 intentos
-        # totales. Más reintentos aumentarían el coste sin mejora significativa.
         max_retries=2,
     )
     factura = completion.result
@@ -150,10 +210,14 @@ async def extract_ticket(
     tenant_id: UUID,
     db: AsyncSession,
     source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
 ) -> TicketExtractionResult:
     """Extrae datos estructurados de un ticket usando el router LLM (`task='extraction'`)."""
-    if len(file_bytes) > 20 * 1024 * 1024:
-        raise ValueError("File too large (>20MB)")
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
 
     messages = _build_extraction_messages(
         system_prompt=load_prompt(TICKET_PROMPT_VERSION),
@@ -186,6 +250,96 @@ async def extract_ticket(
     return TicketExtractionResult(ticket=ticket, llm_call_id=completion.llm_call_id)
 
 
+async def extract_contract(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+    source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
+) -> ContractExtractionResult:
+    """Extrae datos estructurados de un contrato (`task='extraction'`)."""
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(CONTRACT_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction=("Extrae los datos de este contrato. Devuelve el JSON conforme al schema."),
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=ContratoDocumento,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=CONTRACT_PROMPT_VERSION,
+        source_filename=source_filename,
+        max_retries=2,
+    )
+    contract = completion.result
+    logger.info(
+        "contract_extraction.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        parte_contraria=contract.parte_contraria,
+        confidence=contract.confidence,
+    )
+    return ContractExtractionResult(contract=contract, llm_call_id=completion.llm_call_id)
+
+
+async def extract_insurance(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+    source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
+) -> InsuranceExtractionResult:
+    """Extrae datos estructurados de una póliza (`task='extraction'`)."""
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(INSURANCE_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction=(
+            "Extrae los datos de esta póliza de seguro. Devuelve el JSON conforme al schema."
+        ),
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=SeguroPoliza,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=INSURANCE_PROMPT_VERSION,
+        source_filename=source_filename,
+        max_retries=2,
+    )
+    insurance = completion.result
+    logger.info(
+        "insurance_extraction.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        aseguradora=insurance.aseguradora,
+        confidence=insurance.confidence,
+    )
+    return InsuranceExtractionResult(insurance=insurance, llm_call_id=completion.llm_call_id)
+
+
 # ---------------------------------------------------------------------------
 # OCR de imágenes para base de conocimiento (Paso 22)
 # ---------------------------------------------------------------------------
@@ -211,7 +365,7 @@ async def extract_text_from_image(
 ) -> str:
     """Extrae texto plano de una imagen mediante OCR vía LLM multimodal.
 
-    Usa el mismo modelo que la extracción de facturas (gemini-2.5-flash) y el
+    Usa el mismo modelo que la extracción de facturas (task `extraction`) y el
     mismo punto de entrada LLMClient.complete() para garantizar trazabilidad en
     llm_calls y Langfuse.
 

@@ -7,8 +7,7 @@
 <div class="space-y-6">
   <div class="card space-y-4">
     <div>
-      <h3 class="font-semibold">Datos personales</h3>
-      <p class="text-sm text-slate-500">Gestionados por Clerk. Para cambiarlos abre tu perfil.</p>
+      <h3 class="font-semibold">Datos personales</h3> <p class="text-sm text-slate-500">Gestionados por Clerk. Para cambiarlos abre tu perfil.</p>
     </div>
     <dl class="divide-y divide-slate-200">
       <div class="py-3 flex justify-between gap-4">
@@ -42,7 +41,12 @@
 
     <div class="card space-y-2">
       <h3 class="font-semibold">Miembros del equipo</h3>
-      <p class="text-sm text-slate-500">Para invitar a más usuarios, usa el menú de organización de Clerk.</p>
+      {% if membership and membership.role == 'admin' %}
+      <p class="text-sm text-slate-500">Invita usuarios y configura permisos de citas desde la app.</p>
+      <a href="/settings/members" class="btn-secondary inline-flex cursor-pointer text-sm">Gestionar miembros</a>
+      {% else %}
+      <p class="text-sm text-slate-500">Contacta con un administrador para cambios de membresía.</p>
+      {% endif %}
     </div>
   </section>
 </div>

@@ -34,6 +34,11 @@ from app.core.errors import ExternalServiceError, LLMCompleteError, ValidationEr
 from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
 from app.llm.embeddings import VoyageEmbedder
+from app.llm.observability import (
+    trace_messages,
+    trace_result,
+    trace_status_message,
+)
 from app.llm.pricing import compute_cost_eur
 from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
@@ -51,7 +56,9 @@ _ANTHROPIC_TASKS = frozenset({"classify", "sql"})
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
 # "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
-TaskType = Literal["extraction", "chat", "sql", "classify", "embedding", "transcription"]
+TaskType = Literal[
+    "extraction", "chat", "sql", "classify", "embedding", "transcription", "translate"
+]
 
 # Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
 # 529 es específico de Anthropic ("overloaded"); el resto son estándar.
@@ -181,7 +188,7 @@ def _log_transient_retry(
 # - classify: Haiku es el modelo más económico de Anthropic para tareas simples.
 # - sql: Sonnet (ANTHROPIC_API_KEY) cuando exista módulo analytics.
 DEFAULT_MODELS: dict[str, str] = {
-    "extraction": "gemini-2.5-flash",
+    "extraction": "gemini-2.0-flash",
     "classify": "claude-haiku-4-5-20251001",
     "chat": "gemini-2.5-flash",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
@@ -190,6 +197,8 @@ DEFAULT_MODELS: dict[str, str] = {
     "embedding": "voyage-3-lite",
     # "transcription" usa Gemini audio nativo; Anthropic no soporta audio directo.
     "transcription": "gemini-2.5-flash",
+    # "translate" usa Gemini para traducción de texto.
+    "translate": "gemini-2.5-flash",
 }
 
 # TypeVar acotado a BaseModel: permite que complete() sea genérico y devuelva
@@ -289,6 +298,7 @@ class LLMClient:
             "sql": self._settings.llm_model_sql,
             "embedding": None,
             "transcription": self._settings.llm_model_transcription,
+            "translate": self._settings.llm_model_translate,
         }
         model = overrides.get(task) or DEFAULT_MODELS[task]
         # Heurística de routing por prefijo de modelo:
@@ -424,7 +434,7 @@ class LLMClient:
                 "provider": provider,
             },
             model=model,
-            input=messages,
+            input=trace_messages(messages),
         )
 
         # cast solo informa a mypy del tipo esperado; no hace conversión en runtime.
@@ -436,6 +446,9 @@ class LLMClient:
         # el bloque finally los lee para persistir el LLMCall en cualquier caso.
         status = "ok"
         error: str | None = None
+        # error_type viaja a Langfuse; `error` (texto completo, puede contener
+        # la respuesta cruda del modelo) solo se persiste en llm_calls.
+        error_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         result: T | None = None
@@ -448,6 +461,7 @@ class LLMClient:
             )
             if anthropic_key_missing:
                 status = "error"
+                error_type = "configuration_error"
                 error = (
                     f"ANTHROPIC_API_KEY is not configured (task={task}, model={model}). "
                     "Set ANTHROPIC_API_KEY in Infisical or override LLM_MODEL_CLASSIFY / "
@@ -476,6 +490,7 @@ class LLMClient:
                     # Truncado a 1000 chars: el error puede contener la respuesta
                     # completa del LLM si Instructor falla al parsear el schema.
                     error = str(exc)[:1000]
+                    error_type = type(exc).__name__
                     if provider == "anthropic":
                         _log_anthropic_failure(
                             event="anthropic_llm_call_failed",
@@ -526,7 +541,7 @@ class LLMClient:
             # el envío inmediato; sin él los datos podrían perderse si el proceso
             # termina antes del siguiente ciclo de envío en background.
             obs.update(
-                output=result.model_dump() if result is not None else None,
+                output=trace_result(result),
                 metadata={
                     "latency_ms": latency_ms,
                     "status": status,
@@ -534,7 +549,7 @@ class LLMClient:
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=error,
+                status_message=trace_status_message(error_type=error_type, error=error),
             )
             obs.end()
             self._langfuse.flush()
@@ -641,6 +656,7 @@ class LLMClient:
         started = time.perf_counter()
         status = "ok"
         error: str | None = None
+        error_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         transcript = ""
@@ -661,6 +677,7 @@ class LLMClient:
         except Exception as exc:
             status = "error"
             error = str(exc)[:1000]
+            error_type = type(exc).__name__
             logger.exception(
                 "llm.transcribe_failed",
                 model=model,
@@ -694,7 +711,7 @@ class LLMClient:
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=error,
+                status_message=trace_status_message(error_type=error_type, error=error),
             )
             obs.end()
             self._langfuse.flush()
@@ -741,7 +758,7 @@ class LLMClient:
                 raise ExternalServiceError(
                     "VOYAGE_API_KEY is not configured. Add it in Infisical and restart the worker."
                 )
-            model = self._settings.knowledge_embedding_model
+            model = self._settings.resolved_knowledge_embedding_model
             dims = self._settings.knowledge_embedding_dimensions
             self._voyage_embedder = VoyageEmbedder(
                 api_key=api_key,
@@ -749,7 +766,7 @@ class LLMClient:
                 output_dimension=dims,
             )
 
-        model = self._settings.knowledge_embedding_model
+        model = self._settings.resolved_knowledge_embedding_model
         expected_dims = self._settings.knowledge_embedding_dimensions
 
         # Un trace_id compartido por todos los batches del mismo embed() call
@@ -777,6 +794,7 @@ class LLMClient:
             started = time.perf_counter()
             status = "ok"
             error: str | None = None
+            error_type: str | None = None
             batch_result = None
 
             try:
@@ -792,6 +810,7 @@ class LLMClient:
             except Exception as exc:
                 status = "error"
                 error = str(exc)[:1000]
+                error_type = type(exc).__name__
                 logger.exception(
                     "llm.embed_batch_failed",
                     batch_idx=batch_idx,
@@ -829,7 +848,7 @@ class LLMClient:
                     usage_details={"input": tokens_in, "output": 0},
                     cost_details={"total": float(cost)},
                     level=None if status == "ok" else "ERROR",
-                    status_message=error,
+                    status_message=trace_status_message(error_type=error_type, error=error),
                 )
                 obs.end()
                 self._langfuse.flush()

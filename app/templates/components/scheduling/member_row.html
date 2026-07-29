@@ -1,0 +1,25 @@
+<tr id="member-{{ member.membership_id }}">
+  <td class="text-sm">{{ member.email }}</td>
+  <td>{{ member.name or "—" }}</td>
+  <td><span class="capitalize text-sm">{{ member.role }}</span></td>
+  <td class="text-xs text-slate-600">
+    {% if member.permissions.appointments.view %}Ver{% endif %}
+    {% if member.permissions.appointments.create %}+ Crear{% endif %}
+    {% if member.permissions.appointments.edit %}+ Editar{% endif %}
+    {% if member.permissions.appointments.cancel %}+ Cancelar{% endif %}
+  </td>
+  <td class="text-right space-x-2">
+    <button type="button"
+            hx-get="/settings/members/{{ member.membership_id }}/edit"
+            hx-target="#member-modal"
+            hx-swap="innerHTML"
+            hx-on::after-request="window.dispatchEvent(new CustomEvent('open-member-modal'))"
+            class="text-primary-600 text-sm cursor-pointer">Editar</button>
+    <button type="button"
+            hx-delete="/settings/members/{{ member.membership_id }}"
+            hx-target="#member-{{ member.membership_id }}"
+            hx-swap="outerHTML"
+            hx-confirm="¿Eliminar este miembro del tenant?"
+            class="text-red-600 text-sm cursor-pointer">Baja</button>
+  </td>
+</tr>

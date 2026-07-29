@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Numeric, String
+from sqlalchemy import Numeric, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,8 +16,18 @@ class Tenant(Base, IdMixin, TimestampMixin):
 
     clerk_org_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    plan: Mapped[str] = mapped_column(String(32), default="free", nullable=False)
-    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    plan: Mapped[str] = mapped_column(
+        String(32),
+        default="free",
+        server_default=text("'free'"),
+        nullable=False,
+    )
+    settings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
     monthly_budget_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
 
     memberships: Mapped[list["Membership"]] = relationship("Membership", back_populates="tenant")

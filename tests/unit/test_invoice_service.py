@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from app.core.db import set_tenant_context
 from app.models import DocTypeCode, Invoice, InvoiceStatus, Tenant
-from app.schemas.invoice import Factura
+from app.schemas.invoice import DesgloseIVA, Factura
 from app.services import doc_type_service, invoice_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,7 +113,7 @@ async def test_apply_extraction_result_links_llm_call(
     factura = Factura(
         fecha=date(2026, 5, 1),
         proveedor="Proveedor Test",
-        cif_nif="B12345678",  # pragma: allowlist secret
+        cif_nif="B12345678",  # pragma: allowlist secret  # pragma: allowlist secret
         base_imponible=Decimal("100.00"),
         iva_percent=Decimal("21.00"),
         iva_amount=Decimal("21.00"),
@@ -133,3 +133,55 @@ async def test_apply_extraction_result_links_llm_call(
     refreshed = await invoice_service.get_invoice(db_session, tenant.id, invoice.id)
     assert refreshed.llm_call_id == llm_call_id
     assert refreshed.status == InvoiceStatus.ready
+
+
+async def test_apply_extraction_result_persists_vat_breakdown(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+) -> None:
+    tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    invoice = await invoice_service.create_invoice_stub(
+        db_session,
+        tenant.id,
+        source_file_key="test/key.pdf",
+        source_filename="factura-mixta.pdf",
+        source_mime="application/pdf",
+    )
+    await db_session.commit()
+    await set_tenant_context(db_session, str(tenant.id))
+    invoice = await invoice_service.get_invoice(db_session, tenant.id, invoice.id)
+
+    factura = Factura(
+        fecha=date(2024, 6, 15),
+        proveedor="Bar La Plaza S.L.",
+        cif_nif="B12345678",  # pragma: allowlist secret
+        base_imponible=Decimal("150.00"),
+        desgloses_iva=[
+            DesgloseIVA(base=Decimal("100.00"), percent=Decimal("10"), amount=Decimal("10.00")),
+            DesgloseIVA(base=Decimal("50.00"), percent=Decimal("21"), amount=Decimal("10.50")),
+        ],
+        iva_percent=Decimal("21"),
+        iva_amount=Decimal("20.50"),
+        total=Decimal("170.50"),
+        confidence=0.9,
+    )
+
+    await invoice_service.apply_extraction_result(
+        db_session,
+        invoice=invoice,
+        factura=factura,
+        llm_call_id=uuid4(),
+    )
+    await db_session.commit()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    refreshed = await invoice_service.get_invoice(db_session, tenant.id, invoice.id)
+    assert refreshed.vat_breakdown is not None
+    assert len(refreshed.vat_breakdown) == 2
+    assert refreshed.iva_amount == Decimal("20.50")
+    desgloses = invoice_service.get_vat_breakdown(refreshed)
+    assert len(desgloses) == 2
+    assert desgloses[1].percent == Decimal("21")

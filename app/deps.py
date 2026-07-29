@@ -2,13 +2,17 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Annotated, Any, cast
 
 import redis.asyncio as redis
+import structlog
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_redis
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError, ForbiddenError
+from app.core.permissions import is_platform_superadmin
 from app.models import Membership, Tenant, User
+
+log = structlog.get_logger(__name__)
 
 
 async def current_user(request: Request) -> User:
@@ -106,17 +110,32 @@ async def get_db_no_tenant() -> AsyncIterator[AsyncSession]:
 
 
 async def current_superadmin(request: Request) -> Tenant:
-    """Dependency that restricts access to the platform superadmin.
+    """Restringe el acceso al superadmin de plataforma.
 
-    The superadmin is identified by the Clerk org matching ADMIN_CLERK_ORG_ID.
-    Raises ForbiddenError for any other authenticated tenant.
+    No basta con pertenecer a `ADMIN_CLERK_ORG_ID`: se exige rol `admin`
+    activo en esa organización (y allowlist opcional). Se revalida aquí en
+    lugar de confiar en `request.state.is_superadmin`.
     """
     from app.config import get_settings
-    from app.core.errors import ForbiddenError
 
     tenant = await current_tenant(request)
-    admin_org = get_settings().admin_clerk_org_id.strip()
-    if not admin_org or tenant.clerk_org_id != admin_org:
+    user = await current_user(request)
+    membership = await current_membership(request)
+    settings = get_settings()
+    if not is_platform_superadmin(
+        tenant=tenant,
+        membership=membership,
+        user=user,
+        admin_clerk_org_id=settings.admin_clerk_org_id,
+        allowed_clerk_user_ids=settings.superadmin_clerk_user_id_set,
+    ):
+        log.warning(
+            "sadm.access_denied",
+            path=request.url.path,
+            clerk_user_id=user.clerk_user_id,
+            clerk_org_id=tenant.clerk_org_id,
+            role=membership.role,
+        )
         raise ForbiddenError("Superadmin access required")
     return tenant
 
@@ -144,6 +163,33 @@ def require_role(*roles: str) -> Callable[..., Coroutine[Any, Any, Membership]]:
 # Mismo patrón que CurrentUser/CurrentTenant: importar desde deps en lugar de
 # redeclarar RequireAdmin en cada módulo de rutas.
 RequireAdmin = Annotated[Membership, Depends(require_role("admin"))]
+
+
+def require_appointment_permission(
+    *actions: str,
+) -> Callable[..., Coroutine[Any, Any, Membership]]:
+    """Factory: al menos uno de los permisos de citas (admin bypass)."""
+
+    from app.core.permissions import membership_can_appointment
+
+    async def _dep(membership: Membership = Depends(current_membership)) -> Membership:
+        if membership.role == "admin":
+            return membership
+        for action in actions:
+            if membership_can_appointment(membership, action):  # type: ignore[arg-type]
+                return membership
+        raise ForbiddenError(f"Requires appointment permission: {', '.join(actions)}")
+
+    return _dep
+
+
+RequireAppointmentView = Annotated[Membership, Depends(require_appointment_permission("view"))]
+RequireAppointmentCreate = Annotated[Membership, Depends(require_appointment_permission("create"))]
+RequireAppointmentEdit = Annotated[Membership, Depends(require_appointment_permission("edit"))]
+RequireAppointmentCancel = Annotated[Membership, Depends(require_appointment_permission("cancel"))]
+RequireAppointmentCreateOrEdit = Annotated[
+    Membership, Depends(require_appointment_permission("create", "edit"))
+]
 
 
 async def get_redis_dep() -> redis.Redis:

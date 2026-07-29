@@ -396,7 +396,8 @@ channel_integrations (
 )
 -- RLS: tenant_isolation + webhook_select (permite SELECT cross-tenant en webhook handlers
 --      usando set_config('app.webhook_lookup','true',true); flag local a la transacción)
--- Índice en phone_number_id: lookup rápido en webhook WhatsApp
+-- UNIQUE parcial en phone_number_id WHERE active + whatsapp + NOT NULL
+-- (evita enrutar webhooks al tenant equivocado; lookup fail-closed si ambigüedad legada)
 
 -- Módulo 3: Analytics
 data_sources (
@@ -489,6 +490,15 @@ Especificación de dominio (flujos, decisiones técnicas y guardrails). La imple
 - **Structured output** con Instructor sobre un schema tipo `Factura` / líneas (ver `app/schemas/`); reintentos acotados en cliente Instructor.
 - **Concurrencia:** hasta **5** extracciones en curso por tenant (semáforo); el resto en cola.
 - Cada llamada facturable queda en **`llm_calls`** para coste por tenant.
+
+**Límites de recursos y procesado excepcional:**
+
+- **Tope por documento:** 3 páginas de PDF, 40 Mpx de área y 20.000 px de lado en imágenes (`DOCUMENT_MAX_*`, ver `docs/environment-variables.md`). Un fichero pequeño en bytes puede expandirse a gigabytes al decodificarse, así que la comprobación ocurre en `app/core/media_limits.py` **antes** de decodificar y es *fail-closed*: si no se puede medir, se rechaza.
+- **Dónde se aplica:** en la subida (`document_upload_service`) y de nuevo en el worker. El original **sí** se sube a R2 aunque se rechace, para que el superadmin pueda revisarlo.
+- **La decodificación y el parseo corren en `asyncio.to_thread`**: son CPU-bound y bloquearían el event loop del worker ARQ, congelando el resto de jobs del proceso.
+- **Motivo estructurado:** el rechazo se guarda en `error_code` (`invoices`, `tickets`, `document_processing_attempts`). Los códigos de límite no son reintentables: la UI oculta el botón de reintento y remite al administrador, porque reintentar el mismo fichero daría el mismo resultado.
+- **Override del superadmin:** en `/sadm/documents` puede abrir el original (URL prefirmada), ver páginas reales y estimación de tiempo y coste, y autorizar el procesado saltándose los límites de negocio —nunca `DOCUMENT_OVERRIDE_MAX_PDF_PAGES`, que protege al worker—. Al autorizar se registra un `ProcessingCharge` con el coste estimado, que el worker liquida con el coste real de la llamada LLM. No es un documento fiscal: es el apunte interno para una repercusión mensual futura.
+- **Consumo por tenant:** `/sadm/usage` agrega documentos, llamadas, tokens y coste del periodo sobre `llm_calls`, con una definición única en `app/services/usage_service.py`.
 
 **Métricas objetivo (evals):** accuracy de campos críticos (CIF, total, fecha) ≥95%; validez JSON ≥99%; latencia p50 menor de 8 s / p95 menor de 20 s por factura; coste orientativo p50 menor de 0,005 € por factura (revisar con datos reales).
 
@@ -687,7 +697,23 @@ DEFAULT_MODELS = {
 
 ### Observabilidad
 
-Cada llamada se persiste en **`llm_calls`** y se envía a **Langfuse** con, como mínimo: `tenant_id`, `user_id` cuando aplique, `task`, `model`, `prompt_version`, tokens, coste estimado, latencia. Input/output completos salvo truncamiento por tamaño (p.ej. más de 100 KB); errores con contexto recuperable para diagnóstico.
+Cada llamada se persiste en **`llm_calls`** y se envía a **Langfuse** con, como mínimo: `tenant_id`, `user_id` cuando aplique, `task`, `model`, `prompt_version`, tokens, coste estimado, latencia.
+
+**Regla dura (RGPD): a Langfuse no viaja contenido de cliente.** Ni documentos, ni texto extraído, ni mensajes de chat, ni consultas de búsqueda, ni respuestas del modelo. El contenido vive en Postgres (con RLS) y R2; la traza se correlaciona con él por `llm_calls.langfuse_trace_id`. Langfuse es un tercero potencialmente hosteado fuera de la infraestructura de datos, así que se trata como sistema de telemetría, no como almacén.
+
+Lo que sí se envía, vía `app/llm/observability.py` (punto único; ningún módulo debe construir payloads de traza por su cuenta):
+
+| Señal | Contenido |
+| --- | --- |
+| `input` | `messages`, `roles`, `text_chars`, `media_parts` (tipo), `media_bytes` |
+| `output` | `schema`, `fields_present` / `fields_missing`, `list_sizes`, `confidence`; para texto libre solo `chars` |
+| `metadata` | `tenant_id`, `prompt_version`, `provider`, `latency_ms`, `status`, `tool_calls` |
+| `usage_details` / `cost_details` | tokens de entrada/salida y coste en EUR |
+| `status_message` | solo el **tipo** de excepción (`ValidationError`, `APITimeoutError`, …) |
+
+El mensaje de error completo puede arrastrar la respuesta cruda del modelo —y con ella el documento—, por eso se queda en `llm_calls.error`. `source_filename` tampoco sale: se persiste solo en `llm_calls`.
+
+Con eso se sigue pudiendo evaluar: coste y latencia por modelo/tenant, tasa de error por tipo, distribución de `confidence` y campos que el modelo deja vacíos. Para depurar un prompt concreto se usa el trace_id contra la BD, o `LANGFUSE_CAPTURE_CONTENT=true`, que captura el payload íntegro y que `Settings` **rechaza** si `APP_ENV` no es `development` (usar solo con datos sintéticos).
 
 ### Guardrails
 

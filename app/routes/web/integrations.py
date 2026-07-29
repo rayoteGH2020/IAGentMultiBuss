@@ -26,7 +26,7 @@ from app.core.google_calendar_client import GoogleCalendarClient, build_auth_url
 from app.core.oauth_state import consume_state, generate_state
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, get_db_no_tenant
-from app.models.calendar_integration import CalendarIntegrationStatus
+from app.schemas.calendar import CalendarIntegrationStatus
 from app.services import calendar_service, channel_integration_service
 from app.services.audit_service import AuditRequestContext
 
@@ -219,9 +219,8 @@ async def google_oauth_callback(
             error=str(exc),
             details=exc.details,
         )
-        error_code = "encryption_key" if "ENCRYPTION_KEY" in exc.message else "oauth_failed"
         return RedirectResponse(
-            url=f"/settings/integrations?error={error_code}",
+            url="/settings/integrations?error=oauth_failed",
             status_code=302,
         )
     except (AuthError, ExternalServiceError, ForbiddenError) as exc:

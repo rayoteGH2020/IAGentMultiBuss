@@ -2,17 +2,27 @@
 {% block title %}Iniciar sesión · Mi SaaS{% endblock %}
 {% block content %}
 <div id="clerk-sign-in"></div>
-<script
-  async
-  crossorigin="anonymous"
-  data-clerk-publishable-key="{{ clerk_pub_key }}"
-  src="https://{{ clerk_frontend_host }}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
-  type="text/javascript"
-></script>
+<p id="clerk-sign-in-error" class="mt-4 hidden text-center text-sm text-red-600" role="alert">
+  No se pudo cargar el formulario de acceso. Recarga la página o revisa la consola del navegador.
+</p>
+{% include "components/clerk_browser_script.html" %}
 <script>
+  async function waitForClerk(timeoutMs) {
+    const started = Date.now();
+    while (!window.Clerk) {
+      if (Date.now() - started > timeoutMs) return null;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return window.Clerk;
+  }
+
   window.addEventListener("load", async () => {
-    const C = window.Clerk;
-    if (!C) return;
+    const C = await waitForClerk(8000);
+    const errorEl = document.getElementById("clerk-sign-in-error");
+    if (!C) {
+      if (errorEl) errorEl.classList.remove("hidden");
+      return;
+    }
     await C.load({
       signInUrl: "/login",
       signUpUrl: "/signup",
@@ -21,10 +31,12 @@
       afterSignOutUrl: "/login",
     });
     const el = document.getElementById("clerk-sign-in");
-    if (el) C.mountSignIn(el, {
-      afterSignInUrl: "/",
-      afterSignUpUrl: "/",
-    });
+    if (el) {
+      C.mountSignIn(el, {
+        afterSignInUrl: "/",
+        afterSignUpUrl: "/",
+      });
+    }
   });
 </script>
 {% endblock %}

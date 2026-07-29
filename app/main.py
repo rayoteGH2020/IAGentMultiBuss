@@ -1,18 +1,31 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.config import get_settings
 from app.core.cache import close_redis
 from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import AuthMiddleware
-from app.routes.api import health, metrics, webhooks, webhooks_telegram, webhooks_whatsapp
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.routes.api import (
+    health,
+    metrics,
+    scheduling,
+    webhooks,
+    webhooks_telegram,
+    webhooks_whatsapp,
+)
 from app.routes.web import (
     admin_channel_integrations,
+    appointments,
     calendar,
     calendar_voice,
     chat,
@@ -22,11 +35,16 @@ from app.routes.web import (
     integrations,
     jobs,
     knowledge,
-    settings,
+    settings_scheduling,
 )
 from app.routes.web import auth as auth_routes
+from app.routes.web import settings as settings_routes
+from app.routes.web.admin import chat_traces as sadm_chat_traces
+from app.routes.web.admin import chat_usage as sadm_chat_usage
 from app.routes.web.admin import dashboard as sadm_dashboard
+from app.routes.web.admin import documents as sadm_documents
 from app.routes.web.admin import organizations as sadm_organizations
+from app.routes.web.admin import usage as sadm_usage
 from app.routes.web.admin import users as sadm_users
 
 
@@ -48,6 +66,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    app_settings = get_settings()
+    docs_enabled = app_settings.app_env != "production"
     # Patrón factory: devuelve una instancia nueva cada vez que se llama.
     # Permite que los tests creen su propia instancia de la app en aislamiento
     # sin compartir estado global con otras ejecuciones.
@@ -55,6 +75,9 @@ def create_app() -> FastAPI:
         title="Mi SaaS",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     # Centraliza el manejo de excepciones de dominio (NotFoundError,
@@ -67,6 +90,21 @@ def create_app() -> FastAPI:
     # FastAPI aplica los middlewares en orden LIFO (el último añadido se ejecuta
     # primero), así que AuthMiddleware siempre corre antes de cualquier handler.
     app.add_middleware(AuthMiddleware)
+    allowed_hosts = list(app_settings.security_allowed_hosts)
+    app_base_host = urlparse(app_settings.app_base_url).hostname
+    if app_base_host and app_base_host not in allowed_hosts:
+        allowed_hosts.append(app_base_host)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+    if app_settings.app_env == "production" or app_settings.security_https_redirect:
+        app.add_middleware(HTTPSRedirectMiddleware)
+    _enforce_https = app_settings.app_env == "production" or app_settings.security_https_redirect
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts_enabled=app_settings.app_env == "production" or app_settings.security_hsts_enabled,
+        clerk_frontend_host=urlparse(app_settings.clerk_jwks_url).hostname,
+        # Solo con HTTPS real: en localhost HTTP rompe /static (CSS/JS/Alpine).
+        upgrade_insecure_requests=_enforce_https,
+    )
 
     # El directorio es relativo a la raíz del proyecto, que es desde donde
     # Uvicorn debe lanzarse (`uv run uvicorn app.main:app`).
@@ -77,6 +115,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     # metrics: /metrics/module1 — consumido por dashboards internos (token-gated).
     app.include_router(metrics.router)
+    # scheduling: motor de huecos JSON (Paso 30 D.2).
+    app.include_router(scheduling.router)
     # webhooks: callbacks de Clerk y otros servicios externos.
     app.include_router(webhooks.router)
     app.include_router(webhooks_whatsapp.router)
@@ -95,12 +135,18 @@ def create_app() -> FastAPI:
     # calendar: visualización y gestión de eventos de Google Calendar (módulo agenda).
     app.include_router(calendar.router)
     app.include_router(calendar_voice.router)
-    app.include_router(settings.router)
+    app.include_router(settings_routes.router)
+    app.include_router(settings_scheduling.router)
+    app.include_router(appointments.router)
     app.include_router(integrations.router)
     app.include_router(integrations.auth_router)
     app.include_router(admin_channel_integrations.router)
     app.include_router(sadm_dashboard.router)
     app.include_router(sadm_organizations.router)
+    app.include_router(sadm_documents.router)
+    app.include_router(sadm_usage.router)
+    app.include_router(sadm_chat_traces.router)
+    app.include_router(sadm_chat_usage.router)
     app.include_router(sadm_users.router)
     app.include_router(demo.router)
 

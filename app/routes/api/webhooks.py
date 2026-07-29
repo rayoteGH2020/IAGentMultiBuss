@@ -4,13 +4,30 @@ from fastapi import APIRouter, Header, Request
 from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.config import get_settings
-from app.core.db import session_scope, set_tenant_context
+from app.core.db import session_scope
 from app.core.errors import AuthError
 from app.core.logging import get_logger
-from app.services.auth_service import ensure_membership, resolve_tenant, resolve_user
+from app.services.auth_service import (
+    resolve_tenant,
+    resolve_user,
+    revoke_clerk_membership,
+    sync_clerk_membership,
+)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 log = get_logger(__name__)
+
+
+def _membership_event_ids(data: dict[str, Any]) -> tuple[str, str] | None:
+    organization = data.get("organization")
+    public_user_data = data.get("public_user_data")
+    if not isinstance(organization, dict) or not isinstance(public_user_data, dict):
+        return None
+    clerk_org_id = organization.get("id")
+    clerk_user_id = public_user_data.get("user_id")
+    if not isinstance(clerk_org_id, str) or not isinstance(clerk_user_id, str):
+        return None
+    return clerk_org_id, clerk_user_id
 
 
 @router.post("/clerk")
@@ -53,23 +70,28 @@ async def clerk_webhook(
             if isinstance(oid, str):
                 await resolve_tenant(db, oid)
 
-        elif event_type == "organizationMembership.created":
-            clerk_org_id = data.get("organization", {}).get("id")
-            clerk_user_id = data.get("public_user_data", {}).get("user_id")
-            raw_role: str = data.get("role", "org:member")
-            role = raw_role.replace("org:", "")
-            if isinstance(clerk_org_id, str) and isinstance(clerk_user_id, str):
-                user = await resolve_user(db, clerk_user_id)
-                tenant = await resolve_tenant(db, clerk_org_id)
-                await set_tenant_context(db, str(tenant.id))
-                await ensure_membership(db, user.id, tenant.id, role=role)
+        elif event_type in (
+            "organizationMembership.created",
+            "organizationMembership.updated",
+        ):
+            membership_ids = _membership_event_ids(data)
+            raw_role = data.get("role", "org:member")
+            role = raw_role if isinstance(raw_role, str) else "org:member"
+            if membership_ids is not None:
+                clerk_org_id, clerk_user_id = membership_ids
+                await sync_clerk_membership(db, clerk_user_id, clerk_org_id, role)
 
         elif event_type == "organizationMembership.deleted":
-            log.info(
-                "clerk.membership_deleted",
-                org_id=data.get("organization", {}).get("id"),
-                user_id=data.get("public_user_data", {}).get("user_id"),
-            )
+            membership_ids = _membership_event_ids(data)
+            if membership_ids is not None:
+                clerk_org_id, clerk_user_id = membership_ids
+                revoked = await revoke_clerk_membership(db, clerk_user_id, clerk_org_id)
+                log.info(
+                    "clerk.membership_deleted",
+                    org_id=clerk_org_id,
+                    user_id=clerk_user_id,
+                    revoked=revoked,
+                )
 
         elif event_type in ("user.deleted", "organization.deleted"):
             log.info("clerk.delete_event", type=event_type, id=data.get("id"))

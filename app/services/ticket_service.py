@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy import ColumnElement, String, cast, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.core.document_processing_errors import format_user_processing_error
+from app.core.document_processing_errors import DocumentErrorCode, failure_message
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import ticket_key
 from app.core.storage import get_storage
@@ -49,7 +49,7 @@ async def list_tickets(
 ) -> Sequence[Ticket]:
     stmt = (
         select(Ticket)
-        .where(Ticket.tenant_id == tenant_id)
+        .where(Ticket.tenant_id == tenant_id, Ticket.dismissed_at.is_(None))
         .order_by(Ticket.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -149,7 +149,19 @@ async def apply_extraction_result(
     ticket.status = TicketStatus.ready
     ticket.updated_at = datetime.now(tz=UTC)
     ticket.error_message = None
+    ticket.error_code = None
     await db.flush()
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=ticket.tenant_id,
+        document_kind="ticket",
+        document_id=ticket.id,
+        status=ProcessingAttemptStatus.ok,
+        llm_call_id=llm_call_id,
+    )
     return ticket
 
 
@@ -160,7 +172,10 @@ async def mark_failed(
     tenant_id: UUID,
     error: str,
     llm_call_id: UUID | None = None,
+    error_code: DocumentErrorCode = DocumentErrorCode.extraction_failed,
+    detail: str | None = None,
 ) -> None:
+    """Marca un ticket como fallido con motivo estructurado (ver invoice_service)."""
     ticket = await get_ticket(db, tenant_id, ticket_id)
     ticket.status = TicketStatus.failed
     if llm_call_id is not None:
@@ -170,13 +185,31 @@ async def mark_failed(
         ticket_id=str(ticket_id),
         tenant_id=str(tenant_id),
         source_filename=ticket.source_filename,
+        error_code=error_code.value,
         technical_error=error[:2000],
     )
-    ticket.error_message = format_user_processing_error(
+    ticket.error_code = error_code.value
+    ticket.error_message = failure_message(
         error,
+        error_code=error_code,
         filename=ticket.source_filename,
-    )[:2000]
+        detail=detail,
+    )
     ticket.updated_at = datetime.now(tz=UTC)
+
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=tenant_id,
+        document_kind="ticket",
+        document_id=ticket_id,
+        status=ProcessingAttemptStatus.failed,
+        llm_call_id=llm_call_id,
+        error_message=ticket.error_message,
+        error_code=error_code.value,
+    )
 
 
 def _ticket_to_read(ticket: Ticket) -> TicketRead:

@@ -111,19 +111,17 @@ function registerChatMessagesScroll() {
   }));
 }
 
-/** HTMX inserta HTML sin procesar; Alpine debe inicializar cada swap (chat, modales, etc.). */
+/** HTMX inserta HTML sin procesar; Alpine debe reinicializar el subárbol del swap.
+ *  Solo afterSettle (una vez) y destroyTree antes de initTree evita listeners duplicados
+ *  que rompían el primer click de la navegación tras un boost. */
 function registerHtmxAlpineBridge() {
   const initAlpineOnSwap = (event) => {
     const target = event.detail?.target;
     if (!(target instanceof Element)) return;
-    if (window.htmx?.process) {
-      window.htmx.process(target);
-    }
-    if (window.Alpine) {
-      window.Alpine.initTree(target);
-    }
+    if (!window.Alpine) return;
+    window.Alpine.destroyTree(target);
+    window.Alpine.initTree(target);
   };
-  document.addEventListener("htmx:afterSwap", initAlpineOnSwap);
   document.addEventListener("htmx:afterSettle", initAlpineOnSwap);
 }
 
@@ -282,7 +280,10 @@ function registerVoiceRecorder() {
         const resp = await fetch("/calendar/voice/transcribe", {
           method: "POST",
           body: fd,
-          headers: { "HX-Request": "true" },
+          headers: {
+            "HX-Request": "true",
+            "X-CSRF-Token": window.getCsrfToken?.() || "",
+          },
         });
         const html = await resp.text();
         const container = document.getElementById("voice-container");
@@ -312,6 +313,241 @@ function registerVoiceRecorder() {
   }));
 }
 
+/** Horario semanal del centro: minutos según granularidad del tenant y copiar fila al día siguiente. */
+function registerBusinessHoursTable() {
+  const SLOT_SUFFIXES = ["sort_0_opens", "sort_0_closes", "sort_1_opens", "sort_1_closes"];
+
+  function parseMinuteOptions(root) {
+    const raw = root.dataset.minuteOptions;
+    if (!raw) return ["00", "15", "30", "45"];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length ? parsed.map(String) : ["00"];
+    } catch {
+      return ["00", "15", "30", "45"];
+    }
+  }
+
+  Alpine.data("quarterHourTime", () => ({
+    weekday: 0,
+    slot: "",
+    hour: "",
+    minute: "00",
+    minuteOptions: ["00"],
+
+    init() {
+      const root = this.$el;
+      this.weekday = Number(root.dataset.weekday ?? 0);
+      this.slot = root.dataset.slot ?? "";
+      this.minuteOptions = parseMinuteOptions(root);
+      this.minute = this.minuteOptions[0] ?? "00";
+      this.setValue(root.dataset.value ?? "");
+    },
+
+    get fieldName() {
+      return `weekday_${this.weekday}_${this.slot}`;
+    },
+
+    get combined() {
+      if (!this.hour) return "";
+      return `${this.hour}:${this.minute}`;
+    },
+
+    setValue(value) {
+      if (!value) {
+        this.hour = "";
+        this.minute = "00";
+        return;
+      }
+      const [h, m] = String(value).split(":");
+      this.hour = h || "";
+      this.minute = this.minuteOptions.includes(m) ? m : (this.minuteOptions[0] ?? "00");
+    },
+  }));
+
+  Alpine.data("businessHoursTable", () => ({
+    formError: "",
+    weekdayLabels: ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
+    periodPairs: [
+      ["sort_0_opens", "sort_0_closes", "mañana"],
+      ["sort_1_opens", "sort_1_closes", "tarde"],
+    ],
+
+    init() {
+      const root = this.$el;
+      if (root.dataset.weekdayLabels) {
+        try {
+          const parsed = JSON.parse(root.dataset.weekdayLabels);
+          if (Array.isArray(parsed) && parsed.length === 7) {
+            this.weekdayLabels = parsed.map(String);
+          }
+        } catch {
+          /* keep defaults */
+        }
+      }
+    },
+
+    slotValue(weekday, slotSuffix) {
+      const hidden = document.querySelector(
+        `input[type="hidden"][name="weekday_${weekday}_${slotSuffix}"]`,
+      );
+      return hidden instanceof HTMLInputElement ? hidden.value.trim() : "";
+    },
+
+    validateBeforeSave() {
+      this.formError = "";
+      for (let weekday = 0; weekday < 7; weekday += 1) {
+        for (const [opensKey, closesKey, periodLabel] of this.periodPairs) {
+          const opens = this.slotValue(weekday, opensKey);
+          const closes = this.slotValue(weekday, closesKey);
+          if (Boolean(opens) !== Boolean(closes)) {
+            const dayLabel = this.weekdayLabels[weekday] ?? String(weekday);
+            this.formError = `${dayLabel}: indica inicio y fin del horario de ${periodLabel}, o déjalo vacío`;
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+
+    copyRowToNext(fromWeekday) {
+      const toWeekday = Number(fromWeekday) + 1;
+      SLOT_SUFFIXES.forEach((slot) => {
+        const fromHidden = document.querySelector(
+          `input[type="hidden"][name="weekday_${fromWeekday}_${slot}"]`,
+        );
+        const value = fromHidden instanceof HTMLInputElement ? fromHidden.value : "";
+        const toHidden = document.querySelector(
+          `input[type="hidden"][name="weekday_${toWeekday}_${slot}"]`,
+        );
+        const targetRoot = toHidden?.closest("[x-data]");
+        if (targetRoot && window.Alpine) {
+          const data = window.Alpine.$data(targetRoot);
+          if (data && typeof data.setValue === "function") {
+            data.setValue(value);
+          }
+        }
+      });
+    },
+
+    clearRow(weekday) {
+      SLOT_SUFFIXES.forEach((slot) => {
+        const hidden = document.querySelector(
+          `input[type="hidden"][name="weekday_${weekday}_${slot}"]`,
+        );
+        const targetRoot = hidden?.closest("[x-data]");
+        if (targetRoot && window.Alpine) {
+          const data = window.Alpine.$data(targetRoot);
+          if (data && typeof data.setValue === "function") {
+            data.setValue("");
+          }
+        }
+      });
+      this.formError = "";
+    },
+  }));
+}
+
+/** Inicio de cita: fecha + hora/minuto solo desde franjas del grid del centro. */
+function registerAppointmentStartPicker() {
+  Alpine.data("appointmentStartPicker", () => ({
+    date: "",
+    hour: "",
+    minute: "",
+    gridTimesByWeekday: {},
+    closedDates: [],
+
+    init() {
+      const root = this.$el;
+      this.gridTimesByWeekday = JSON.parse(root.dataset.gridTimes || "{}");
+      this.closedDates = JSON.parse(root.dataset.closedDates || "[]");
+      this.date = root.dataset.defaultDate || "";
+      this.hour = root.dataset.defaultHour || "";
+      this.minute = root.dataset.defaultMinute || "";
+      this.$watch("date", () => this.syncSelection());
+      this.$watch("hour", () => this.syncMinute());
+      this.syncSelection();
+      this.$watch("hasSlots", () => this.notifyValidity());
+      this.$watch("closedDateSelected", () => this.notifyValidity());
+      this.notifyValidity();
+    },
+
+    notifyValidity() {
+      this.$dispatch("appointment-grid-slots", {
+        valid: this.hasSlots && !this.closedDateSelected,
+      });
+    },
+
+    pythonWeekday() {
+      if (!this.date) return null;
+      const parts = this.date.split("-").map(Number);
+      if (parts.length !== 3) return null;
+      const jsDay = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+      return (jsDay + 6) % 7;
+    },
+
+    get availableSlots() {
+      const weekday = this.pythonWeekday();
+      if (weekday === null) return [];
+      return (
+        this.gridTimesByWeekday[String(weekday)] ||
+        this.gridTimesByWeekday[weekday] ||
+        []
+      );
+    },
+
+    get hourOptions() {
+      return [...new Set(this.availableSlots.map((slot) => slot.split(":")[0]))].sort();
+    },
+
+    get minuteOptions() {
+      if (!this.hour) return [];
+      return this.availableSlots
+        .filter((slot) => slot.startsWith(`${this.hour}:`))
+        .map((slot) => slot.split(":")[1])
+        .sort();
+    },
+
+    get startTime() {
+      if (!this.hour || !this.minute) return "";
+      return `${this.hour}:${this.minute}`;
+    },
+
+    get hasSlots() {
+      return this.availableSlots.length > 0;
+    },
+
+    get closedDateSelected() {
+      return Boolean(this.date && this.closedDates.includes(this.date));
+    },
+
+    syncSelection() {
+      if (!this.hourOptions.length) {
+        this.hour = "";
+        this.minute = "";
+        this.notifyValidity();
+        return;
+      }
+      if (!this.hourOptions.includes(this.hour)) {
+        this.hour = this.hourOptions[0];
+      }
+      this.syncMinute();
+    },
+
+    syncMinute() {
+      if (!this.minuteOptions.length) {
+        this.minute = "";
+        this.notifyValidity();
+        return;
+      }
+      if (!this.minuteOptions.includes(this.minute)) {
+        this.minute = this.minuteOptions[0];
+      }
+      this.notifyValidity();
+    },
+  }));
+}
+
 registerHtmxAlpineBridge();
 registerChatComposerClear();
 
@@ -320,4 +556,460 @@ document.addEventListener("alpine:init", () => {
   registerChatMessagesScroll();
   registerCalendarEventsPanel();
   registerVoiceRecorder();
+  registerBusinessHoursTable();
+  registerAppointmentStartPicker();
+  registerProfessionalHoursGrid();
+  registerKnowledgeUploadForm();
+  registerDocumentUploadForm();
+  registerDocumentRowActions();
+  registerTenantSearchSelect();
 });
+
+/** Acciones de fila de documento: modal LLM + borrado con confirmación. */
+function registerDocumentRowActions() {
+  Alpine.data("documentRowActions", () => ({
+    linesOpen: false,
+    llmOpen: false,
+    deletePhase: "idle",
+    deleteMessage: "",
+
+    get deleteDone() {
+      return this.deletePhase === "done";
+    },
+
+    get isDeleting() {
+      return this.deletePhase === "deleting";
+    },
+
+    openLlm() {
+      this.resetDeleteUi();
+      this.llmOpen = true;
+    },
+
+    closeLlm() {
+      if (this.deletePhase === "done") {
+        window.location.assign("/documents");
+        return;
+      }
+      if (this.isDeleting) {
+        return;
+      }
+      this.llmOpen = false;
+      this.resetDeleteUi();
+    },
+
+    resetDeleteUi() {
+      this.deletePhase = "idle";
+      this.deleteMessage = "";
+    },
+
+    requestDelete(url) {
+      const confirmed = window.confirm(
+        "¿Borrar este documento por completo?\n\nSe eliminarán los datos extraídos y el fichero. Esta acción no se puede deshacer.",
+      );
+      // Tanto Sí como No vuelven al detalle del modal; solo Sí lanza el borrado.
+      if (!confirmed) {
+        return;
+      }
+      void this.runDelete(url);
+    },
+
+    async runDelete(url) {
+      this.deletePhase = "deleting";
+      this.deleteMessage = "Eliminando documento…";
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "X-CSRF-Token": window.getCsrfToken?.() || "",
+            "HX-Request": "true",
+            Accept: "text/html",
+          },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          throw new Error(`delete_failed_${response.status}`);
+        }
+        this.deletePhase = "done";
+        this.deleteMessage = "Documento eliminado";
+      } catch {
+        this.deletePhase = "error";
+        this.deleteMessage = "No se pudo eliminar el documento. Inténtalo de nuevo.";
+      }
+    },
+  }));
+}
+
+/**
+ * Combobox SADM: elegir tenant con filtro por texto (nombre o id).
+ * Al seleccionar navega a basePath/{id}.
+ */
+function registerTenantSearchSelect() {
+  Alpine.data("tenantSearchSelect", (config = {}) => ({
+    tenants: Array.isArray(config.tenants) ? config.tenants : [],
+    selectedId: config.selectedId || null,
+    basePath: config.basePath || "/sadm/chat-usage",
+    open: false,
+    query: "",
+    highlight: 0,
+
+    get selectedLabel() {
+      if (!this.selectedId) return "";
+      const hit = this.tenants.find((t) => String(t.id) === String(this.selectedId));
+      return hit ? hit.name : "";
+    },
+
+    get filtered() {
+      const q = this.query.trim().toLowerCase();
+      if (!q) return this.tenants;
+      return this.tenants.filter((t) => {
+        const name = String(t.name || "").toLowerCase();
+        const id = String(t.id || "").toLowerCase();
+        const plan = String(t.plan || "").toLowerCase();
+        return name.includes(q) || id.includes(q) || plan.includes(q);
+      });
+    },
+
+    toggle() {
+      this.open = !this.open;
+      if (this.open) {
+        this.query = "";
+        this.highlight = 0;
+        this.$nextTick(() => this.$refs.query?.focus());
+      }
+    },
+
+    close() {
+      this.open = false;
+      this.query = "";
+      this.highlight = 0;
+    },
+
+    onQueryInput() {
+      this.highlight = 0;
+      if (!this.open) this.open = true;
+    },
+
+    move(delta) {
+      const n = this.filtered.length;
+      if (n === 0) return;
+      this.highlight = (this.highlight + delta + n) % n;
+    },
+
+    selectHighlighted() {
+      const item = this.filtered[this.highlight];
+      if (item) this.select(item);
+    },
+
+    select(tenant) {
+      if (!tenant?.id) return;
+      this.selectedId = tenant.id;
+      this.close();
+      window.location.assign(`${this.basePath}/${tenant.id}`);
+    },
+  }));
+}
+
+/** Modal de subida knowledge: adjunto de ficheros + cierre solo si el servidor crea docs. */
+function registerKnowledgeUploadForm() {
+  Alpine.data("knowledgeUploadForm", () => ({
+    open: false,
+    files: [],
+    dragging: false,
+    kind: "",
+    uploadInputKey: 0,
+    formError: "",
+    isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+
+    openModal() {
+      this.open = true;
+      this.files = [];
+      this.kind = "";
+      this.formError = "";
+      this.uploadInputKey += 1;
+    },
+
+    closeModal() {
+      this.open = false;
+    },
+
+    onUploadResult(detail) {
+      if (detail && detail.ok) {
+        this.open = false;
+        this.files = [];
+        this.kind = "";
+        this.formError = "";
+        this.uploadInputKey += 1;
+        return;
+      }
+      this.formError =
+        (detail && detail.message) || "No se pudo subir el documento. Revisa los datos.";
+    },
+
+    onFilePick(event) {
+      this.files = Array.from(event.target.files || []);
+      this.formError = "";
+    },
+
+    onDrop(event) {
+      this.dragging = false;
+      this.files = Array.from(event.dataTransfer.files || []);
+      this.formError = "";
+      this.syncInputFiles();
+    },
+
+    onCameraCapture(event) {
+      const captured = Array.from(event.target.files || []);
+      if (captured.length > 0) {
+        this.files = captured;
+        this.kind = "";
+        this.formError = "";
+        this.uploadInputKey += 1;
+        this.open = true;
+      }
+      event.target.value = "";
+    },
+
+    syncInputFiles() {
+      const dt = new DataTransfer();
+      this.files.forEach((f) => dt.items.add(f));
+      if (this.$refs.kinput) {
+        this.$refs.kinput.files = dt.files;
+      }
+    },
+
+    prepareRequest(event) {
+      if (this.files.length === 0 || !this.kind) {
+        event.preventDefault();
+        this.formError =
+          this.files.length === 0
+            ? "Selecciona al menos un fichero."
+            : "Selecciona una categoría para el documento.";
+        return;
+      }
+      this.formError = "";
+      const fd = event.detail.formData;
+      if (!fd) return;
+      fd.delete("files");
+      this.files.forEach((f) => fd.append("files", f, f.name));
+    },
+  }));
+}
+
+/** Subida de documentos administrativos: 10 zonas fijas, tipo por zona. */
+function registerDocumentUploadForm() {
+  const MAX_FILES = 10;
+
+  function emptySlot(index, keyPrefix) {
+    return {
+      index,
+      file: null,
+      docType: "",
+      key: `${keyPrefix}-${index}`,
+    };
+  }
+
+  function emptySlots(keyPrefix) {
+    return Array.from({ length: MAX_FILES }, (_, index) => emptySlot(index, keyPrefix));
+  }
+
+  Alpine.data("documentUploadForm", () => ({
+    open: false,
+    slots: emptySlots(0),
+    dragging: false,
+    dragOverSlot: null,
+    uploadInputKey: 0,
+    formError: "",
+    isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+
+    get filledSlots() {
+      return this.slots.filter((slot) => slot.file);
+    },
+
+    get filledCount() {
+      return this.filledSlots.length;
+    },
+
+    get canSubmit() {
+      const filled = this.filledSlots;
+      return filled.length > 0 && filled.every((slot) => Boolean(slot.docType));
+    },
+
+    openModal() {
+      this.open = true;
+      this.resetSlots();
+    },
+
+    closeModal() {
+      this.open = false;
+    },
+
+    resetSlots() {
+      this.uploadInputKey += 1;
+      this.slots = emptySlots(this.uploadInputKey);
+      this.formError = "";
+      this.dragging = false;
+      this.dragOverSlot = null;
+    },
+
+    clearSlot(index) {
+      const prefix = this.uploadInputKey;
+      this.slots[index] = emptySlot(index, prefix);
+      this.slots = [...this.slots];
+    },
+
+    clearAllFiles() {
+      this.resetSlots();
+    },
+
+    firstEmptyIndexes() {
+      return this.slots
+        .map((slot, index) => (slot.file ? null : index))
+        .filter((index) => index !== null);
+    },
+
+    placeFiles(fileList) {
+      const incoming = Array.from(fileList || []);
+      if (incoming.length === 0) return;
+
+      const emptyIndexes = this.firstEmptyIndexes();
+      if (emptyIndexes.length === 0) {
+        this.formError = `Máximo ${MAX_FILES} ficheros por subida. No quedan zonas libres.`;
+        return;
+      }
+
+      if (incoming.length > emptyIndexes.length) {
+        this.formError =
+          `Solo quedan ${emptyIndexes.length} zona${emptyIndexes.length === 1 ? "" : "s"} libre${emptyIndexes.length === 1 ? "" : "s"} ` +
+          `(${this.filledCount} de ${MAX_FILES} ocupadas). ` +
+          `Reduce la selección a ${emptyIndexes.length} fichero${emptyIndexes.length === 1 ? "" : "s"} o quita alguno antes.`;
+        return;
+      }
+
+      const next = this.slots.map((slot) => ({ ...slot }));
+      incoming.forEach((file, offset) => {
+        const index = emptyIndexes[offset];
+        next[index] = {
+          index,
+          file,
+          docType: "",
+          key: `${this.uploadInputKey}-${index}-${file.name}-${file.size}`,
+        };
+      });
+      this.slots = next;
+      this.formError = "";
+    },
+
+    onSlotClick() {
+      if (this.firstEmptyIndexes().length === 0) {
+        this.formError = `Máximo ${MAX_FILES} ficheros por subida.`;
+        return;
+      }
+      if (this.$refs.slotPicker) {
+        this.$refs.slotPicker.value = "";
+        this.$refs.slotPicker.click();
+      }
+    },
+
+    onSlotPick(event) {
+      this.placeFiles(event.target.files);
+      event.target.value = "";
+    },
+
+    onGridDrop(event) {
+      this.dragging = false;
+      this.dragOverSlot = null;
+      this.placeFiles(event.dataTransfer.files);
+    },
+
+    onSlotDrop(event, _index) {
+      this.dragging = false;
+      this.dragOverSlot = null;
+      this.placeFiles(event.dataTransfer.files);
+    },
+
+    onCameraCapture(event) {
+      const captured = Array.from(event.target.files || []);
+      if (captured.length > 0) {
+        this.open = true;
+        this.uploadInputKey += 1;
+        this.slots = emptySlots(this.uploadInputKey);
+        this.placeFiles(captured);
+      }
+      event.target.value = "";
+    },
+
+    prepareRequest(event) {
+      const filled = this.filledSlots;
+      if (!this.canSubmit) {
+        event.preventDefault();
+        this.formError =
+          filled.length === 0
+            ? "Coloca al menos un fichero en una zona."
+            : "Indica el tipo de cada fichero colocado antes de procesar.";
+        return;
+      }
+      this.formError = "";
+      const fd = event.detail.formData;
+      if (!fd) return;
+      fd.delete("files");
+      fd.delete("doc_type_codes");
+      filled.forEach((slot) => {
+        fd.append("files", slot.file, slot.file.name);
+        fd.append("doc_type_codes", slot.docType);
+      });
+    },
+
+    onAfterRequest(event) {
+      if (event.detail.successful) {
+        this.open = false;
+        this.resetSlots();
+      }
+    },
+  }));
+}
+
+/** Grid horario profesional: marcar/desmarcar tramos del centro. */
+function registerProfessionalHoursGrid() {
+  Alpine.data("professionalHoursGrid", () => ({
+    slotCheckboxes() {
+      return Array.from(document.querySelectorAll(".professional-slot-checkbox"));
+    },
+
+    selectAll() {
+      this.slotCheckboxes().forEach((el) => {
+        el.checked = true;
+      });
+    },
+
+    clearAll() {
+      this.slotCheckboxes().forEach((el) => {
+        el.checked = false;
+      });
+    },
+
+    selectPeriod(weekday, sortOrder) {
+      this.slotCheckboxes()
+        .filter(
+          (el) =>
+            Number(el.dataset.weekday) === Number(weekday) &&
+            Number(el.dataset.sortOrder) === Number(sortOrder),
+        )
+        .forEach((el) => {
+          el.checked = true;
+        });
+    },
+
+    clearPeriod(weekday, sortOrder) {
+      this.slotCheckboxes()
+        .filter(
+          (el) =>
+            Number(el.dataset.weekday) === Number(weekday) &&
+            Number(el.dataset.sortOrder) === Number(sortOrder),
+        )
+        .forEach((el) => {
+          el.checked = false;
+        });
+    },
+  }));
+}

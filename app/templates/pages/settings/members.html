@@ -1,0 +1,43 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Miembros{% endblock %}
+{% block page_title %}Miembros{% endblock %}
+
+{% block settings_content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <p class="text-sm text-slate-500">Alta y permisos desde la app; réplica mínima a Clerk.</p>
+    <button type="button"
+            hx-get="/settings/members/new"
+            hx-target="#member-modal"
+            hx-swap="innerHTML"
+            class="btn-primary cursor-pointer">Invitar miembro</button>
+  </div>
+
+  <div class="card p-0 overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Nombre</th>
+          <th>Rol</th>
+          <th>Permisos citas</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="members-list">
+        {% for member in members %}
+          {% include "components/scheduling/member_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="member-modal"
+     x-data="{ open: false }"
+     @open-member-modal.window="open = true"
+     @close-member-modal.window="open = false"
+     x-show="open" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"></div>
+{% endblock %}

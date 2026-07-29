@@ -1,315 +1,210 @@
-{# Modal de subida de documentos administrativos. #}
+{# Modal de subida: 10 zonas fijas en cuadrícula (LTR, arriba→abajo).
+   Alpine.data('documentUploadForm'). #}
 
 <div
-
-  x-data="{ open: false, files: [], dragging: false, docType: '', uploadInputKey: 0, isMobile: window.matchMedia('(hover: none) and (pointer: coarse)').matches }"
-
-  @keydown.escape.window="open = false"
-
+  x-data="documentUploadForm"
+  @keydown.escape.window="if (open) closeModal()"
   hx-boost="false"
-
   class="inline-block">
 
-
-
   <button
-
     type="button"
-
-    @click="open = true; files = []; docType = ''; uploadInputKey++"
-
+    @click="openModal()"
     class="btn-primary shrink-0">
-
     Subir documentos
-
   </button>
 
-  {# Botón cámara: solo en dispositivos táctiles (móvil/tablet). Al pulsar abre
-     directamente la cámara trasera del dispositivo. La foto se añade al array
-     files y abre el modal para que el usuario seleccione el tipo de documento. #}
   <button
-
     type="button"
-
     x-show="isMobile"
-
     x-cloak
-
     @click="$refs.cameraCapture.click()"
-
     class="btn-secondary shrink-0 flex items-center gap-1.5"
-
     aria-label="Tomar foto">
-
     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
          viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round"
             d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
     </svg>
-
     Foto
-
   </button>
 
-  {# Input oculto con capture="environment": en móvil abre la cámara trasera.
-     En desktop el atributo capture se ignora y actúa como selector de fichero normal. #}
   <input
-
     type="file"
-
     x-ref="cameraCapture"
-
     class="sr-only"
-
     accept="image/*"
-
     capture="environment"
+    @change="onCameraCapture($event)">
 
-    @change="
-      const captured = Array.from($event.target.files || []);
-      if (captured.length > 0) {
-        files = captured;
-        docType = '';
-        uploadInputKey++;
-        open = true;
-      }
-      $event.target.value = '';">
+  <input
+    type="file"
+    x-ref="slotPicker"
+    class="sr-only"
+    multiple
+    accept=".pdf,.jpg,.jpeg,.png,.webp"
+    @change="onSlotPick($event)">
 
+  <div
+    x-show="open"
+    x-cloak
+    class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-3 sm:p-6"
+    @click.self="closeModal()">
 
+    <div
+      class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[min(92vh,52rem)] flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="document-upload-title">
 
-
-
-  <div x-show="open" x-cloak
-
-       class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
-
-       @click.self="open = false">
-
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-
-      <div class="flex items-center justify-between mb-4">
-
-        <h2 class="text-lg font-semibold text-slate-900">Subir documentos</h2>
-
-        <button type="button" @click="open = false"
-
-                class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="Cerrar">✕</button>
-
+      <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
+        <div>
+          <h2 id="document-upload-title" class="text-lg font-semibold text-slate-900">
+            Subir documentos
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Arrastra hasta 10 ficheros (PDF o imagen). Se colocan siempre en las primeras zonas libres.
+          </p>
+        </div>
+        <button
+          type="button"
+          @click="closeModal()"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer"
+          aria-label="Cerrar">✕</button>
       </div>
 
-
-
       <form
-
         id="document-upload-form"
-
+        class="flex flex-col min-h-0 flex-1"
         hx-post="/documents/upload"
-
         hx-encoding="multipart/form-data"
-
         hx-target="#invoices-table-container"
-
         hx-swap="outerHTML"
-
         hx-indicator="#upload-spinner"
-
         hx-boost="false"
-
-        hx-on::config-request="
-
-          if (files.length === 0 || !docType) {
-
-            event.preventDefault();
-
-            return;
-
-          }
-
-          const fd = event.detail.formData;
-
-          if (!fd) return;
-
-          fd.delete('files');
-
-          files.forEach(function (f) { fd.append('files', f, f.name); });"
-
-        @submit="
-
-          const dt = new DataTransfer();
-
-          files.forEach(function (f) { dt.items.add(f); });
-
-          if ($refs.input) $refs.input.files = dt.files;"
-
-        @htmx:after-request="
-
-          if ($event.detail.successful) {
-
-            open = false;
-
-            files = [];
-
-            docType = '';
-
-            uploadInputKey++;
-
-          }">
-
-
-
-        <label
-
-          class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition"
-
-          :class="dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300'"
-
-          @dragover.prevent="dragging = true"
-
-          @dragleave.prevent="dragging = false"
-
-          @drop.prevent="
-
-            dragging = false;
-
-            files = Array.from($event.dataTransfer.files);
-
-            const dt = new DataTransfer();
-
-            files.forEach(function (f) { dt.items.add(f); });
-
-            $refs.input.files = dt.files;">
-
-
-
-          <input
-
-            type="file"
-
-            name="files"
-
-            x-ref="input"
-
-            :key="'upload-input-' + uploadInputKey"
-
-            class="hidden"
-
-            multiple
-
-            accept=".pdf,.jpg,.jpeg,.png,.webp"
-
-            @change="files = Array.from($event.target.files || [])">
-
-
-
-          <p class="text-sm text-slate-600">
-
-            Arrastra aquí PDFs o fotos de facturas y tickets, o haz click para elegir.
-
-          </p>
-
-          <p class="text-xs text-slate-400 mt-1">
-
-            Máximo 20 ficheros, 20 MB cada uno.
-
-          </p>
-
-        </label>
-
-
-
-        <ul x-show="files.length" class="mt-4 space-y-1 max-h-40 overflow-y-auto">
-
-          <template x-for="(f, idx) in files" :key="uploadInputKey + '-' + idx + '-' + f.name + '-' + f.size">
-
-            <li class="flex items-center justify-between text-sm text-slate-700">
-
-              <span x-text="f.name" class="truncate"></span>
-
-              <span class="text-xs text-slate-400"
-
-                    x-text="(f.size / 1024).toFixed(0) + ' KB'"></span>
-
-            </li>
-
-          </template>
-
-        </ul>
-
-
-
-        <div x-show="files.length" x-cloak class="mt-4">
-
-          <label for="doc-type-code" class="block text-sm font-medium text-slate-700 mb-1.5">
-
-            Tipo de documento <span class="text-red-600" aria-hidden="true">*</span>
-
-          </label>
-
-          <select
-
-            id="doc-type-code"
-
-            name="doc_type_code"
-
-            x-model="docType"
-
-            required
-
-            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer">
-
-            <option value="" disabled>Selecciona un tipo…</option>
-
-            {% for doc_type in doc_types|default([], true) %}
-
-            <option value="{{ doc_type.code }}">{{ doc_type.name }}</option>
-
-            {% endfor %}
-
-          </select>
-
-          <p class="mt-1.5 text-xs text-slate-500">
-
-            Obligatorio. Si subes varios ficheros a la vez, todos se tratarán como el mismo tipo.
-
-          </p>
-
+        @htmx:config-request="prepareRequest($event)"
+        @htmx:after-request="onAfterRequest($event)">
+
+        <div class="px-5 pt-3 shrink-0">
+          <div
+            x-show="formError"
+            x-cloak
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+            x-text="formError"></div>
         </div>
 
+        <div
+          class="px-5 py-3 min-h-0 flex-1 overflow-y-auto"
+          @dragover.prevent="dragging = true"
+          @dragleave.prevent="dragging = false"
+          @drop.prevent="onGridDrop($event)">
 
+          <div
+            class="grid grid-cols-2 sm:grid-cols-5 gap-2.5"
+            :class="dragging ? 'ring-2 ring-blue-400 ring-offset-2 rounded-lg' : ''">
 
-        <div class="mt-6 flex items-center justify-end gap-2">
+            <template x-for="slot in slots" :key="slot.key">
+              <div
+                class="relative flex flex-col rounded-lg border-2 border-dashed p-2 min-h-[7.5rem] transition-colors"
+                :class="{
+                  'border-blue-500 bg-blue-50': dragOverSlot === slot.index,
+                  'border-emerald-400 bg-emerald-50/40': slot.file && dragOverSlot !== slot.index,
+                  'border-slate-300 bg-slate-50/50 hover:border-slate-400': !slot.file && dragOverSlot !== slot.index
+                }"
+                @dragover.prevent.stop="dragging = true; dragOverSlot = slot.index"
+                @dragleave.prevent.stop="dragOverSlot = null"
+                @drop.prevent.stop="onSlotDrop($event, slot.index)">
 
-          <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">
+                <div class="flex items-center justify-between gap-1 mb-1.5">
+                  <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                        x-text="'Fichero ' + (slot.index + 1)"></span>
+                  <button
+                    type="button"
+                    x-show="slot.file"
+                    x-cloak
+                    @click.stop="clearSlot(slot.index)"
+                    class="text-slate-400 hover:text-slate-700 text-sm leading-none cursor-pointer"
+                    :aria-label="'Quitar fichero ' + (slot.index + 1)">✕</button>
+                </div>
 
-            Subiendo…
+                <button
+                  type="button"
+                  class="flex-1 w-full text-left cursor-pointer rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  @click="onSlotClick()"
+                  aria-label="Elegir ficheros para las primeras zonas libres">
+                  <template x-if="!slot.file">
+                    <div class="flex flex-col items-center justify-center gap-1 py-2 text-center">
+                      <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                              d="M12 4v16m8-8H4"/>
+                      </svg>
+                      <span class="text-[11px] text-slate-500 leading-tight">Arrastra o haz clic</span>
+                    </div>
+                  </template>
+                  <template x-if="slot.file">
+                    <div class="min-w-0">
+                      <p class="text-xs font-medium text-slate-800 truncate" x-text="slot.file.name"></p>
+                      <p class="text-[10px] text-slate-400 mt-0.5"
+                         x-text="(slot.file.size / 1024).toFixed(0) + ' KB'"></p>
+                    </div>
+                  </template>
+                </button>
 
-          </span>
+                <div class="mt-auto pt-1.5">
+                  <label class="sr-only" :for="'doc-type-slot-' + slot.index">
+                    Tipo de documento <span x-text="slot.index + 1"></span>
+                  </label>
+                  <select
+                    :id="'doc-type-slot-' + slot.index"
+                    name="doc_type_codes"
+                    x-model="slot.docType"
+                    :disabled="!slot.file"
+                    :required="Boolean(slot.file)"
+                    class="w-full rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
+                    <option value="" disabled x-text="slot.file ? 'Tipo…' : '—'"></option>
+                    {% for doc_type in doc_types|default([], true) %}
+                    <option value="{{ doc_type.code }}">{{ doc_type.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
 
-          <button type="button" @click="open = false"
-
-                  class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900">
-
-            Cancelar
-
-          </button>
-
-          <button type="submit"
-
-                  :disabled="files.length === 0 || !docType"
-
-                  class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-600">
-
-            Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
-
-          </button>
-
+        <div class="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 shrink-0 bg-white rounded-b-lg">
+          <p class="text-xs text-slate-500">
+            <span x-text="filledCount"></span> / 10 colocados · 20 MB máx. por fichero
+          </p>
+          <div class="flex items-center gap-2">
+            <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">
+              Procesando…
+            </span>
+            <button
+              type="button"
+              @click="clearAllFiles()"
+              :disabled="filledCount === 0"
+              class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+              Quitar todos los ficheros
+            </button>
+            <button
+              type="button"
+              @click="closeModal()"
+              class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 cursor-pointer">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              :disabled="!canSubmit"
+              class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-600">
+              Procesar <span x-show="filledCount" x-text="'(' + filledCount + ')'"></span>
+            </button>
+          </div>
         </div>
 
       </form>
-
     </div>
-
   </div>
-
 </div>

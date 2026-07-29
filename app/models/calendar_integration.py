@@ -15,21 +15,17 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.schemas.calendar import CalendarIntegrationStatus
 
 
 class CalendarIntegrationProvider(enum.StrEnum):
     google = "google"
-
-
-class CalendarIntegrationStatus(enum.StrEnum):
-    active = "active"
-    revoked = "revoked"
-    error = "error"
 
 
 class CalendarIntegration(Base):
@@ -54,14 +50,21 @@ class CalendarIntegration(Base):
         String(32),
         nullable=False,
         default=CalendarIntegrationProvider.google.value,
+        server_default=text("'google'"),
     )
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         default=CalendarIntegrationStatus.active.value,
+        server_default=text("'active'"),
     )
     google_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    google_calendar_id: Mapped[str] = mapped_column(String(255), nullable=False, default="primary")
+    google_calendar_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="primary",
+        server_default=text("'primary'"),
+    )
     access_token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     refresh_token_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(
@@ -90,3 +93,10 @@ class CalendarIntegration(Base):
         ),
         Index("ix_calendar_integrations_tenant_user", "tenant_id", "user_id"),
     )
+
+
+__all__ = [
+    "CalendarIntegration",
+    "CalendarIntegrationProvider",
+    "CalendarIntegrationStatus",
+]

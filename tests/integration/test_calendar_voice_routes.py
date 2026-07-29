@@ -7,10 +7,12 @@ externas (BD, Redis, LLM, Google Calendar API).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from app.core.csrf import CSRF_HEADER_NAME, generate_csrf_token
 from app.models import Membership, Tenant, User
 from app.schemas.calendar import CalendarEvent, VoiceEventDraft
 from fastapi import Request
@@ -24,10 +26,15 @@ pytestmark = pytest.mark.integration
 # ---------------------------------------------------------------------------
 
 
-def _fake_clerk_resolve(request: Request, *, user_sub: str, org_id: str) -> None:
+def _fake_clerk_resolve(
+    request: Request,
+    *,
+    user_sub: str,
+    org_id: str,
+    user_id: UUID,
+    tenant_id: UUID,
+) -> None:
     now = datetime.now(tz=UTC)
-    user_id = uuid4()
-    tenant_id = uuid4()
     user = User(
         clerk_user_id=user_sub,
         email=f"{user_sub}@test.local",
@@ -87,9 +94,17 @@ def _mock_created_event() -> CalendarEvent:
 def voice_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     user_sub = f"user_{uuid4().hex[:12]}"
     org_id = f"org_{uuid4().hex[:12]}"
+    user_id = uuid4()
+    tenant_id = uuid4()
 
     async def fake_resolve(request: Request) -> None:
-        _fake_clerk_resolve(request, user_sub=user_sub, org_id=org_id)
+        _fake_clerk_resolve(
+            request,
+            user_sub=user_sub,
+            org_id=org_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
 
     monkeypatch.setattr("app.core.middleware.try_resolve_clerk_session", fake_resolve)
 
@@ -107,7 +122,11 @@ def voice_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.dependency_overrides[get_db] = mock_db
     app.dependency_overrides[get_redis_dep] = mock_redis
 
-    return TestClient(app, raise_server_exceptions=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    client.headers.update(
+        {CSRF_HEADER_NAME: generate_csrf_token(user_id=user_id, tenant_id=tenant_id)}
+    )
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +203,25 @@ def test_transcribe_error_returns_recorder_with_message(voice_client: TestClient
     assert "Audio demasiado grande" in r.text
 
 
+def test_transcribe_rejects_oversized_audio_before_service(voice_client: TestClient) -> None:
+    """La ruta corta la lectura si el audio supera el lÃ­mite configurado."""
+    draft_mock = AsyncMock()
+    settings = SimpleNamespace(voice_max_audio_bytes=4)
+
+    with (
+        patch("app.routes.web.calendar_voice.get_settings", return_value=settings),
+        patch("app.routes.web.calendar_voice.voice_event_service.draft_from_audio", draft_mock),
+    ):
+        r = voice_client.post(
+            "/calendar/voice/transcribe",
+            files={"audio": ("recording.ogg", b"OggSxx", "audio/ogg")},
+        )
+
+    assert r.status_code == 200
+    assert "Audio too large" in r.text
+    draft_mock.assert_not_awaited()
+
+
 def test_confirm_creates_event_and_returns_result(voice_client: TestClient) -> None:
     """POST /calendar/voice/confirm crea el evento y devuelve el fragmento de resultado."""
     created = _mock_created_event()
@@ -228,3 +266,73 @@ def test_voice_disabled_returns_friendly_message(
 
     assert r.status_code == 200
     assert "no está disponible" in r.text
+
+
+def test_transcribe_needs_clarification_shows_warning_banner(voice_client: TestClient) -> None:
+    """Dictado ambiguo → banner de aviso; no crea evento hasta confirm."""
+    draft = VoiceEventDraft(
+        transcript="quedamos un día de estos",
+        summary="Quedada",
+        start="2025-06-03T10:00:00+02:00",
+        end="2025-06-03T11:00:00+02:00",
+        confidence=0.4,
+        needs_clarification=True,
+        clarification_reason="No se pudo determinar la fecha concreta.",
+    )
+    with patch(
+        "app.routes.web.calendar_voice.voice_event_service.draft_from_audio",
+        AsyncMock(return_value=draft),
+    ):
+        r = voice_client.post(
+            "/calendar/voice/transcribe",
+            files={"audio": ("recording.ogg", b"OggS" + b"\x00" * 50, "audio/ogg")},
+        )
+
+    assert r.status_code == 200
+    assert "Revisa los datos antes de confirmar" in r.text
+    assert draft.clarification_reason in r.text
+    assert "Crear evento" in r.text
+
+
+def test_transcribe_without_calendar_shows_connect_message(voice_client: TestClient) -> None:
+    """Usuario sin Google Calendar → mensaje accionable en el grabador."""
+    from app.core.errors import NotFoundError
+
+    with patch(
+        "app.routes.web.calendar_voice.voice_event_service.draft_from_audio",
+        AsyncMock(
+            side_effect=NotFoundError(
+                "Google Calendar no está conectado. Ve a Ajustes > Integraciones para vincularlo."
+            )
+        ),
+    ):
+        r = voice_client.post(
+            "/calendar/voice/transcribe",
+            files={"audio": ("recording.ogg", b"OggS" + b"\x00" * 50, "audio/ogg")},
+        )
+
+    assert r.status_code == 200
+    assert "Google Calendar no está conectado" in r.text
+    assert "Integraciones" in r.text
+
+
+def test_transcribe_rate_limit_shows_friendly_message(voice_client: TestClient) -> None:
+    """Superar rate-limit → mensaje claro, sin fragmento de confirmación."""
+    from app.core.errors import RateLimitError
+
+    with patch(
+        "app.routes.web.calendar_voice.voice_event_service.draft_from_audio",
+        AsyncMock(
+            side_effect=RateLimitError(
+                "Has superado el límite de 30 notas de voz por hora. Inténtalo de nuevo más tarde."
+            )
+        ),
+    ):
+        r = voice_client.post(
+            "/calendar/voice/transcribe",
+            files={"audio": ("recording.ogg", b"OggS" + b"\x00" * 50, "audio/ogg")},
+        )
+
+    assert r.status_code == 200
+    assert "límite" in r.text.lower()
+    assert "Crear evento" not in r.text

@@ -1,0 +1,13 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Uso chat · {{ report.tenant_name }} · Admin{% endblock %}
+{% block page_title %}Uso de chat · {{ report.tenant_name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <a href="/sadm/chat-usage" class="inline-flex text-sm text-primary-600 hover:underline cursor-pointer">
+    ← Todas las organizaciones
+  </a>
+  {% include "pages/sadm/chat_usage/_tenant_picker.html" %}
+  {% include "pages/sadm/chat_usage/_report.html" %}
+</div>
+{% endblock %}

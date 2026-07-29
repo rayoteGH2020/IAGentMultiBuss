@@ -10,6 +10,8 @@ from decimal import Decimal
 PRICING: dict[str, dict[str, Decimal]] = {
     "claude-haiku-4-5-20251001": {"input": Decimal("0.90"), "output": Decimal("4.50")},
     "claude-sonnet-4-6": {"input": Decimal("2.80"), "output": Decimal("14.00")},
+    "gemini-2.0-flash-lite": {"input": Decimal("0.075"), "output": Decimal("0.30")},
+    "gemini-2.0-flash": {"input": Decimal("0.10"), "output": Decimal("0.40")},
     "gemini-2.5-flash": {"input": Decimal("0.28"), "output": Decimal("2.30")},
     "gemini-2.5-pro": {"input": Decimal("1.10"), "output": Decimal("4.40")},
     # voyage-3-lite: modelo de embeddings; no tiene tokens de output.

@@ -27,9 +27,11 @@ def load_prompt(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def render_prompt(name: str, **kwargs: object) -> str:
+def render_prompt(prompt_name: str, **kwargs: object) -> str:
     # Variante de load_prompt para prompts con placeholders {variable}.
     # Se usa cuando el prompt necesita datos dinámicos en tiempo de llamada
     # (p. ej. nombre del tenant, esquema de BD en módulo 3).
     # Los prompts de extracción simples no necesitan render_prompt.
-    return load_prompt(name).format(**kwargs)
+    # El primer argumento es el fichero (p. ej. "ping_v1"), no confundir con
+    # placeholders del template que también puedan llamarse "name".
+    return load_prompt(prompt_name).format(**kwargs)

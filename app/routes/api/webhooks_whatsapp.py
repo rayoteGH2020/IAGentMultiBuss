@@ -15,16 +15,16 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.deps import get_db_no_tenant
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+from app.jobs.queue import enqueue_channel_message
+from app.services import channel_integration_service
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +99,26 @@ async def whatsapp_webhook(
     db: AsyncSession = Depends(get_db_no_tenant),
     x_hub_signature_256: Annotated[str, Header(alias="X-Hub-Signature-256")] = "",
 ) -> Response:
-    """Recibe eventos de mensajería de Meta. Siempre responde HTTP 200."""
+    """Recibe eventos de mensajería de Meta. Siempre responde HTTP 200 salvo misconfig prod."""
     body = await request.body()
     settings = get_settings()
-    app_secret = settings.whatsapp_app_secret.get_secret_value()
+    app_secret = settings.whatsapp_app_secret.get_secret_value().strip()
 
-    # Verificar firma solo si el secreto está configurado (dev sin secreto → skip).
-    if app_secret and not _verify_signature(body, x_hub_signature_256, app_secret):
-        logger.warning("whatsapp.webhook.invalid_signature")
-        return Response(status_code=200)  # No exponer el fallo a Meta
+    if app_secret:
+        if not _verify_signature(body, x_hub_signature_256, app_secret):
+            logger.warning("whatsapp.webhook.invalid_signature")
+            return Response(status_code=200)  # No exponer el fallo a Meta
+    elif settings.allows_unsigned_webhooks:
+        logger.warning(
+            "whatsapp.webhook.unsigned_allowed",
+            extra={"app_env": settings.app_env},
+        )
+    else:
+        logger.critical(
+            "whatsapp.webhook.no_app_secret",
+            extra={"app_env": settings.app_env},
+        )
+        return Response(status_code=503)
 
     try:
         payload: dict[str, Any] = json.loads(body)
@@ -119,11 +130,7 @@ async def whatsapp_webhook(
     if not phone_number_id or not from_number or not text:
         return Response(status_code=200)  # Status update u otro evento — ignorar
 
-    # Lookup del tenant por phone_number_id. Importación diferida: channel_integration_service
-    # se implementa en Paso 21 C; el ImportError permite que la app arranque antes de eso.
     try:
-        from app.services import channel_integration_service
-
         integration = await channel_integration_service.get_integration_by_phone_number_id(
             db, phone_number_id
         )
@@ -136,17 +143,11 @@ async def whatsapp_webhook(
 
         tenant_id = str(integration.tenant_id)
         integration_id = str(integration.id)
-    except ImportError:
-        logger.warning("whatsapp.webhook.channel_service_not_available")
-        return Response(status_code=200)
     except Exception:
         logger.exception("whatsapp.webhook.lookup_failed")
         return Response(status_code=200)
 
-    # Encolar job ARQ. Importación diferida: enqueue_channel_message se añade en Paso 21 E.5.
     try:
-        from app.jobs.queue import enqueue_channel_message
-
         await enqueue_channel_message(
             tenant_id=tenant_id,
             channel="whatsapp",
@@ -154,8 +155,6 @@ async def whatsapp_webhook(
             message_text=text,
             integration_id=integration_id,
         )
-    except ImportError:
-        logger.warning("whatsapp.webhook.queue_not_available")
     except Exception:
         logger.exception("whatsapp.webhook.enqueue_failed")
 

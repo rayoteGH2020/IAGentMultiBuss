@@ -6,9 +6,11 @@ from app.models import DocTypeCode
 from app.services.document_query_service import DOC_TYPE_HANDLERS, _require_handler
 
 
-def test_doc_type_handlers_include_factura_and_ticket() -> None:
+def test_doc_type_handlers_include_all_module_one_types() -> None:
     assert DocTypeCode.factura.value in DOC_TYPE_HANDLERS
     assert DocTypeCode.ticket.value in DOC_TYPE_HANDLERS
+    assert DocTypeCode.contrato.value in DOC_TYPE_HANDLERS
+    assert DocTypeCode.seguro.value in DOC_TYPE_HANDLERS
 
 
 def test_require_handler_unknown_code_raises_validation_error() -> None:
@@ -18,6 +20,6 @@ def test_require_handler_unknown_code_raises_validation_error() -> None:
 
 def test_require_handler_includes_error_details() -> None:
     with pytest.raises(ValidationError) as exc_info:
-        _require_handler("contrato")
+        _require_handler("albaran")
     assert exc_info.value.details.get("error") == "document_type_not_queryable"
     assert exc_info.value.details.get("hint")

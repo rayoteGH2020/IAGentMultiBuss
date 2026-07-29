@@ -12,22 +12,21 @@ cada bot de Telegram apunta a una URL única por integración.
 from __future__ import annotations
 
 import json
-import logging
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
+from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, Header, Request, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.core.crypto import decrypt_token
 from app.core.telegram_client import verify_webhook_secret
 from app.deps import get_db_no_tenant
 from app.jobs.queue import enqueue_channel_message
 from app.services import channel_integration_service
 
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks/telegram", tags=["webhooks-telegram"])
 
@@ -84,23 +83,34 @@ async def telegram_webhook(
         if integration is None or integration.status != "active":
             logger.warning(
                 "telegram.webhook.unknown_integration",
-                extra={"integration_id": str(integration_id)},
+                integration_id=str(integration_id),
             )
             return Response(status_code=200)
 
         # Verificar webhook secret (X-Telegram-Bot-Api-Secret-Token)
+        settings = get_settings()
         if integration.webhook_secret_enc:
-            from app.core.crypto import decrypt_token
-            from app.config import get_settings
-
-            enc_key = get_settings().encryption_key.get_secret_value()
+            enc_key = settings.encryption_key.get_secret_value()
             expected_secret = decrypt_token(integration.webhook_secret_enc, enc_key)
             if not verify_webhook_secret(x_telegram_bot_api_secret_token, expected_secret):
                 logger.warning(
                     "telegram.webhook.invalid_secret",
-                    extra={"integration_id": str(integration_id)},
+                    integration_id=str(integration_id),
                 )
                 return Response(status_code=200)  # No exponer el fallo a Telegram
+        elif settings.allows_unsigned_webhooks:
+            logger.warning(
+                "telegram.webhook.unsigned_allowed",
+                integration_id=str(integration_id),
+                app_env=settings.app_env,
+            )
+        else:
+            logger.critical(
+                "telegram.webhook.no_webhook_secret",
+                integration_id=str(integration_id),
+                app_env=settings.app_env,
+            )
+            return Response(status_code=200)
 
         tenant_id = str(integration.tenant_id)
         integration_id_str = str(integration_id)

@@ -1,8 +1,8 @@
-Transcribe literally and exactly what is said in the audio, in the original language spoken.
+Transcribe literal y exactamente lo que se dice en el audio, en el idioma original en el que se habla.
 
-Rules:
-- Do not interpret, summarize, or paraphrase.
-- Do not add punctuation beyond what is naturally implied by the speech.
-- Do not translate.
-- If the audio is inaudible or empty, return an empty string.
-- Return only the transcription text, with no preamble or explanation.
+Normas:
+- No interpretes, resumas ni parafrases.
+- No añadas signos de puntuación más allá de los que se deduzcan naturalmente del discurso.
+- No traduzcas.
+- Si el audio es inaudible o está vacío, devuelve una cadena vacía.
+- Devuelve únicamente el texto de la transcripción, sin preámbulos ni explicaciones.

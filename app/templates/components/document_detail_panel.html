@@ -1,6 +1,13 @@
+{# Contenedor del detalle expandido bajo cada fila del panel de documentos. #}
+<div class="document-detail">
 {% if document.kind == "invoice" and document.invoice %}
   {% set invoice = document.invoice %}
-  {% include "components/invoice_lines_panel.html" %}
+  {% include "components/invoice_detail_panel.html" %}
 {% elif document.kind == "ticket" and document.ticket %}
   {% include "components/ticket_details_panel.html" %}
+{% elif document.kind == "contract" and document.contract %}
+  {% include "components/contract_details_panel.html" %}
+{% elif document.kind == "insurance" and document.insurance %}
+  {% include "components/insurance_details_panel.html" %}
 {% endif %}
+</div>

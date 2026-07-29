@@ -46,7 +46,10 @@ dependencies = [
     "svix>=1.42.0",
     "jsonref>=1.1.0",
     "pypdf>=5.1.0",
-    "python-magic-bin>=0.4.14",
+    # Pillow: inspección y reescalado de imágenes con límites de píxeles
+    # (app/core/media_limits.py). Dependencia directa, no transitiva.
+    "pillow>=11.0.0",
+    "python-magic-bin>=0.4.14; sys_platform == 'win32' or sys_platform == 'darwin'",
 ]
 
 [dependency-groups]
@@ -104,6 +107,8 @@ ignore = [
 "app/models/invoice.py" = ["TCH003"]
 "app/models/doc_type.py" = ["TCH003"]
 "app/models/ticket.py" = ["TCH003"]
+"app/models/contract.py" = ["TCH003"]
+"app/models/insurance.py" = ["TCH003"]
 "app/models/llm_call.py" = ["TCH003"]
 "app/models/audit_log.py" = ["TCH003"]
 "app/models/chat.py" = ["TCH003"]
@@ -111,17 +116,37 @@ ignore = [
 "app/models/channel_integration.py" = ["TCH003"]
 "app/models/channel_response_cache.py" = ["TCH003"]
 "app/models/conversation.py" = ["TCH003"]
+"app/models/appointment.py" = ["TCH003"]
+"app/models/business_hour.py" = ["TCH003"]
+"app/models/professional.py" = ["TCH003"]
+"app/models/professional_specialty.py" = ["TCH003"]
+"app/models/professional_working_hour.py" = ["TCH003"]
+"app/models/schedule_exception.py" = ["TCH003"]
+"app/models/scheduling_service.py" = ["TCH003"]
 "app/services/channel_integration_service.py" = ["TCH"]
+"app/services/document_delete_service.py" = ["TCH"]
 "app/routes/web/admin_channel_integrations.py" = ["TCH"]
+"app/routes/web/appointments.py" = ["TCH"]
+"app/routes/web/settings_scheduling.py" = ["TCH"]
+"app/core/scheduling_ui.py" = ["TCH003"]
+"app/routes/api/webhooks_telegram.py" = ["TCH", "I001"]
+"app/routes/api/webhooks_whatsapp.py" = ["TCH", "I001"]
 "app/services/channel_chat_service.py" = ["TCH"]
 "app/jobs/channel_jobs.py" = ["TCH"]
 "app/schemas/channel.py" = ["TCH"]
 "app/schemas/invoice.py" = ["TCH003"]
 "app/schemas/ticket.py" = ["TCH003"]
 "app/schemas/chat.py" = ["TCH"]
+"app/schemas/chat_trace.py" = ["TCH"]
+"app/routes/web/admin/chat_traces.py" = ["TCH"]
+"app/routes/web/admin/chat_usage.py" = ["TCH"]
+"app/services/chat_trace_service.py" = ["TCH"]
+"app/services/chat_usage_service.py" = ["TCH"]
 "app/schemas/calendar.py" = ["TCH", "S105"]
 "app/schemas/document_query.py" = ["TCH"]
 "app/schemas/pagination.py" = ["TCH003"]
+"app/schemas/membership.py" = ["TCH003"]
+"app/schemas/scheduling.py" = ["TCH003"]
 "app/schemas/document_panel.py" = ["TCH003"]
 "app/llm/classification.py" = ["TCH003"]
 "app/services/ticket_service.py" = ["TCH003"]
@@ -130,9 +155,13 @@ ignore = [
 "app/services/knowledge_search_service.py" = ["S608"]
 "app/evals/seed_knowledge_eval.py" = ["S608"]
 "app/models/usage_meter.py" = ["TCH003"]
-"app/routes/api/webhooks_whatsapp.py" = ["I001"]
-"app/routes/api/webhooks_telegram.py" = ["I001"]
 "app/services/document_query_service.py" = ["TCH"]
+"app/services/membership_service.py" = ["TCH"]
+"app/services/business_hours_service.py" = ["TCH"]
+"app/services/service_catalog_service.py" = ["TCH"]
+"app/services/professional_service.py" = ["TCH"]
+"app/services/appointment_slot_service.py" = ["TCH"]
+"app/services/internal_appointment_service.py" = ["TCH"]
 "app/services/audit_service.py" = ["TCH"]
 "app/services/document_classification.py" = ["TCH"]
 "app/services/document_upload_service.py" = ["TCH"]
@@ -152,6 +181,11 @@ ignore = [
 "app/routes/web/admin/dashboard.py" = ["TCH"]
 "app/routes/web/admin/organizations.py" = ["TCH"]
 "app/routes/web/admin/users.py" = ["TCH"]
+"app/routes/web/admin/documents.py" = ["TCH"]
+"app/routes/web/admin/usage.py" = ["TCH"]
+"app/services/document_override_service.py" = ["TCH"]
+"app/services/usage_service.py" = ["TCH003"]
+"app/models/processing_charge.py" = ["TCH003"]
 "app/core/clerk_client.py" = ["TCH"]
 "app/routes/web/auth.py" = ["TCH"]
 
@@ -189,6 +223,7 @@ markers = [
     "integration: requiere infra (postgres, redis)",
     "e2e: requiere navegador",
     "slow: tarda más de 1s",
+    "real_llm: llamada a API LLM o storage real (excluido en CI principal)",
 ]
 
 [tool.pydantic-mypy]

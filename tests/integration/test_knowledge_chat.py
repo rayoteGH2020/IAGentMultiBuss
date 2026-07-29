@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.db import set_tenant_context
 from app.llm.chat_loop import ToolLoopResult, TurnMessageRecord
 from app.llm.chat_prompts import PROMPT_DOCUMENTS, PROMPT_UNIFIED, resolve_chat_prompt_version
@@ -291,7 +291,12 @@ async def test_chat_citations_below_threshold_excluded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Chunks con score bajo el umbral no aparecen en ``chat_messages.citations``."""
-    settings = get_settings()
+    settings = Settings(
+        app_secret_key="test-secret",  # pragma: allowlist secret
+        database_url="postgresql+asyncpg://x@localhost/db",  # pragma: allowlist secret
+        redis_url="redis://localhost:6379/0",
+        knowledge_chat_min_score_threshold=0.35,
+    )
     threshold = settings.knowledge_chat_min_score_threshold
     high_id = uuid4()
     low_id = uuid4()

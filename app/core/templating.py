@@ -12,8 +12,14 @@ from app.core.calendar_datetime import (
     google_iso_to_local_input,
 )
 from app.core.chat_content import chat_content_plain
+from app.core.csrf import generate_csrf_token
+from app.core.currency_display import currency_symbol
 from app.core.datetime_display import local_datetime
 from app.core.document_processing_errors import format_user_processing_error
+from app.core.permissions import membership_can_appointment
+from app.core.scheduling_granularity import slot_minute_options
+from app.core.scheduling_ui import format_range_label
+from app.schemas.scheduling import sanitize_professional_color
 
 # Instancia a nivel de módulo: Jinja2 cachea las plantillas compiladas en
 # memoria. Crear una nueva instancia por request recompilaria las plantillas
@@ -22,6 +28,7 @@ from app.core.document_processing_errors import format_user_processing_error
 # donde se lanza uvicorn.
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["local_datetime"] = local_datetime
+templates.env.filters["currency_symbol"] = currency_symbol
 templates.env.filters["calendar_event_time"] = format_calendar_event_time
 templates.env.filters["calendar_local_input"] = google_iso_to_local_input
 templates.env.filters["calendar_event_date_chip"] = calendar_event_date_chip
@@ -35,6 +42,12 @@ def _user_processing_error_filter(raw_error: str | None, filename: str | None = 
 
 templates.env.filters["user_processing_error"] = _user_processing_error_filter
 templates.env.filters["chat_content_plain"] = chat_content_plain
+templates.env.filters["scheduling_range_label"] = lambda view, start, end: format_range_label(
+    view, start, end
+)
+templates.env.filters["professional_color"] = sanitize_professional_color
+templates.env.filters["slot_minute_options"] = slot_minute_options
+templates.env.globals["membership_can_appointment"] = membership_can_appointment
 
 
 def _inject_auth_context(request: Request) -> dict[str, Any]:
@@ -42,10 +55,16 @@ def _inject_auth_context(request: Request) -> dict[str, Any]:
     # request.state es un objeto dinámico (SimpleNamespace); acceder a un
     # atributo no existente lanzaría AttributeError. En rutas sin auth
     # (health, assets estáticos) estos atributos pueden no estar seteados.
+    user = getattr(request.state, "user", None)
+    tenant = getattr(request.state, "tenant", None)
+    csrf_token = ""
+    if user is not None and tenant is not None:
+        csrf_token = generate_csrf_token(user_id=user.id, tenant_id=tenant.id)
     return {
-        "user": getattr(request.state, "user", None),
-        "tenant": getattr(request.state, "tenant", None),
+        "user": user,
+        "tenant": tenant,
         "membership": getattr(request.state, "membership", None),
+        "csrf_token": csrf_token,
     }
 
 

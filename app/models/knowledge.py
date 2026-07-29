@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -18,33 +17,17 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.schemas.knowledge import KnowledgeDocumentKind, KnowledgeDocumentStatus
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-
-class KnowledgeDocumentStatus(enum.StrEnum):
-    pending = "pending"  # subido, job encolado, sin procesar aún
-    indexing = "indexing"  # worker extrayendo, troceando y embebiendo
-    ready = "ready"  # indexación completada; chunks disponibles para búsqueda
-    failed = "failed"  # error; error_message contiene el detalle visible en UI
-
-
-class KnowledgeDocumentKind(enum.StrEnum):
-    contract = "contract"  # Contrato (marco, SLA…)
-    terms = "terms"  # Condiciones generales, privacidad
-    schedule = "schedule"  # Horarios comerciales, turnos
-    services = "services"  # Catálogo de servicios, tarifas
-    policy = "policy"  # Políticas internas de la empresa
-    faq = "faq"  # Preguntas frecuentes
-    manual = "manual"  # Manuales y procedimientos
-    other = "other"  # Resto de documentos
 
 
 class KnowledgeDocument(Base):
@@ -72,8 +55,14 @@ class KnowledgeDocument(Base):
         Enum(KnowledgeDocumentStatus, name="knowledge_document_status", native_enum=True),
         nullable=False,
         default=KnowledgeDocumentStatus.pending,
+        server_default=text("'pending'::knowledge_document_status"),
     )
-    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    chunk_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_by: Mapped[UUID | None] = mapped_column(
@@ -148,7 +137,11 @@ class KnowledgeChunk(Base):
     )
     # Renombrado a chunk_metadata en Python para no colisionar con Base.metadata de SQLAlchemy.
     chunk_metadata: Mapped[dict[str, Any] | None] = mapped_column(
-        "metadata", JSONB, nullable=True, default=dict
+        "metadata",
+        JSONB,
+        nullable=True,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
     )
     # position preserva el orden de los chunks dentro del documento original.
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -165,4 +158,23 @@ class KnowledgeChunk(Base):
             "document_id",
             "position",
         ),
+        Index(
+            "knowledge_chunks_embedding_hnsw_idx",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index(
+            "knowledge_chunks_search_vector_gin_idx",
+            "search_vector",
+            postgresql_using="gin",
+        ),
     )
+
+
+__all__ = [
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "KnowledgeDocumentKind",
+    "KnowledgeDocumentStatus",
+]

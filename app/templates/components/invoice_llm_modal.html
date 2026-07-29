@@ -1,7 +1,8 @@
 {% if invoice.llm_call %}
   {% set call = invoice.llm_call %}
   {% set record_id = invoice.id %}
-  {% set dialog_title = "Extracción de factura" %}
+  {% set dialog_title = "Extracción de: factura" %}
   {% set source_filename = invoice.source_filename %}
+  {% set document_kind = "invoice" %}
   {% include "components/llm_call_modal.html" %}
 {% endif %}

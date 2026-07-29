@@ -74,6 +74,9 @@ def test_chat_get_page(
     assert "chat-sidebar" in r.text
     assert "Consulta documental" in r.text
     assert "base de conocimiento" in r.text
+    assert 'hx-disinherit="*"' in r.text
+    assert 'id="chat-app"' in r.text
+    assert 'id="app-frame"' in r.text
 
 
 def test_chat_threads_htmx_fragment(

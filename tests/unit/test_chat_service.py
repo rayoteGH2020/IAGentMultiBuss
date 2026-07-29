@@ -68,6 +68,77 @@ async def test_get_thread_forbidden_wrong_user(
 
 
 @pytest.mark.asyncio
+async def test_hide_thread_soft_hides_without_deleting(
+    chat_schema_ready: None,
+    db_session,
+) -> None:
+    from app.core.db import set_tenant_context
+    from app.core.errors import NotFoundError
+    from app.models import ChatMessage, ChatMessageRole, Tenant
+    from app.schemas.chat import ChatThreadListFilters
+    from sqlalchemy import func, select
+
+    tenant = Tenant(name="Hide thread tenant")
+    db_session.add(tenant)
+    user = User(email=f"hide-{uuid4().hex[:8]}@test.local", name="Hide")
+    db_session.add(user)
+    await db_session.flush()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    thread = ChatThread(tenant_id=tenant.id, user_id=user.id, title="Visible")
+    db_session.add(thread)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(
+            thread_id=thread.id,
+            tenant_id=tenant.id,
+            role=ChatMessageRole.user,
+            content="hola",
+        )
+    )
+    await db_session.flush()
+
+    await chat_service.hide_thread(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        thread_id=thread.id,
+    )
+
+    page = await chat_service.list_threads(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        filters=ChatThreadListFilters(),
+    )
+    assert page.total == 0
+    assert page.items == []
+
+    with pytest.raises(NotFoundError):
+        await chat_service.get_thread(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            thread_id=thread.id,
+        )
+
+    # Filas conservadas en BD
+    still = await db_session.get(ChatThread, thread.id)
+    assert still is not None
+    assert still.is_hidden is True
+    msg_count = int(
+        (
+            await db_session.execute(
+                select(func.count())
+                .select_from(ChatMessage)
+                .where(ChatMessage.thread_id == thread.id)
+            )
+        ).scalar_one()
+    )
+    assert msg_count == 1
+
+
+@pytest.mark.asyncio
 async def test_post_user_message_persists(
     chat_schema_ready: None,
     audit_schema_ready: None,

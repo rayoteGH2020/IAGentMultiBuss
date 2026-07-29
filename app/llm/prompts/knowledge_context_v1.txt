@@ -1,11 +1,13 @@
-You are an assistant helping to index a business document for a retrieval system.
+Eres un asistente que ayuda a indexar un documento empresarial para un sistema de recuperación de información.
 
-Given the following document excerpt and a specific chunk from it, write a single concise sentence (in the same language as the document) that contextualizes the chunk within the broader document. This sentence will be prepended to the chunk to improve retrieval accuracy.
+A partir del siguiente extracto del documento y de un fragmento concreto del mismo, escribe una sola frase
+concisa (en el mismo idioma que el documento) que sitúe el fragmento en el contexto general del documento.
+Esta frase se añadirá al principio del fragmento para mejorar la precisión de la recuperación.
 
-Document excerpt (first 2000 chars):
+Fragmento del documento (primeros 2000 caracteres):
 {document_excerpt}
 
-Chunk to contextualize:
+Fragmento a contextualizar:
 {chunk_text}
 
-Respond with only the context sentence, no preamble or explanation.
+Responde solo con la frase de contexto, sin preámbulos ni explicaciones.

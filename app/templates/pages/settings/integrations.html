@@ -40,10 +40,6 @@
     <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
       No se pudo completar la conexión con Google. Inténtalo de nuevo.
     </p>
-  {% elif error_code == "encryption_key" %}
-    <p class="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-4 py-3" role="alert">
-      Falta configurar <code class="text-xs font-mono">ENCRYPTION_KEY</code> en Infisical para guardar los tokens de forma segura.
-    </p>
   {% elif error_code == "oauth_not_configured" %}
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3" role="alert">
       Google OAuth no está configurado en el servidor.
