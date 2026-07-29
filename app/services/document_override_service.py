@@ -29,9 +29,30 @@ from app.core.document_processing_errors import is_retryable
 from app.core.errors import NotFoundError, ValidationError
 from app.core.media_limits import PDF_MIME, MediaLimitExceeded, pdf_page_count
 from app.core.storage import get_storage
-from app.jobs.queue import enqueue_invoice_processing, enqueue_ticket_processing
-from app.models import Invoice, InvoiceStatus, Tenant, Ticket, TicketStatus
-from app.services import invoice_service, processing_charge_service, ticket_service
+from app.jobs.queue import (
+    enqueue_contract_processing,
+    enqueue_insurance_processing,
+    enqueue_invoice_processing,
+    enqueue_ticket_processing,
+)
+from app.models import (
+    Contract,
+    ContractStatus,
+    Insurance,
+    InsuranceStatus,
+    Invoice,
+    InvoiceStatus,
+    Tenant,
+    Ticket,
+    TicketStatus,
+)
+from app.services import (
+    contract_service,
+    insurance_service,
+    invoice_service,
+    processing_charge_service,
+    ticket_service,
+)
 from app.services.processing_charge_service import ProcessingEstimate
 
 if TYPE_CHECKING:
@@ -39,7 +60,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-DocumentKindLiteral = Literal["invoice", "ticket"]
+DocumentKindLiteral = Literal["invoice", "ticket", "contract", "insurance"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +122,20 @@ async def list_rejected_documents(db: AsyncSession, *, limit: int = 100) -> list
         .order_by(Ticket.updated_at.desc())
         .limit(limit)
     )
+    contract_stmt = (
+        select(Contract, Tenant.name)
+        .join(Tenant, Tenant.id == Contract.tenant_id)
+        .where(Contract.status == ContractStatus.failed, Contract.error_code.is_not(None))
+        .order_by(Contract.updated_at.desc())
+        .limit(limit)
+    )
+    insurance_stmt = (
+        select(Insurance, Tenant.name)
+        .join(Tenant, Tenant.id == Insurance.tenant_id)
+        .where(Insurance.status == InsuranceStatus.failed, Insurance.error_code.is_not(None))
+        .order_by(Insurance.updated_at.desc())
+        .limit(limit)
+    )
 
     rows: list[RejectedDocument] = [
         _row_from_invoice(invoice, tenant_name)
@@ -111,6 +146,16 @@ async def list_rejected_documents(db: AsyncSession, *, limit: int = 100) -> list
         _row_from_ticket(ticket, tenant_name)
         for ticket, tenant_name in (await db.execute(ticket_stmt)).all()
         if not is_retryable(ticket.error_code)
+    )
+    rows.extend(
+        _row_from_contract(contract, tenant_name)
+        for contract, tenant_name in (await db.execute(contract_stmt)).all()
+        if not is_retryable(contract.error_code)
+    )
+    rows.extend(
+        _row_from_insurance(insurance, tenant_name)
+        for insurance, tenant_name in (await db.execute(insurance_stmt)).all()
+        if not is_retryable(insurance.error_code)
     )
     rows.sort(key=lambda row: row.updated_at, reverse=True)
     return rows[:limit]
@@ -136,15 +181,37 @@ async def get_rejected_document(
             raise NotFoundError("Documento no encontrado.")
         return _row_from_invoice(row[0], row[1])
 
-    stmt_ticket = (
-        select(Ticket, Tenant.name)
-        .join(Tenant, Tenant.id == Ticket.tenant_id)
-        .where(Ticket.id == document_id)
+    if kind == "ticket":
+        stmt_ticket = (
+            select(Ticket, Tenant.name)
+            .join(Tenant, Tenant.id == Ticket.tenant_id)
+            .where(Ticket.id == document_id)
+        )
+        row_ticket = (await db.execute(stmt_ticket)).first()
+        if row_ticket is None:
+            raise NotFoundError("Documento no encontrado.")
+        return _row_from_ticket(row_ticket[0], row_ticket[1])
+
+    if kind == "contract":
+        stmt_contract = (
+            select(Contract, Tenant.name)
+            .join(Tenant, Tenant.id == Contract.tenant_id)
+            .where(Contract.id == document_id)
+        )
+        row_contract = (await db.execute(stmt_contract)).first()
+        if row_contract is None:
+            raise NotFoundError("Documento no encontrado.")
+        return _row_from_contract(row_contract[0], row_contract[1])
+
+    stmt_insurance = (
+        select(Insurance, Tenant.name)
+        .join(Tenant, Tenant.id == Insurance.tenant_id)
+        .where(Insurance.id == document_id)
     )
-    row_ticket = (await db.execute(stmt_ticket)).first()
-    if row_ticket is None:
+    row_insurance = (await db.execute(stmt_insurance)).first()
+    if row_insurance is None:
         raise NotFoundError("Documento no encontrado.")
-    return _row_from_ticket(row_ticket[0], row_ticket[1])
+    return _row_from_insurance(row_insurance[0], row_insurance[1])
 
 
 async def build_review(
@@ -246,8 +313,22 @@ async def authorize_processing(
             max_pdf_pages=max_pages,
             replace_existing=True,
         )
-    else:
+    elif kind == "ticket":
         await enqueue_ticket_processing(
+            document_id,
+            document.tenant_id,
+            max_pdf_pages=max_pages,
+            replace_existing=True,
+        )
+    elif kind == "contract":
+        await enqueue_contract_processing(
+            document_id,
+            document.tenant_id,
+            max_pdf_pages=max_pages,
+            replace_existing=True,
+        )
+    else:
+        await enqueue_insurance_processing(
             document_id,
             document.tenant_id,
             max_pdf_pages=max_pages,
@@ -279,12 +360,24 @@ async def _reset_for_processing(
         invoice.error_code = None
         invoice.error_message = None
         invoice.dismissed_at = None
-    else:
+    elif kind == "ticket":
         ticket = await ticket_service.get_ticket(db, document.tenant_id, document.id)
         ticket.status = TicketStatus.processing
         ticket.error_code = None
         ticket.error_message = None
         ticket.dismissed_at = None
+    elif kind == "contract":
+        contract = await contract_service.get_contract(db, document.tenant_id, document.id)
+        contract.status = ContractStatus.processing
+        contract.error_code = None
+        contract.error_message = None
+        contract.dismissed_at = None
+    else:
+        insurance = await insurance_service.get_insurance(db, document.tenant_id, document.id)
+        insurance.status = InsuranceStatus.processing
+        insurance.error_code = None
+        insurance.error_message = None
+        insurance.dismissed_at = None
     await db.flush()
 
 
@@ -335,6 +428,38 @@ def _row_from_ticket(ticket: Ticket, tenant_name: str) -> RejectedDocument:
         error_message=ticket.error_message,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
+    )
+
+
+def _row_from_contract(contract: Contract, tenant_name: str) -> RejectedDocument:
+    return RejectedDocument(
+        kind="contract",
+        id=contract.id,
+        tenant_id=contract.tenant_id,
+        tenant_name=tenant_name,
+        source_filename=contract.source_filename,
+        source_mime=contract.source_mime,
+        source_file_key=contract.source_file_key,
+        error_code=contract.error_code,
+        error_message=contract.error_message,
+        created_at=contract.created_at,
+        updated_at=contract.updated_at,
+    )
+
+
+def _row_from_insurance(insurance: Insurance, tenant_name: str) -> RejectedDocument:
+    return RejectedDocument(
+        kind="insurance",
+        id=insurance.id,
+        tenant_id=insurance.tenant_id,
+        tenant_name=tenant_name,
+        source_filename=insurance.source_filename,
+        source_mime=insurance.source_mime,
+        source_file_key=insurance.source_file_key,
+        error_code=insurance.error_code,
+        error_message=insurance.error_message,
+        created_at=insurance.created_at,
+        updated_at=insurance.updated_at,
     )
 
 

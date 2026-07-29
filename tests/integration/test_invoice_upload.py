@@ -207,7 +207,7 @@ async def test_upload_invoice_creates_row(
             response = await client.post(
                 "/documents/upload",
                 files=[("files", ("ejemplo.pdf", BytesIO(_PDF_BYTES), "application/pdf"))],
-                data={"doc_type_code": DocTypeCode.factura.value},
+                data={"doc_type_codes": DocTypeCode.factura.value},
                 headers=_csrf_headers(uid, tid, bearer="fake-jwt-upload"),
             )
         assert response.status_code == 200
@@ -248,7 +248,7 @@ async def test_upload_invoice_rejects_invalid_type(
                 files=[
                     ("files", ("evil.txt", BytesIO(b"This is plain text."), "text/plain")),
                 ],
-                data={"doc_type_code": DocTypeCode.factura.value},
+                data={"doc_type_codes": DocTypeCode.factura.value},
                 headers=_csrf_headers(uid, tid, bearer="fake-jwt-bad-upload"),
             )
         assert response.status_code == 200
@@ -295,7 +295,7 @@ async def test_upload_rejects_pdf_over_page_limit_without_enqueueing(
             response = await client.post(
                 "/documents/upload",
                 files=[("files", ("anual.pdf", BytesIO(big_pdf), "application/pdf"))],
-                data={"doc_type_code": DocTypeCode.factura.value},
+                data={"doc_type_codes": DocTypeCode.factura.value},
                 headers=_csrf_headers(uid, tid, bearer="fake-jwt-pages"),
             )
         assert response.status_code == 200
@@ -335,7 +335,7 @@ async def test_upload_two_sequential_htmx_requests(
     )
 
     headers = _csrf_headers(uid, tid, bearer="fake-jwt-seq")
-    payload = {"doc_type_code": DocTypeCode.factura.value}
+    payload = {"doc_type_codes": DocTypeCode.factura.value}
 
     try:
         # Cada request usa su propio AsyncClient (y por tanto su propio ciclo de
@@ -385,7 +385,7 @@ async def test_upload_without_files_field_returns_html_panel(
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
-                data={"doc_type_code": DocTypeCode.factura.value},
+                data={"doc_type_codes": DocTypeCode.factura.value},
                 headers=headers,
             )
         assert response.status_code == 200

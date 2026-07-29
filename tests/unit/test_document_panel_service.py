@@ -6,7 +6,18 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from app.models import DocType, DocTypeCode, Invoice, InvoiceStatus, Ticket, TicketStatus
+from app.models import (
+    Contract,
+    ContractStatus,
+    DocType,
+    DocTypeCode,
+    Insurance,
+    InsuranceStatus,
+    Invoice,
+    InvoiceStatus,
+    Ticket,
+    TicketStatus,
+)
 from app.schemas.document_panel import PanelListParams
 from app.services import document_panel_service
 
@@ -47,6 +58,40 @@ def _ticket() -> Ticket:
     )
 
 
+def _contract() -> Contract:
+    now = datetime.now(tz=UTC)
+    return Contract(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        doc_type_id=uuid4(),
+        status=ContractStatus.ready,
+        titulo="Servicio limpieza",
+        parte_contraria="Limpiezas SA",
+        cif_nif="B22222222",
+        fecha_inicio=date(2025, 4, 1),
+        importe=Decimal("1200.00"),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _insurance() -> Insurance:
+    now = datetime.now(tz=UTC)
+    return Insurance(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        doc_type_id=uuid4(),
+        status=InsuranceStatus.ready,
+        aseguradora="Mapfre",
+        numero_poliza="POL-1",
+        tomador="Pepe SL",
+        fecha_inicio=date(2025, 5, 1),
+        prima=Decimal("350.00"),
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def test_row_from_ticket_maps_comercio_to_proveedor() -> None:
     ticket = _ticket()
 
@@ -61,6 +106,38 @@ def test_row_from_ticket_maps_comercio_to_proveedor() -> None:
     assert row.doc_type_code == DocTypeCode.ticket.value
 
     assert row.status_poll_url.endswith(f"/jobs/ticket/{ticket.id}/status")
+
+
+def test_row_from_contract_maps_panel_columns() -> None:
+    contract = _contract()
+    row = document_panel_service.row_from_contract(contract)
+    assert row.kind == "contract"
+    assert row.proveedor == "Limpiezas SA"
+    assert row.cif_nif == "B22222222"
+    assert row.total == Decimal("1200.00")
+    assert row.fecha == date(2025, 4, 1)
+    assert row.status_poll_url.endswith(f"/jobs/contract/{contract.id}/status")
+
+
+def test_row_from_insurance_maps_panel_columns() -> None:
+    insurance = _insurance()
+    row = document_panel_service.row_from_insurance(insurance)
+    assert row.kind == "insurance"
+    assert row.proveedor == "Mapfre"
+    assert row.cif_nif == "POL-1"
+    assert row.total == Decimal("350.00")
+    assert row.status_poll_url.endswith(f"/jobs/insurance/{insurance.id}/status")
+
+
+def test_merge_panel_rows_includes_contracts_and_insurances() -> None:
+    merged = document_panel_service.merge_panel_rows(
+        [_invoice()],
+        [_ticket()],
+        contracts=[_contract()],
+        insurances=[_insurance()],
+    )
+    kinds = {row.kind for row in merged}
+    assert kinds == {"invoice", "ticket", "contract", "insurance"}
 
 
 def test_apply_list_params_sorts_newest_first_by_default() -> None:
@@ -153,3 +230,29 @@ def test_panel_list_params_toggle_direction() -> None:
     assert params.next_dir_for("fecha") == "asc"
 
     assert params.next_dir_for("total") == "asc"
+
+
+def test_partition_just_uploaded_pins_batch_first() -> None:
+    inv = _invoice()
+    tkt = _ticket()
+    merged = document_panel_service.merge_panel_rows([inv], [tkt])
+    ordered = document_panel_service.apply_list_params(merged, PanelListParams())
+    just_ids = [str(tkt.id)]
+
+    just, others = document_panel_service.partition_just_uploaded(ordered, just_ids)
+
+    assert len(just) == 1
+    assert just[0].id == tkt.id
+    assert len(others) == 1
+    assert others[0].id == inv.id
+
+
+def test_partition_just_uploaded_empty_ids_keeps_all_in_others() -> None:
+    inv = _invoice()
+    rows = document_panel_service.merge_panel_rows([inv], [])
+
+    just, others = document_panel_service.partition_just_uploaded(rows, [])
+
+    assert just == []
+    assert len(others) == 1
+    assert others[0].id == inv.id

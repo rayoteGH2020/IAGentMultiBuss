@@ -12,18 +12,22 @@
   hx-target="this">
   <tr id="document-{{ document.id }}">
     <td colspan="{{ col_count }}" class="text-sm">
-      <span class="inline-flex items-center gap-2">
-        <svg class="animate-spin h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <span class="inline-flex items-center gap-2 flex-wrap">
+        <svg class="animate-spin h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="10" stroke="currentColor"
                   stroke-width="3" class="opacity-25"></circle>
           <path d="M4 12a8 8 0 018-8" stroke="currentColor"
                 stroke-width="3" class="opacity-75"></path>
         </svg>
-        Procesando
+        <span class="font-medium text-slate-700">{{ document.doc_type_label }}</span>
         <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100">{{ document.status }}</span>
+        <span class="text-slate-500">Procesando</span>
         <span class="text-slate-400 truncate max-w-[18rem]"
               title="{{ document.source_filename or '' }}">
           — {{ document.source_filename or "—" }}
+        </span>
+        <span class="text-xs text-slate-400 whitespace-nowrap">
+          {{ document.created_at | local_datetime }}
         </span>
       </span>
     </td>
@@ -34,7 +38,7 @@
 <tbody
   id="document-group-{{ document.id }}"
   class="invoice-group is-failed{% if is_new %} is-new{% endif %}"
-  x-data="{ llmOpen: false }">
+  x-data="documentRowActions">
   <tr id="document-{{ document.id }}">
     <td class="text-sm text-red-800" colspan="{{ col_count }}">
       <div class="flex items-start justify-between gap-3">
@@ -58,7 +62,7 @@
           {% if document.llm_call %}
           <button
             type="button"
-            @click.stop="llmOpen = true"
+            @click.stop="openLlm()"
             class="btn-llm-euro shrink-0"
             title="Ver datos de la llamada LLM">
             <span class="sr-only">Ver llamada LLM</span>
@@ -104,6 +108,7 @@
         {% set record_id = document.id %}
         {% set dialog_title = document.dialog_title %}
         {% set source_filename = document.source_filename %}
+        {% set document_kind = document.kind %}
         {% include "components/llm_call_modal.html" %}
       {% endif %}
     </td>
@@ -114,7 +119,7 @@
 <tbody
   id="document-group-{{ document.id }}"
   class="invoice-group{% if is_new %} is-new{% endif %}"
-  x-data="{ linesOpen: false, llmOpen: false }">
+  x-data="documentRowActions">
   <tr id="document-{{ document.id }}">
     <td class="invoices-td--tipo">
       <span class="invoices-cell-inner" title="{{ document.doc_type_label }}">{{ document.doc_type_label }}</span>
@@ -164,7 +169,7 @@
         {% if document.llm_call %}
         <button
           type="button"
-          @click.stop="llmOpen = true"
+          @click.stop="openLlm()"
           class="btn-llm-euro"
           title="Ver datos de la llamada LLM">
           <span class="sr-only">Ver llamada LLM</span>
@@ -196,6 +201,7 @@
         {% set record_id = document.id %}
         {% set dialog_title = document.dialog_title %}
         {% set source_filename = document.source_filename %}
+        {% set document_kind = document.kind %}
         {% include "components/llm_call_modal.html" %}
       {% endif %}
     </td>

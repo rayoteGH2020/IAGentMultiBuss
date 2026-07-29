@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, get_db
 from app.services import (
+    contract_service,
     document_panel_service,
+    insurance_service,
     invoice_service,
     knowledge_document_service,
     ticket_service,
@@ -74,6 +76,60 @@ async def ticket_job_status_row(
     logger.debug(
         "jobs.ticket_status",
         ticket_id=str(ticket_id),
+        tenant_id=str(tenant.id),
+        status=document.status,
+    )
+    return render(
+        request,
+        full="components/document_row.html",
+        partial="components/document_row.html",
+        ctx={
+            "document": document,
+            "just_uploaded_ids": [],
+        },
+    )
+
+
+@router.get("/contract/{contract_id}/status")
+async def contract_job_status_row(
+    request: Request,
+    contract_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    contract = await contract_service.get_contract(db, tenant.id, contract_id)
+    document = document_panel_service.row_from_contract(contract)
+    logger.debug(
+        "jobs.contract_status",
+        contract_id=str(contract_id),
+        tenant_id=str(tenant.id),
+        status=document.status,
+    )
+    return render(
+        request,
+        full="components/document_row.html",
+        partial="components/document_row.html",
+        ctx={
+            "document": document,
+            "just_uploaded_ids": [],
+        },
+    )
+
+
+@router.get("/insurance/{insurance_id}/status")
+async def insurance_job_status_row(
+    request: Request,
+    insurance_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    insurance = await insurance_service.get_insurance(db, tenant.id, insurance_id)
+    document = document_panel_service.row_from_insurance(insurance)
+    logger.debug(
+        "jobs.insurance_status",
+        insurance_id=str(insurance_id),
         tenant_id=str(tenant.id),
         status=document.status,
     )

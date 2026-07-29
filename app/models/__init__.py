@@ -25,6 +25,7 @@ from app.models.channel_integration import (
 )
 from app.models.channel_response_cache import ChannelResponseCache
 from app.models.chat import ChatMessage, ChatMessageRole, ChatThread
+from app.models.contract import Contract, ContractStatus
 from app.models.conversation import ChannelMessage, Conversation
 from app.models.doc_type import DocType, DocTypeCode
 from app.models.document_processing_attempt import (
@@ -32,6 +33,7 @@ from app.models.document_processing_attempt import (
     DocumentProcessingAttempt,
     ProcessingAttemptStatus,
 )
+from app.models.insurance import Insurance, InsuranceStatus
 from app.models.invoice import Invoice, InvoiceLine, InvoiceStatus
 from app.models.knowledge import (
     KnowledgeChunk,
@@ -68,12 +70,16 @@ __all__ = [
     "ChatMessage",
     "ChatMessageRole",
     "ChatThread",
+    "Contract",
+    "ContractStatus",
     "Conversation",
     "DocType",
     "DocTypeCode",
     "DocumentKind",
     "DocumentProcessingAttempt",
     "IdMixin",
+    "Insurance",
+    "InsuranceStatus",
     "Invoice",
     "InvoiceLine",
     "InvoiceStatus",

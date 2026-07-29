@@ -1,7 +1,7 @@
 """Seed idempotente del catálogo global doc_types.
 
-Inserta factura/ticket si faltan. No modifica filas existentes ni reactiva
-tipos desactivados. Seguro de reejecutar.
+Inserta factura/ticket/contrato/seguro si faltan. No modifica filas existentes
+ni reactiva tipos desactivados. Seguro de reejecutar.
 
 Uso: infisical run -- uv run python scripts/seed_doc_types.py
 """

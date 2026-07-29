@@ -13,6 +13,7 @@ from app.core.calendar_datetime import (
 )
 from app.core.chat_content import chat_content_plain
 from app.core.csrf import generate_csrf_token
+from app.core.currency_display import currency_symbol
 from app.core.datetime_display import local_datetime
 from app.core.document_processing_errors import format_user_processing_error
 from app.core.permissions import membership_can_appointment
@@ -27,6 +28,7 @@ from app.schemas.scheduling import sanitize_professional_color
 # donde se lanza uvicorn.
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["local_datetime"] = local_datetime
+templates.env.filters["currency_symbol"] = currency_symbol
 templates.env.filters["calendar_event_time"] = format_calendar_event_time
 templates.env.filters["calendar_local_input"] = google_iso_to_local_input
 templates.env.filters["calendar_event_date_chip"] = calendar_event_date_chip

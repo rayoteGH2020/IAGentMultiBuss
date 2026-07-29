@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-DocumentKindLiteral = Literal["invoice", "ticket"]
+DocumentKindLiteral = Literal["invoice", "ticket", "contract", "insurance"]
 
 
 @dataclass(frozen=True, slots=True)

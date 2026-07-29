@@ -11,7 +11,7 @@ from uuid import UUID
 from app.core.document_processing_errors import is_retryable
 
 if TYPE_CHECKING:
-    from app.models import Invoice, LLMCall, Ticket
+    from app.models import Contract, Insurance, Invoice, LLMCall, Ticket
 
 PANEL_SORT_COLUMNS: frozenset[str] = frozenset(
     {
@@ -27,6 +27,8 @@ PANEL_SORT_COLUMNS: frozenset[str] = frozenset(
 )
 PANEL_DEFAULT_SORT = "created_at"
 PANEL_DEFAULT_DIR = "desc"
+
+PanelKind = Literal["invoice", "ticket", "contract", "insurance"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +62,7 @@ class PanelListParams:
 class PanelDocumentRow:
     """Fila normalizada para la tabla de documentos (mismas columnas que factura)."""
 
-    kind: Literal["invoice", "ticket"]
+    kind: PanelKind
     id: UUID
     fecha: date | None
     proveedor: str | None
@@ -79,6 +81,8 @@ class PanelDocumentRow:
     error_code: str | None = None
     invoice: Invoice | None = None
     ticket: Ticket | None = None
+    contract: Contract | None = None
+    insurance: Insurance | None = None
 
     @property
     def can_retry(self) -> bool:
@@ -91,20 +95,25 @@ class PanelDocumentRow:
             return self.invoice.llm_call
         if self.ticket is not None:
             return self.ticket.llm_call
+        if self.contract is not None:
+            return self.contract.llm_call
+        if self.insurance is not None:
+            return self.insurance.llm_call
         return None
 
     @property
     def status_poll_url(self) -> str:
-        if self.kind == "invoice":
-            return f"/jobs/invoice/{self.id}/status"
-        return f"/jobs/ticket/{self.id}/status"
+        return f"/jobs/{self.kind}/{self.id}/status"
 
     @property
     def dialog_title(self) -> str:
-        return f"Extracción de {self.doc_type_label.lower()}"
+        return f"Extracción de: {self.doc_type_label.lower()}"
 
     @property
     def has_expandable_detail(self) -> bool:
-        return (self.kind == "invoice" and self.invoice is not None) or (
-            self.kind == "ticket" and self.ticket is not None
+        return (
+            (self.kind == "invoice" and self.invoice is not None)
+            or (self.kind == "ticket" and self.ticket is not None)
+            or (self.kind == "contract" and self.contract is not None)
+            or (self.kind == "insurance" and self.insurance is not None)
         )

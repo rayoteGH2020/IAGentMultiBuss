@@ -16,6 +16,8 @@ from app.models.base import Base
 class DocumentKind(enum.StrEnum):
     invoice = "invoice"
     ticket = "ticket"
+    contract = "contract"
+    insurance = "insurance"
 
 
 class ProcessingAttemptStatus(enum.StrEnum):

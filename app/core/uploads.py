@@ -24,6 +24,8 @@ logger = structlog.get_logger(__name__)
 # embebido en base64. Coincide también con el límite validado en extract_invoice().
 # Expresado como producto para que el número sea legible sin calculadora.
 MAX_FILE_SIZE = 20 * 1024 * 1024
+# Tope de ficheros por request de /documents/upload (tipificación por fichero).
+MAX_FILES_PER_UPLOAD = 10
 UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
 
 # frozenset (no set): inmutable, sin riesgo de modificación accidental en runtime.

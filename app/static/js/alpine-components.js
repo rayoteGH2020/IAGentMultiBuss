@@ -560,8 +560,85 @@ document.addEventListener("alpine:init", () => {
   registerAppointmentStartPicker();
   registerProfessionalHoursGrid();
   registerKnowledgeUploadForm();
+  registerDocumentUploadForm();
+  registerDocumentRowActions();
   registerTenantSearchSelect();
 });
+
+/** Acciones de fila de documento: modal LLM + borrado con confirmación. */
+function registerDocumentRowActions() {
+  Alpine.data("documentRowActions", () => ({
+    linesOpen: false,
+    llmOpen: false,
+    deletePhase: "idle",
+    deleteMessage: "",
+
+    get deleteDone() {
+      return this.deletePhase === "done";
+    },
+
+    get isDeleting() {
+      return this.deletePhase === "deleting";
+    },
+
+    openLlm() {
+      this.resetDeleteUi();
+      this.llmOpen = true;
+    },
+
+    closeLlm() {
+      if (this.deletePhase === "done") {
+        window.location.assign("/documents");
+        return;
+      }
+      if (this.isDeleting) {
+        return;
+      }
+      this.llmOpen = false;
+      this.resetDeleteUi();
+    },
+
+    resetDeleteUi() {
+      this.deletePhase = "idle";
+      this.deleteMessage = "";
+    },
+
+    requestDelete(url) {
+      const confirmed = window.confirm(
+        "¿Borrar este documento por completo?\n\nSe eliminarán los datos extraídos y el fichero. Esta acción no se puede deshacer.",
+      );
+      // Tanto Sí como No vuelven al detalle del modal; solo Sí lanza el borrado.
+      if (!confirmed) {
+        return;
+      }
+      void this.runDelete(url);
+    },
+
+    async runDelete(url) {
+      this.deletePhase = "deleting";
+      this.deleteMessage = "Eliminando documento…";
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "X-CSRF-Token": window.getCsrfToken?.() || "",
+            "HX-Request": "true",
+            Accept: "text/html",
+          },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          throw new Error(`delete_failed_${response.status}`);
+        }
+        this.deletePhase = "done";
+        this.deleteMessage = "Documento eliminado";
+      } catch {
+        this.deletePhase = "error";
+        this.deleteMessage = "No se pudo eliminar el documento. Inténtalo de nuevo.";
+      }
+    },
+  }));
+}
 
 /**
  * Combobox SADM: elegir tenant con filtro por texto (nombre o id).
@@ -715,6 +792,179 @@ function registerKnowledgeUploadForm() {
       if (!fd) return;
       fd.delete("files");
       this.files.forEach((f) => fd.append("files", f, f.name));
+    },
+  }));
+}
+
+/** Subida de documentos administrativos: 10 zonas fijas, tipo por zona. */
+function registerDocumentUploadForm() {
+  const MAX_FILES = 10;
+
+  function emptySlot(index, keyPrefix) {
+    return {
+      index,
+      file: null,
+      docType: "",
+      key: `${keyPrefix}-${index}`,
+    };
+  }
+
+  function emptySlots(keyPrefix) {
+    return Array.from({ length: MAX_FILES }, (_, index) => emptySlot(index, keyPrefix));
+  }
+
+  Alpine.data("documentUploadForm", () => ({
+    open: false,
+    slots: emptySlots(0),
+    dragging: false,
+    dragOverSlot: null,
+    uploadInputKey: 0,
+    formError: "",
+    isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+
+    get filledSlots() {
+      return this.slots.filter((slot) => slot.file);
+    },
+
+    get filledCount() {
+      return this.filledSlots.length;
+    },
+
+    get canSubmit() {
+      const filled = this.filledSlots;
+      return filled.length > 0 && filled.every((slot) => Boolean(slot.docType));
+    },
+
+    openModal() {
+      this.open = true;
+      this.resetSlots();
+    },
+
+    closeModal() {
+      this.open = false;
+    },
+
+    resetSlots() {
+      this.uploadInputKey += 1;
+      this.slots = emptySlots(this.uploadInputKey);
+      this.formError = "";
+      this.dragging = false;
+      this.dragOverSlot = null;
+    },
+
+    clearSlot(index) {
+      const prefix = this.uploadInputKey;
+      this.slots[index] = emptySlot(index, prefix);
+      this.slots = [...this.slots];
+    },
+
+    clearAllFiles() {
+      this.resetSlots();
+    },
+
+    firstEmptyIndexes() {
+      return this.slots
+        .map((slot, index) => (slot.file ? null : index))
+        .filter((index) => index !== null);
+    },
+
+    placeFiles(fileList) {
+      const incoming = Array.from(fileList || []);
+      if (incoming.length === 0) return;
+
+      const emptyIndexes = this.firstEmptyIndexes();
+      if (emptyIndexes.length === 0) {
+        this.formError = `Máximo ${MAX_FILES} ficheros por subida. No quedan zonas libres.`;
+        return;
+      }
+
+      if (incoming.length > emptyIndexes.length) {
+        this.formError =
+          `Solo quedan ${emptyIndexes.length} zona${emptyIndexes.length === 1 ? "" : "s"} libre${emptyIndexes.length === 1 ? "" : "s"} ` +
+          `(${this.filledCount} de ${MAX_FILES} ocupadas). ` +
+          `Reduce la selección a ${emptyIndexes.length} fichero${emptyIndexes.length === 1 ? "" : "s"} o quita alguno antes.`;
+        return;
+      }
+
+      const next = this.slots.map((slot) => ({ ...slot }));
+      incoming.forEach((file, offset) => {
+        const index = emptyIndexes[offset];
+        next[index] = {
+          index,
+          file,
+          docType: "",
+          key: `${this.uploadInputKey}-${index}-${file.name}-${file.size}`,
+        };
+      });
+      this.slots = next;
+      this.formError = "";
+    },
+
+    onSlotClick() {
+      if (this.firstEmptyIndexes().length === 0) {
+        this.formError = `Máximo ${MAX_FILES} ficheros por subida.`;
+        return;
+      }
+      if (this.$refs.slotPicker) {
+        this.$refs.slotPicker.value = "";
+        this.$refs.slotPicker.click();
+      }
+    },
+
+    onSlotPick(event) {
+      this.placeFiles(event.target.files);
+      event.target.value = "";
+    },
+
+    onGridDrop(event) {
+      this.dragging = false;
+      this.dragOverSlot = null;
+      this.placeFiles(event.dataTransfer.files);
+    },
+
+    onSlotDrop(event, _index) {
+      this.dragging = false;
+      this.dragOverSlot = null;
+      this.placeFiles(event.dataTransfer.files);
+    },
+
+    onCameraCapture(event) {
+      const captured = Array.from(event.target.files || []);
+      if (captured.length > 0) {
+        this.open = true;
+        this.uploadInputKey += 1;
+        this.slots = emptySlots(this.uploadInputKey);
+        this.placeFiles(captured);
+      }
+      event.target.value = "";
+    },
+
+    prepareRequest(event) {
+      const filled = this.filledSlots;
+      if (!this.canSubmit) {
+        event.preventDefault();
+        this.formError =
+          filled.length === 0
+            ? "Coloca al menos un fichero en una zona."
+            : "Indica el tipo de cada fichero colocado antes de procesar.";
+        return;
+      }
+      this.formError = "";
+      const fd = event.detail.formData;
+      if (!fd) return;
+      fd.delete("files");
+      fd.delete("doc_type_codes");
+      filled.forEach((slot) => {
+        fd.append("files", slot.file, slot.file.name);
+        fd.append("doc_type_codes", slot.docType);
+      });
+    },
+
+    onAfterRequest(event) {
+      if (event.detail.successful) {
+        this.open = false;
+        this.resetSlots();
+      }
     },
   }));
 }

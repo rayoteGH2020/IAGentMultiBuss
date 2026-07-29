@@ -43,9 +43,10 @@ async def test_ensure_default_doc_types_inserts_missing() -> None:
 
     result = await doc_type_service.ensure_default_doc_types(db)
 
-    assert set(result.inserted) == {DocTypeCode.factura.value, DocTypeCode.ticket.value}
+    expected = {member.value for member in DocTypeCode}
+    assert set(result.inserted) == expected
     assert result.skipped == ()
-    assert db.add.call_count == 2
+    assert db.add.call_count == len(expected)
     assert all(isinstance(call.args[0], DocType) for call in db.add.call_args_list)
     db.flush.assert_awaited_once()
 
@@ -54,10 +55,7 @@ async def test_ensure_default_doc_types_inserts_missing() -> None:
 async def test_ensure_default_doc_types_skips_existing() -> None:
     db = AsyncMock()
     execute_result = MagicMock()
-    execute_result.scalars.return_value.all.return_value = [
-        DocTypeCode.factura.value,
-        DocTypeCode.ticket.value,
-    ]
+    execute_result.scalars.return_value.all.return_value = [member.value for member in DocTypeCode]
     db.execute = AsyncMock(return_value=execute_result)
     db.flush = AsyncMock()
     db.add = MagicMock()
@@ -65,6 +63,6 @@ async def test_ensure_default_doc_types_skips_existing() -> None:
     result = await doc_type_service.ensure_default_doc_types(db)
 
     assert result.inserted == ()
-    assert set(result.skipped) == {DocTypeCode.factura.value, DocTypeCode.ticket.value}
+    assert set(result.skipped) == {member.value for member in DocTypeCode}
     db.add.assert_not_called()
     db.flush.assert_not_awaited()

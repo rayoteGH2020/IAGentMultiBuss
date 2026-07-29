@@ -1,5 +1,7 @@
-{# Panel unificado de documentos (facturas, tickets y futuros tipos). #}
+{# Panel unificado de documentos (facturas, tickets, contratos, seguros). #}
 {% set just_uploaded_ids = just_uploaded_ids|default([], true) %}
+{% set just_uploaded_documents = just_uploaded_documents if just_uploaded_documents is defined else [] %}
+{% set other_documents = other_documents if other_documents is defined else (documents|default([], true)) %}
 {% set upload_notices = upload_notices|default([], true) %}
 {% set documents = documents|default([], true) %}
 {% set panel_list = panel_list|default(none) %}
@@ -29,9 +31,37 @@
   </div>
   {% endif %}
 
-  {% if documents %}
+  {% if just_uploaded_documents %}
   <section class="space-y-2">
-    <h2 class="text-sm font-semibold text-slate-800">Documentos</h2>
+    <h2 class="text-sm font-semibold text-slate-800">Recién subidos</h2>
+    <p class="text-xs text-slate-500">Estado de procesamiento; se actualiza automáticamente.</p>
+    <div class="invoices-table-shell">
+      <table class="invoices-table" role="grid" aria-label="Documentos recién subidos">
+        <colgroup>
+          <col class="invoices-col-tipo">
+          <col class="invoices-col-fecha">
+          <col class="invoices-col-grow">
+          <col class="invoices-col-num">
+          <col class="invoices-col-iva-pct">
+          <col class="invoices-col-num">
+          <col class="invoices-col-num">
+          <col class="invoices-col-subida">
+          <col class="invoices-col-detalles">
+        </colgroup>
+        {% include "components/invoices_table_head.html" %}
+        {% for document in just_uploaded_documents %}
+          {% include "components/document_row.html" %}
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if other_documents %}
+  <section class="space-y-2">
+    <h2 class="text-sm font-semibold text-slate-800">
+      {% if just_uploaded_documents %}Documentos anteriores{% else %}Documentos{% endif %}
+    </h2>
     <div class="invoices-table-shell">
       <table class="invoices-table" role="grid" aria-label="Listado de documentos">
         <colgroup>
@@ -46,20 +76,20 @@
           <col class="invoices-col-detalles">
         </colgroup>
         {% include "components/invoices_table_head.html" %}
-        {% for document in documents %}
+        {% for document in other_documents %}
           {% include "components/document_row.html" %}
         {% endfor %}
       </table>
     </div>
   </section>
-  {% elif panel_filtered_empty %}
+  {% elif panel_filtered_empty and not just_uploaded_documents %}
   <div class="bg-white border border-dashed border-slate-300 rounded-lg p-12 text-center">
     <h3 class="text-sm font-medium text-slate-900">Ningún documento con este filtro</h3>
     <p class="mt-1 text-sm text-slate-500">
       Prueba otro tipo en el desplegable o elige «Todos los tipos».
     </p>
   </div>
-  {% else %}
+  {% elif not just_uploaded_documents %}
     {% include "components/empty_state.html" %}
   {% endif %}
 </div>

@@ -30,13 +30,27 @@ class DocumentSearchFilters(BaseModel):
         default=None,
         description="Solo facturas: nombre de proveedor (tolerante a tildes)",
     )
-    cif_nif: str | None = Field(default=None, description="Solo facturas: CIF/NIF parcial")
+    cif_nif: str | None = Field(
+        default=None,
+        description="CIF/NIF parcial (facturas, contratos, seguros)",
+    )
     comercio_query: str | None = Field(
         default=None,
         description="Solo tickets: nombre de comercio",
     )
     numero_ticket: str | None = Field(default=None, description="Solo tickets")
     forma_pago: str | None = Field(default=None, description="Solo tickets")
+    parte_contraria_query: str | None = Field(
+        default=None,
+        description="Solo contratos: nombre de la parte contraria",
+    )
+    numero_contrato: str | None = Field(default=None, description="Solo contratos")
+    aseguradora_query: str | None = Field(
+        default=None,
+        description="Solo seguros: nombre de la aseguradora",
+    )
+    numero_poliza: str | None = Field(default=None, description="Solo seguros")
+    tipo_seguro: str | None = Field(default=None, description="Solo seguros")
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
@@ -97,8 +111,51 @@ class TicketRead(BaseModel):
     source_filename: str | None = None
 
 
+class ContractRead(BaseModel):
+    """Proyección de contrato para tools y chat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    doc_type_code: Literal["contrato"] = "contrato"
+    id: UUID
+    status: str
+    titulo: str | None = None
+    numero_contrato: str | None = None
+    parte_contraria: str | None = None
+    cif_nif: str | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    importe: Decimal | None = None
+    currency: str = "EUR"
+    objeto: str | None = None
+    confidence: Decimal | None = None
+    source_filename: str | None = None
+
+
+class InsuranceRead(BaseModel):
+    """Proyección de póliza de seguro para tools y chat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    doc_type_code: Literal["seguro"] = "seguro"
+    id: UUID
+    status: str
+    aseguradora: str | None = None
+    numero_poliza: str | None = None
+    tomador: str | None = None
+    cif_nif: str | None = None
+    tipo_seguro: str | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    prima: Decimal | None = None
+    currency: str = "EUR"
+    cobertura: str | None = None
+    confidence: Decimal | None = None
+    source_filename: str | None = None
+
+
 DocumentRead = Annotated[
-    InvoiceRead | TicketRead,
+    InvoiceRead | TicketRead | ContractRead | InsuranceRead,
     Field(discriminator="doc_type_code"),
 ]
 
@@ -116,6 +173,8 @@ class AggregateGroupBy(enum.StrEnum):
     none = "none"
     proveedor = "proveedor"
     comercio = "comercio"
+    parte_contraria = "parte_contraria"
+    aseguradora = "aseguradora"
     month = "month"
     year = "year"
     status = "status"

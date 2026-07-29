@@ -10,12 +10,19 @@ from sqlalchemy import func, select
 
 from app.core.document_processing_errors import is_retryable
 from app.core.errors import ValidationError
-from app.jobs.queue import enqueue_invoice_processing, enqueue_ticket_processing
+from app.jobs.queue import (
+    enqueue_contract_processing,
+    enqueue_insurance_processing,
+    enqueue_invoice_processing,
+    enqueue_ticket_processing,
+)
+from app.models.contract import ContractStatus
 from app.models.document_processing_attempt import (
     DocumentKind,
     DocumentProcessingAttempt,
     ProcessingAttemptStatus,
 )
+from app.models.insurance import InsuranceStatus
 from app.models.invoice import InvoiceStatus
 from app.models.ticket import TicketStatus
 
@@ -26,7 +33,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-DocumentKindLiteral = Literal["invoice", "ticket"]
+DocumentKindLiteral = Literal["invoice", "ticket", "contract", "insurance"]
 
 _NOT_RETRYABLE_MESSAGE = (
     "Este documento no se puede reintentar porque no cumple los límites de procesado. "
@@ -186,34 +193,50 @@ async def dismiss_from_panel(
     document_id: UUID,
 ) -> None:
     """Oculta un documento fallido del listado sin borrarlo de BD."""
+    now = datetime.now(tz=UTC)
     if document_kind == DocumentKind.invoice.value:
         from app.services import invoice_service
 
-        invoice = await invoice_service.get_invoice(db, tenant_id, document_id)
-        if invoice.status != InvoiceStatus.failed:
+        invoice_row = await invoice_service.get_invoice(db, tenant_id, document_id)
+        if invoice_row.status != InvoiceStatus.failed:
             raise ValidationError("Solo se pueden ocultar documentos con error de procesamiento.")
-        if invoice.dismissed_at is not None:
+        if invoice_row.dismissed_at is not None:
             return
-        invoice.dismissed_at = datetime.now(tz=UTC)
-        invoice.updated_at = datetime.now(tz=UTC)
-        await db.flush()
-        logger.info(
-            "document.dismissed_from_panel",
-            tenant_id=str(tenant_id),
-            document_kind=document_kind,
-            document_id=str(document_id),
-        )
-        return
+        invoice_row.dismissed_at = now
+        invoice_row.updated_at = now
+    elif document_kind == DocumentKind.ticket.value:
+        from app.services import ticket_service
 
-    from app.services import ticket_service
+        ticket_row = await ticket_service.get_ticket(db, tenant_id, document_id)
+        if ticket_row.status != TicketStatus.failed:
+            raise ValidationError("Solo se pueden ocultar documentos con error de procesamiento.")
+        if ticket_row.dismissed_at is not None:
+            return
+        ticket_row.dismissed_at = now
+        ticket_row.updated_at = now
+    elif document_kind == DocumentKind.contract.value:
+        from app.services import contract_service
 
-    ticket = await ticket_service.get_ticket(db, tenant_id, document_id)
-    if ticket.status != TicketStatus.failed:
-        raise ValidationError("Solo se pueden ocultar documentos con error de procesamiento.")
-    if ticket.dismissed_at is not None:
-        return
-    ticket.dismissed_at = datetime.now(tz=UTC)
-    ticket.updated_at = datetime.now(tz=UTC)
+        contract_row = await contract_service.get_contract(db, tenant_id, document_id)
+        if contract_row.status != ContractStatus.failed:
+            raise ValidationError("Solo se pueden ocultar documentos con error de procesamiento.")
+        if contract_row.dismissed_at is not None:
+            return
+        contract_row.dismissed_at = now
+        contract_row.updated_at = now
+    elif document_kind == DocumentKind.insurance.value:
+        from app.services import insurance_service
+
+        insurance_row = await insurance_service.get_insurance(db, tenant_id, document_id)
+        if insurance_row.status != InsuranceStatus.failed:
+            raise ValidationError("Solo se pueden ocultar documentos con error de procesamiento.")
+        if insurance_row.dismissed_at is not None:
+            return
+        insurance_row.dismissed_at = now
+        insurance_row.updated_at = now
+    else:
+        raise ValidationError("Tipo de documento no válido.")
+
     await db.flush()
     logger.info(
         "document.dismissed_from_panel",
@@ -231,20 +254,22 @@ async def retry_processing(
     document_id: UUID,
 ) -> None:
     """Reencola extracción sobre el mismo registro y fichero R2."""
+    now = datetime.now(tz=UTC)
+
     if document_kind == DocumentKind.invoice.value:
         from app.services import invoice_service
 
-        invoice = await invoice_service.get_invoice(db, tenant_id, document_id)
-        if invoice.status != InvoiceStatus.failed:
+        invoice_row = await invoice_service.get_invoice(db, tenant_id, document_id)
+        if invoice_row.status != InvoiceStatus.failed:
             raise ValidationError("Solo se puede reintentar un documento en estado de error.")
-        if not invoice.source_file_key:
+        if not invoice_row.source_file_key:
             raise ValidationError("El documento no tiene fichero asociado para reintentar.")
-        _ensure_retryable(invoice.error_code)
-        invoice.status = InvoiceStatus.processing
-        invoice.error_code = None
-        invoice.error_message = None
-        invoice.dismissed_at = None
-        invoice.updated_at = datetime.now(tz=UTC)
+        _ensure_retryable(invoice_row.error_code)
+        invoice_row.status = InvoiceStatus.processing
+        invoice_row.error_code = None
+        invoice_row.error_message = None
+        invoice_row.dismissed_at = None
+        invoice_row.updated_at = now
         await db.flush()
         await begin_processing_attempt(
             db,
@@ -253,41 +278,87 @@ async def retry_processing(
             document_id=document_id,
         )
         try:
-            await enqueue_invoice_processing(invoice.id, tenant_id)
+            await enqueue_invoice_processing(invoice_row.id, tenant_id)
         except Exception as exc:
             raise RuntimeError("No se pudo encolar el reintento.") from exc
-        logger.info(
-            "document.retry_enqueued",
-            tenant_id=str(tenant_id),
+    elif document_kind == DocumentKind.ticket.value:
+        from app.services import ticket_service
+
+        ticket_row = await ticket_service.get_ticket(db, tenant_id, document_id)
+        if ticket_row.status != TicketStatus.failed:
+            raise ValidationError("Solo se puede reintentar un documento en estado de error.")
+        if not ticket_row.source_file_key:
+            raise ValidationError("El documento no tiene fichero asociado para reintentar.")
+        _ensure_retryable(ticket_row.error_code)
+        ticket_row.status = TicketStatus.processing
+        ticket_row.error_code = None
+        ticket_row.error_message = None
+        ticket_row.dismissed_at = None
+        ticket_row.updated_at = now
+        await db.flush()
+        await begin_processing_attempt(
+            db,
+            tenant_id=tenant_id,
             document_kind=document_kind,
-            document_id=str(document_id),
+            document_id=document_id,
         )
-        return
+        try:
+            await enqueue_ticket_processing(ticket_row.id, tenant_id)
+        except Exception as exc:
+            raise RuntimeError("No se pudo encolar el reintento.") from exc
+    elif document_kind == DocumentKind.contract.value:
+        from app.services import contract_service
 
-    from app.services import ticket_service
+        contract_row = await contract_service.get_contract(db, tenant_id, document_id)
+        if contract_row.status != ContractStatus.failed:
+            raise ValidationError("Solo se puede reintentar un documento en estado de error.")
+        if not contract_row.source_file_key:
+            raise ValidationError("El documento no tiene fichero asociado para reintentar.")
+        _ensure_retryable(contract_row.error_code)
+        contract_row.status = ContractStatus.processing
+        contract_row.error_code = None
+        contract_row.error_message = None
+        contract_row.dismissed_at = None
+        contract_row.updated_at = now
+        await db.flush()
+        await begin_processing_attempt(
+            db,
+            tenant_id=tenant_id,
+            document_kind=document_kind,
+            document_id=document_id,
+        )
+        try:
+            await enqueue_contract_processing(contract_row.id, tenant_id)
+        except Exception as exc:
+            raise RuntimeError("No se pudo encolar el reintento.") from exc
+    elif document_kind == DocumentKind.insurance.value:
+        from app.services import insurance_service
 
-    ticket = await ticket_service.get_ticket(db, tenant_id, document_id)
-    if ticket.status != TicketStatus.failed:
-        raise ValidationError("Solo se puede reintentar un documento en estado de error.")
-    if not ticket.source_file_key:
-        raise ValidationError("El documento no tiene fichero asociado para reintentar.")
-    _ensure_retryable(ticket.error_code)
-    ticket.status = TicketStatus.processing
-    ticket.error_code = None
-    ticket.error_message = None
-    ticket.dismissed_at = None
-    ticket.updated_at = datetime.now(tz=UTC)
-    await db.flush()
-    await begin_processing_attempt(
-        db,
-        tenant_id=tenant_id,
-        document_kind=document_kind,
-        document_id=document_id,
-    )
-    try:
-        await enqueue_ticket_processing(ticket.id, tenant_id)
-    except Exception as exc:
-        raise RuntimeError("No se pudo encolar el reintento.") from exc
+        insurance_row = await insurance_service.get_insurance(db, tenant_id, document_id)
+        if insurance_row.status != InsuranceStatus.failed:
+            raise ValidationError("Solo se puede reintentar un documento en estado de error.")
+        if not insurance_row.source_file_key:
+            raise ValidationError("El documento no tiene fichero asociado para reintentar.")
+        _ensure_retryable(insurance_row.error_code)
+        insurance_row.status = InsuranceStatus.processing
+        insurance_row.error_code = None
+        insurance_row.error_message = None
+        insurance_row.dismissed_at = None
+        insurance_row.updated_at = now
+        await db.flush()
+        await begin_processing_attempt(
+            db,
+            tenant_id=tenant_id,
+            document_kind=document_kind,
+            document_id=document_id,
+        )
+        try:
+            await enqueue_insurance_processing(insurance_row.id, tenant_id)
+        except Exception as exc:
+            raise RuntimeError("No se pudo encolar el reintento.") from exc
+    else:
+        raise ValidationError("Tipo de documento no válido.")
+
     logger.info(
         "document.retry_enqueued",
         tenant_id=str(tenant_id),

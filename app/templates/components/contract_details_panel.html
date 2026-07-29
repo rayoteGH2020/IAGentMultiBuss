@@ -1,0 +1,50 @@
+{# Detalle expandible de contrato. #}
+{% set contract = document.contract %}
+{% set has_fields = contract.titulo or contract.numero_contrato or contract.fecha_fin or contract.objeto or contract.source_filename %}
+{% set sm = contract.currency | currency_symbol %}
+
+<section class="document-detail__section" aria-label="Detalle del contrato">
+  <h3 class="document-detail__section-title">Detalle del contrato</h3>
+  {% if has_fields %}
+  <div class="document-detail__fields">
+    {% if contract.source_filename %}
+    <div class="document-detail__field document-detail__field--wide">
+      <span class="document-detail__field-label">Fichero</span>
+      <span class="document-detail__field-value">{{ contract.source_filename }}</span>
+    </div>
+    {% endif %}
+    {% if contract.titulo %}
+    <div class="document-detail__field document-detail__field--wide">
+      <span class="document-detail__field-label">Título</span>
+      <span class="document-detail__field-value">{{ contract.titulo }}</span>
+    </div>
+    {% endif %}
+    {% if contract.numero_contrato %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Nº contrato</span>
+      <span class="document-detail__field-value">{{ contract.numero_contrato }}</span>
+    </div>
+    {% endif %}
+    {% if contract.fecha_fin %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Fecha fin</span>
+      <span class="document-detail__field-value tabular-nums">{{ contract.fecha_fin }}</span>
+    </div>
+    {% endif %}
+    {% if contract.importe is not none %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Importe</span>
+      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(contract.importe) }} {{ sm }}</span>
+    </div>
+    {% endif %}
+    {% if contract.objeto %}
+    <div class="document-detail__field document-detail__field--wide">
+      <span class="document-detail__field-label">Objeto</span>
+      <span class="document-detail__field-value document-detail__desc">{{ contract.objeto }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="document-detail__empty">No hay detalle adicional para este contrato.</p>
+  {% endif %}
+</section>

@@ -18,7 +18,7 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/sadm/documents", tags=["sadm"])
 
-DocumentKindPath = Annotated[Literal["invoice", "ticket"], Path()]
+DocumentKindPath = Annotated[Literal["invoice", "ticket", "contract", "insurance"], Path()]
 
 
 @router.get("", response_class=HTMLResponse)

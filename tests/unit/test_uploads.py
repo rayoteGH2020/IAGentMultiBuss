@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from app.core.uploads import UploadValidationError, original_upload_filename, read_upload_limited
+from app.core.uploads import (
+    MAX_FILES_PER_UPLOAD,
+    UploadValidationError,
+    original_upload_filename,
+    read_upload_limited,
+)
 
 
 class FakeUpload:
@@ -22,6 +27,10 @@ class FakeUpload:
         chunk = self._data[:size]
         self._data = self._data[size:]
         return chunk
+
+
+def test_max_files_per_upload_is_ten() -> None:
+    assert MAX_FILES_PER_UPLOAD == 10
 
 
 def test_original_upload_filename_strips_path() -> None:

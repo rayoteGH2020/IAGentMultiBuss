@@ -19,8 +19,8 @@ if TYPE_CHECKING:
 DEFAULT_DOC_TYPES: tuple[tuple[str, str, str], ...] = (
     (DocTypeCode.factura.value, "Factura", "Factura emitida o recibida"),
     (DocTypeCode.ticket.value, "Ticket", "Ticket o recibo simplificado"),
-    (DocTypeCode.ticket.value, "Contrato", "Contrato de servicio"),
-    (DocTypeCode.ticket.value, "Seguros", "Seguros"),
+    (DocTypeCode.contrato.value, "Contrato", "Contrato de servicio"),
+    (DocTypeCode.seguro.value, "Seguro", "Seguros"),
 )
 
 
@@ -116,3 +116,24 @@ def require_doc_type_form_value(raw: str | None) -> DocTypeCode:
     if doc_type is None:
         raise ValidationError("Document type is required")
     return doc_type
+
+
+def normalize_form_str_list(value: list[str] | str | None) -> list[str]:
+    """Normaliza campos multipart repetidos (FastAPI puede devolver str o list)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+def resolve_per_file_doc_types(
+    *,
+    file_count: int,
+    doc_type_codes: list[str] | str | None,
+) -> list[DocTypeCode]:
+    """Exige un tipo válido por fichero, en el mismo orden que los ficheros subidos."""
+    codes = normalize_form_str_list(doc_type_codes)
+    if len(codes) != file_count:
+        raise ValidationError("Cada fichero debe tener un tipo de documento.")
+    return [require_doc_type_form_value(code) for code in codes]

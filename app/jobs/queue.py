@@ -132,6 +132,66 @@ async def enqueue_ticket_processing(
     return str(job.job_id)
 
 
+async def enqueue_contract_processing(
+    contract_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de un contrato (ver `enqueue_invoice_processing`)."""
+    job_id = f"contract:{contract_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "process_contract",
+        str(contract_id),
+        str(tenant_id),
+        max_pdf_pages,
+        _job_id=job_id,
+    )
+    if job is None:
+        logger.warning(
+            "arq.enqueue_contract_duplicate",
+            contract_id=str(contract_id),
+            tenant_id=str(tenant_id),
+        )
+        return job_id
+    return str(job.job_id)
+
+
+async def enqueue_insurance_processing(
+    insurance_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de una póliza (ver `enqueue_invoice_processing`)."""
+    job_id = f"insurance:{insurance_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "process_insurance",
+        str(insurance_id),
+        str(tenant_id),
+        max_pdf_pages,
+        _job_id=job_id,
+    )
+    if job is None:
+        logger.warning(
+            "arq.enqueue_insurance_duplicate",
+            insurance_id=str(insurance_id),
+            tenant_id=str(tenant_id),
+        )
+        return job_id
+    return str(job.job_id)
+
+
 async def enqueue_channel_message(
     *,
     tenant_id: str,

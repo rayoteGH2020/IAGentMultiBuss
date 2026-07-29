@@ -19,6 +19,8 @@ from app.core.media_limits import MediaLimitExceeded
 from app.llm.client import get_llm_client
 from app.llm.extraction_media import prepare_invoice_media
 from app.llm.prompts_loader import load_prompt
+from app.schemas.contract import ContratoDocumento
+from app.schemas.insurance import SeguroPoliza
 from app.schemas.invoice import Factura
 from app.schemas.ticket import TicketRecibo
 
@@ -34,6 +36,8 @@ logger = structlog.get_logger(__name__)
 # con la versión del prompt en el dashboard de métricas.
 PROMPT_VERSION = "extraction_v3"
 TICKET_PROMPT_VERSION = "ticket_extraction_v1"
+CONTRACT_PROMPT_VERSION = "contract_extraction_v1"
+INSURANCE_PROMPT_VERSION = "insurance_extraction_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,22 @@ class TicketExtractionResult:
     """Datos extraídos de ticket y referencia a la llamada LLM asociada."""
 
     ticket: TicketRecibo
+    llm_call_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class ContractExtractionResult:
+    """Datos extraídos de contrato y referencia a la llamada LLM asociada."""
+
+    contract: ContratoDocumento
+    llm_call_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class InsuranceExtractionResult:
+    """Datos extraídos de póliza y referencia a la llamada LLM asociada."""
+
+    insurance: SeguroPoliza
     llm_call_id: UUID
 
 
@@ -228,6 +248,96 @@ async def extract_ticket(
         confidence=ticket.confidence,
     )
     return TicketExtractionResult(ticket=ticket, llm_call_id=completion.llm_call_id)
+
+
+async def extract_contract(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+    source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
+) -> ContractExtractionResult:
+    """Extrae datos estructurados de un contrato (`task='extraction'`)."""
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(CONTRACT_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction=("Extrae los datos de este contrato. Devuelve el JSON conforme al schema."),
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=ContratoDocumento,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=CONTRACT_PROMPT_VERSION,
+        source_filename=source_filename,
+        max_retries=2,
+    )
+    contract = completion.result
+    logger.info(
+        "contract_extraction.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        parte_contraria=contract.parte_contraria,
+        confidence=contract.confidence,
+    )
+    return ContractExtractionResult(contract=contract, llm_call_id=completion.llm_call_id)
+
+
+async def extract_insurance(
+    *,
+    file_bytes: bytes,
+    mime_type: str,
+    tenant_id: UUID,
+    db: AsyncSession,
+    source_filename: str | None = None,
+    max_pdf_pages: int | None = None,
+) -> InsuranceExtractionResult:
+    """Extrae datos estructurados de una póliza (`task='extraction'`)."""
+    file_bytes, mime_type = await _prepare_media(
+        file_bytes,
+        mime_type,
+        max_pdf_pages=max_pdf_pages,
+    )
+
+    messages = _build_extraction_messages(
+        system_prompt=load_prompt(INSURANCE_PROMPT_VERSION),
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        instruction=(
+            "Extrae los datos de esta póliza de seguro. Devuelve el JSON conforme al schema."
+        ),
+    )
+    client = get_llm_client()
+    completion = await client.complete(
+        task="extraction",
+        messages=messages,
+        response_model=SeguroPoliza,
+        tenant_id=tenant_id,
+        db=db,
+        prompt_version=INSURANCE_PROMPT_VERSION,
+        source_filename=source_filename,
+        max_retries=2,
+    )
+    insurance = completion.result
+    logger.info(
+        "insurance_extraction.done",
+        tenant_id=str(tenant_id),
+        llm_call_id=str(completion.llm_call_id),
+        aseguradora=insurance.aseguradora,
+        confidence=insurance.confidence,
+    )
+    return InsuranceExtractionResult(insurance=insurance, llm_call_id=completion.llm_call_id)
 
 
 # ---------------------------------------------------------------------------

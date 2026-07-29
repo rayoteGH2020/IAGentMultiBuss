@@ -12,6 +12,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.contract import Contract
+    from app.models.insurance import Insurance
     from app.models.invoice import Invoice
     from app.models.ticket import Ticket
 
@@ -19,6 +21,8 @@ if TYPE_CHECKING:
 class DocTypeCode(enum.StrEnum):
     factura = "factura"
     ticket = "ticket"
+    contrato = "contrato"
+    seguro = "seguro"
 
 
 class DocType(Base):
@@ -47,3 +51,5 @@ class DocType(Base):
 
     invoices: Mapped[list[Invoice]] = relationship(back_populates="doc_type")
     tickets: Mapped[list[Ticket]] = relationship(back_populates="doc_type")
+    contracts: Mapped[list[Contract]] = relationship(back_populates="doc_type")
+    insurances: Mapped[list[Insurance]] = relationship(back_populates="doc_type")

@@ -231,6 +231,89 @@
   .invoices-table tbody.invoice-group > tr.invoice-lines-row td {
     @apply bg-slate-50/90 border-b border-slate-200 p-0;
   }
+
+  /* Detalle expandido bajo cada fila de documento */
+  .document-detail {
+    @apply px-4 py-3.5 space-y-3;
+  }
+  .document-detail__meta {
+    @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-xs text-slate-600;
+  }
+  .document-detail__meta-item {
+    @apply inline-flex items-baseline gap-1 min-w-0;
+  }
+  .document-detail__meta-label {
+    @apply font-medium text-slate-500;
+  }
+  .document-detail__sections {
+    @apply grid gap-3 grid-cols-1;
+  }
+  .document-detail__section {
+    @apply rounded-lg border border-slate-200/90 bg-white overflow-hidden;
+  }
+  .document-detail__section-title {
+    @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600 bg-slate-100/90 border-b border-slate-200/80;
+  }
+  .document-detail__section-body {
+    @apply p-0;
+  }
+  .document-detail__table {
+    @apply w-full text-xs text-slate-700;
+  }
+  .document-detail__table thead th {
+    @apply px-3 py-1.5 font-medium text-slate-500 bg-slate-50 text-left border-b border-slate-100;
+  }
+  .document-detail__table tbody td {
+    @apply px-3 py-2 align-top border-t border-slate-100;
+  }
+  .document-detail__table tbody tr:nth-child(even) td {
+    @apply bg-slate-50/50;
+  }
+  .document-detail__table .is-num {
+    @apply text-right tabular-nums whitespace-nowrap;
+  }
+  .document-detail__table .col-qty {
+    width: 5.5rem;
+  }
+  .document-detail__table .col-money {
+    width: 7.5rem;
+  }
+  .document-detail__table .col-pct {
+    width: 5rem;
+  }
+  .document-detail__table--invoice {
+    table-layout: fixed;
+    width: 100%;
+  }
+  .document-detail__table--invoice th.document-detail__section-title {
+    @apply text-left border-b border-slate-200/80;
+  }
+  .document-detail__table--invoice .document-detail__vat-head th {
+    @apply bg-slate-50;
+  }
+  .document-detail__desc {
+    @apply whitespace-pre-wrap break-words;
+    /* 1 cm a la derecha respecto al encabezado «Descripción» (misma base px-3). */
+    padding-left: calc(0.75rem + 1cm);
+  }
+  .document-detail__fields {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-slate-100;
+  }
+  .document-detail__field {
+    @apply bg-white px-3 py-2.5 min-w-0;
+  }
+  .document-detail__field--wide {
+    @apply sm:col-span-2 lg:col-span-3;
+  }
+  .document-detail__field-label {
+    @apply block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5;
+  }
+  .document-detail__field-value {
+    @apply text-sm text-slate-800 break-words;
+  }
+  .document-detail__empty {
+    @apply px-3 py-3 text-sm text-slate-500;
+  }
   .invoices-table tbody.invoice-group:last-of-type > tr:last-child td {
     @apply border-b-0;
   }
@@ -261,36 +344,72 @@
 
   /* Modal de métricas LLM (/documents). */
   .llm-call-dialog {
-    @apply bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col;
+    @apply bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col;
     @apply ring-1 ring-slate-200/80;
   }
   .llm-call-dialog-header {
     @apply flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100;
-    @apply bg-gradient-to-r from-amber-50/90 via-white to-white;
   }
   .llm-call-dialog-close {
-    @apply shrink-0 text-slate-400 hover:text-slate-700 text-xl leading-none transition-colors;
+    @apply shrink-0 text-slate-400 hover:text-slate-700 text-xl leading-none transition-colors cursor-pointer;
   }
   .llm-call-dialog-body {
     @apply px-5 py-4 overflow-y-auto;
   }
   .llm-call-dialog-footer {
-    @apply flex justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/80;
+    @apply flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50/80;
+  }
+  .llm-call-dialog-footer-start {
+    @apply flex items-center gap-3 min-w-0 flex-1;
+  }
+  .llm-call-delete-btn {
+    @apply inline-flex items-center justify-center p-2 rounded-md cursor-pointer shrink-0;
+    @apply text-red-600/90 hover:bg-red-50 hover:text-red-800 transition-colors;
+  }
+  .llm-call-delete-btn:disabled {
+    @apply hover:bg-transparent hover:text-red-600/90;
+  }
+  .llm-call-delete-status {
+    @apply text-sm font-medium truncate;
   }
   .llm-call-details {
-    @apply grid grid-cols-2 gap-x-4 gap-y-3 text-xs text-slate-700;
+    @apply flex flex-col gap-4 text-xs text-slate-700;
   }
-  .llm-call-details-item dt {
+  .llm-call-details-row {
+    @apply grid grid-cols-1 gap-y-3;
+  }
+  @media (min-width: 640px) {
+    .llm-call-details-row {
+      /* Col1 compacta, col2 justo para UUID, col3 el resto (tokens + langfuse en 1 línea). */
+      grid-template-columns: 10.5rem 15.75rem minmax(17rem, 1fr);
+      column-gap: 1rem;
+    }
+  }
+  .llm-call-details-row--error {
+    @apply pt-2 border-t border-slate-100;
+  }
+  .llm-call-details-item {
+    @apply min-w-0;
+  }
+  .llm-call-details-item dt,
+  .llm-call-details-label {
     @apply text-[11px] font-medium uppercase tracking-wide text-slate-500;
   }
-  .llm-call-details-item dd {
-    @apply mt-0.5;
+  .llm-call-details-item dd,
+  .llm-call-details-value {
+    @apply mt-1 text-sm text-slate-800;
   }
-  .llm-call-details-item--wide {
-    @apply col-span-2;
+  .llm-call-details-value--mono {
+    @apply font-mono text-[11px] whitespace-nowrap overflow-hidden text-ellipsis;
   }
-  .llm-call-details-item--highlight {
-    @apply rounded-lg bg-amber-50/70 px-3 py-2 ring-1 ring-amber-100/80;
+  .llm-call-details-value--nowrap {
+    @apply whitespace-nowrap;
+  }
+  .llm-call-details-item--full {
+    grid-column: 1 / -1;
+  }
+  .llm-call-cost {
+    @apply text-amber-800 font-medium;
   }
   .llm-call-status {
     @apply inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide;

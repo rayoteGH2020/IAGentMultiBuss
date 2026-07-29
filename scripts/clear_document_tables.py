@@ -40,6 +40,8 @@ TABLES: tuple[str, ...] = (
     "processing_charges",
     "invoices",
     "tickets",
+    "contracts",
+    "insurances",
     # Chat interno
     "chat_messages",
     "chat_threads",
