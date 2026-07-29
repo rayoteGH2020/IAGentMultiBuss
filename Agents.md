@@ -230,6 +230,8 @@ Toda acción sobre datos del cliente (subir, ver, descargar, modificar, borrar) 
 
 Toda la especificación arquitectónica de la capa LLM — punto de entrada único en `app/llm/client.py`, métodos `complete` y `embed`, tabla `DEFAULT_MODELS`, prompts versionados, observabilidad (`llm_calls`, Langfuse) y guardrails (validación, PII, SQL solo lectura en analítica) — está en **`arquitectura.md` §8**. Las reglas operativas (no usar SDKs desde `routes`/`services`, no prompts largos inline) siguen aplicando aquí y en el DO/DON'T.
 
+**Trazas Langfuse: metadatos, nunca contenido.** Los payloads `input` / `output` / `status_message` se construyen siempre con los helpers de `app/llm/observability.py` (`trace_messages`, `trace_result`, `trace_text`, `trace_status_message`). Pasar mensajes, documentos, respuestas del modelo o consultas de usuario directamente a `start_observation()` / `obs.update()` es un fallo de RGPD, no un detalle de estilo.
+
 ---
 
 ## 9. Tests y evals
@@ -277,7 +279,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 
 - ✅ Devolver fragmentos HTML desde endpoints HTMX.
 - ✅ Validar tenant en cada request antes de tocar BD.
-- ✅ Loguear toda llamada LLM en `llm_calls` y Langfuse.
+- ✅ Loguear toda llamada LLM en `llm_calls` y Langfuse (a Langfuse **solo metadatos**, vía `app/llm/observability.py`).
 - ✅ Usar Pydantic + Instructor para output estructurado.
 - ✅ Mantener prompts en ficheros versionados.
 - ✅ Type hints estrictos.
@@ -299,6 +301,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 - ❌ NO usar `session.query()` (SQLAlchemy legado).
 - ❌ NO confiar en `WHERE tenant_id = ?` sin RLS de respaldo.
 - ❌ NO guardar archivos de cliente en disco; siempre R2.
+- ❌ NO enviar contenido de cliente (documentos, mensajes, consultas, respuestas del modelo, mensajes de error crudos) a Langfuse.
 - ❌ NO usar `print`, `time.sleep`, `requests` síncrono.
 - ❌ NO crear ni commitear archivos `.env` (secretos vía Infisical; ver **§2**). NO commitear claves sueltas ni `app/static/css/app.css`.
 - ❌ NO introducir microservicios, Kubernetes ni GraphQL en esta fase.

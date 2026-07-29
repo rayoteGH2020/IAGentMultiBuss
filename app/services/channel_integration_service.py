@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.core.crypto import decrypt_token as _crypto_decrypt
 from app.core.crypto import encrypt_token
 from app.core.errors import NotFoundError, ValidationError
-from app.models.channel_integration import ChannelIntegration
+from app.models.channel_integration import ChannelIntegration, ChannelType
 from app.models.tenant import Tenant
 from app.schemas.channel import ChannelIntegrationRead, ChannelIntegrationStatus
 from app.schemas.tenant import TenantRead
@@ -24,12 +25,21 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+_WA_PHONE_UNIQUE_INDEX = "uq_channel_integrations_wa_phone_active"
+
 
 def _require_encryption_key() -> str:
     key = get_settings().encryption_key.get_secret_value().strip()
     if not key:
         raise ValidationError("ENCRYPTION_KEY is not configured")
     return key
+
+
+def _normalize_phone_number_id(phone_number_id: str | None) -> str | None:
+    if phone_number_id is None:
+        return None
+    normalized = phone_number_id.strip()
+    return normalized or None
 
 
 async def _enable_webhook_lookup(db: AsyncSession) -> None:
@@ -41,6 +51,34 @@ async def _enable_webhook_lookup(db: AsyncSession) -> None:
     up tenants without knowing the tenant_id upfront.
     """
     await db.execute(text("SELECT set_config('app.webhook_lookup', 'true', true)"))
+
+
+async def _assert_whatsapp_phone_number_id_available(
+    db: AsyncSession,
+    *,
+    phone_number_id: str,
+    exclude_integration_id: UUID | None,
+) -> None:
+    """Reject if another active WhatsApp integration already owns this PNID."""
+    await _enable_webhook_lookup(db)
+    stmt = (
+        select(ChannelIntegration.id, ChannelIntegration.tenant_id)
+        .where(ChannelIntegration.phone_number_id == phone_number_id)
+        .where(ChannelIntegration.channel == ChannelType.whatsapp.value)
+        .where(ChannelIntegration.status == ChannelIntegrationStatus.active.value)
+    )
+    if exclude_integration_id is not None:
+        stmt = stmt.where(ChannelIntegration.id != exclude_integration_id)
+    conflict = (await db.execute(stmt)).first()
+    if conflict is not None:
+        logger.warning(
+            "channel.whatsapp.phone_number_id_conflict",
+            phone_number_id=phone_number_id,
+            conflicting_tenant_id=str(conflict.tenant_id),
+        )
+        raise ValidationError(
+            "Este Phone Number ID de WhatsApp ya está en uso por otra organización."
+        )
 
 
 async def get_integration(
@@ -84,6 +122,10 @@ async def save_integration(
             "integrations in staging/production"
         )
 
+    normalized_phone = _normalize_phone_number_id(phone_number_id)
+    if channel == ChannelType.whatsapp.value and normalized_phone is None:
+        raise ValidationError("El Phone Number ID de WhatsApp es obligatorio.")
+
     enc_key = _require_encryption_key()
     api_token_enc = encrypt_token(api_token, enc_key)
 
@@ -98,15 +140,37 @@ async def save_integration(
         integration = ChannelIntegration(tenant_id=tenant_id, channel=channel)
         db.add(integration)
 
+    if channel == ChannelType.whatsapp.value and normalized_phone is not None:
+        await _assert_whatsapp_phone_number_id_available(
+            db,
+            phone_number_id=normalized_phone,
+            exclude_integration_id=integration.id if integration.id else None,
+        )
+
     integration.status = ChannelIntegrationStatus.active.value
     integration.api_token_enc = api_token_enc
-    integration.phone_number_id = phone_number_id
+    integration.phone_number_id = normalized_phone
     integration.display_name = display_name
     integration.confidence_threshold = confidence_threshold
     if webhook_secret_enc is not None:
         integration.webhook_secret_enc = webhook_secret_enc
 
-    await db.flush()
+    try:
+        # SAVEPOINT: si el unique parcial dispara, la sesión sigue usable para el UI.
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError as exc:
+        detail = str(getattr(exc, "orig", None) or exc).lower()
+        if _WA_PHONE_UNIQUE_INDEX in detail or "phone_number_id" in detail:
+            logger.warning(
+                "channel.whatsapp.phone_number_id_unique_violation",
+                phone_number_id=normalized_phone,
+                tenant_id=str(tenant_id),
+            )
+            raise ValidationError(
+                "Este Phone Number ID de WhatsApp ya está en uso por otra organización."
+            ) from exc
+        raise
     logger.info(
         "channel.integration.saved",
         tenant_id=str(tenant_id),
@@ -146,16 +210,31 @@ async def get_integration_by_phone_number_id(
 
     Activates the webhook_select RLS policy (transaction-local flag).
     Only call from get_db_no_tenant sessions (webhook endpoints).
+
+    Fail-closed: if more than one active row matches (pre-unique-index legacy
+    data or race), log critically and return None so the webhook does not
+    enqueue to a wrong tenant.
     """
     await _enable_webhook_lookup(db)
     stmt = (
         select(ChannelIntegration)
         .where(ChannelIntegration.phone_number_id == phone_number_id)
+        .where(ChannelIntegration.channel == ChannelType.whatsapp.value)
         .where(ChannelIntegration.status == ChannelIntegrationStatus.active.value)
-        .limit(1)
     )
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    rows = list((await db.execute(stmt)).scalars().all())
+    if not rows:
+        return None
+    if len(rows) > 1:
+        logger.critical(
+            "channel.whatsapp.ambiguous_phone_number_id",
+            phone_number_id=phone_number_id,
+            match_count=len(rows),
+            tenant_ids=[str(row.tenant_id) for row in rows],
+            integration_ids=[str(row.id) for row in rows],
+        )
+        return None
+    return rows[0]
 
 
 async def get_tenant_by_phone_number_id(
@@ -168,15 +247,7 @@ async def get_tenant_by_phone_number_id(
     reading channel_integrations without a known tenant context.
     Only call from get_db_no_tenant sessions (webhook endpoints).
     """
-    await _enable_webhook_lookup(db)
-    stmt = (
-        select(ChannelIntegration)
-        .where(ChannelIntegration.phone_number_id == phone_number_id)
-        .where(ChannelIntegration.status == ChannelIntegrationStatus.active.value)
-        .limit(1)
-    )
-    result = await db.execute(stmt)
-    integration = result.scalar_one_or_none()
+    integration = await get_integration_by_phone_number_id(db, phone_number_id)
     if integration is None:
         return None
     # tenants table has no RLS — safe to query without tenant context

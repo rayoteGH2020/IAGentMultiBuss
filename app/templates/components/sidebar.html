@@ -1,9 +1,9 @@
 {# Sidebar de navegación principal. Se incluye desde layouts/dashboard.html.
    hidden lg:flex: oculto en móvil (el layout usa un menú diferente),
    visible como columna fija en pantallas >= 1024px. #}
-<aside class="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex-col"
-       :class="sidebarOpen ? 'flex' : 'hidden lg:flex'"
-       :style="sidebarOpen ? 'position:fixed;top:0;left:0;bottom:0;z-index:40;overflow-y:auto;' : ''">
+{# Clases estáticas: sin Alpine sigue oculto en móvil y visible en lg+. #}
+<aside class="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex-col hidden lg:flex"
+       :class="sidebarOpen ? '!flex fixed inset-y-0 left-0 z-40 overflow-y-auto' : ''">
   <div class="h-16 flex items-center px-6 border-b border-slate-200">
     <a href="/" class="text-xl font-bold text-slate-900">Mi SaaS</a>
   </div>
@@ -19,8 +19,11 @@
       ("/knowledge", "Conocimiento", "book"),
       ("/chat", "Chat", "chat"),
       ("/calendar", "Calendario", "calendar"),
-      ("/settings", "Ajustes", "settings"),
     ] %}
+    {% if membership and membership_can_appointment(membership, 'view') %}
+      {% set nav_items = nav_items + [("/appointments", "Citas", "appointments")] %}
+    {% endif %}
+    {% set nav_items = nav_items + [("/settings", "Ajustes", "settings")] %}
 
     {% for href, label, icon in nav_items %}
       {# Lógica de ítem activo:
@@ -34,7 +37,6 @@
         {% set active = request.url.path == href or request.url.path.startswith(href ~ "/") %}
       {% endif %}
       <a href="{{ href }}"
-         hx-boost="true"
          @click="sidebarOpen = false"
          class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {{ 'bg-primary-50 text-primary-700' if active else 'text-slate-700 hover:bg-slate-100' }}">
@@ -51,7 +53,6 @@
   <div class="px-4 pb-2">
     {% set sadm_active = request.url.path.startswith("/sadm") %}
     <a href="/sadm"
-       hx-boost="true"
        @click="sidebarOpen = false"
        class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
               {{ 'bg-amber-50 text-amber-700' if sadm_active else 'text-amber-600 hover:bg-amber-50' }}">

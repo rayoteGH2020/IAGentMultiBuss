@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -73,6 +74,7 @@ class Invoice(Base):
         Enum(InvoiceStatus, name="invoice_status", native_enum=True),
         nullable=False,
         default=InvoiceStatus.pending,
+        server_default=text("'pending'::invoice_status"),
     )
 
     # Nullable: estos campos se rellenan durante create_invoice_from_upload.
@@ -97,7 +99,12 @@ class Invoice(Base):
     vat_breakdown: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     # String(3): código ISO 4217, siempre 3 caracteres (EUR, USD, GBP…).
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="EUR",
+        server_default=text("'EUR'"),
+    )
 
     # JSONB (no JSON): almacenamiento binario en Postgres, más eficiente en
     # consultas y soporte para índices GIN. Guarda el output completo de
@@ -106,7 +113,11 @@ class Invoice(Base):
     # Numeric(3, 2): rango 0,00-9,99 pero semánticamente acotado a 0,00-1,00.
     # 2 decimales son suficientes para la precisión que el LLM puede ofrecer.
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    # Motivo estructurado del fallo (DocumentErrorCode). Determina si el
+    # documento se puede reintentar o si requiere autorización del superadmin.
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Sin ForeignKey explícito a llm_calls: la relación es opcional (puede no
     # existir si el job falló antes de registrar la llamada) y evita dependencias
     # de integridad referencial entre dos tablas de ciclos de vida distintos.
@@ -164,6 +175,12 @@ class Invoice(Base):
         # Índice compuesto tenant+fecha: cubre filtros por rango de fechas
         # y la futura feature de búsqueda por período en la UI.
         Index("ix_invoices_tenant_fecha", "tenant_id", "fecha"),
+        Index("ix_invoices_tenant_dismissed", "tenant_id", "dismissed_at"),
+        Index(
+            "ix_invoices_error_code",
+            "error_code",
+            postgresql_where=text("error_code IS NOT NULL"),
+        ),
     )
 
 
@@ -202,7 +219,12 @@ class InvoiceLine(Base):
     # position preserva el orden original de las líneas en el documento.
     # ORDER BY position en queries de detalle reproduce la factura tal como
     # la vio el LLM (y el usuario en el PDF).
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
 
     # Sin updated_at: las líneas son inmutables una vez creadas. Si cambia la
     # extracción (reintento), el service borra todas las líneas y las recrea;

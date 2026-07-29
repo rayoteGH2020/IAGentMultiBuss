@@ -4,35 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-store">
+  <meta http-equiv="refresh" content="10;url=/logout/done">
   <title>Cerrando sesión… · Mi SaaS</title>
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="min-h-screen flex items-center justify-center bg-slate-50 p-6">
   <p class="text-slate-600" id="sign-out-status">Cerrando sesión…</p>
-  <script
-    async
-    crossorigin="anonymous"
-    data-clerk-publishable-key="{{ clerk_pub_key }}"
-    src="https://{{ clerk_frontend_host }}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
-    type="text/javascript"
-  ></script>
+  {% include "components/clerk_browser_script.html" %}
   <script>
     (function () {
-      const origin = window.location.origin;
-      const doneUrl = origin + "/logout/done";
+      const doneUrl = window.location.origin + "/logout/done";
       const statusEl = document.getElementById("sign-out-status");
+      let finished = false;
 
       function finishOnServer() {
+        if (finished) return;
+        finished = true;
         if (statusEl) statusEl.textContent = "Redirigiendo…";
         window.location.replace(doneUrl);
       }
 
+      setTimeout(finishOnServer, 10000);
+
       function waitFor(fn, timeoutMs, intervalMs) {
         return new Promise(function (resolve) {
-          var start = Date.now();
-          var id = setInterval(function () {
+          const start = Date.now();
+          const id = setInterval(function () {
             try {
-              var v = fn();
+              const v = fn();
               if (v) {
                 clearInterval(id);
                 resolve(v);
@@ -48,7 +47,7 @@
       }
 
       window.addEventListener("load", async function () {
-        var ClerkObj = await waitFor(function () {
+        const ClerkObj = await waitFor(function () {
           return window.Clerk || null;
         }, 12000, 50);
 
@@ -63,16 +62,14 @@
             signUpUrl: "/signup",
             afterSignInUrl: "/",
             afterSignUpUrl: "/",
-            afterSignOutUrl: "/login",
+            afterSignOutUrl: doneUrl,
           });
-          if (typeof ClerkObj.signOut !== "function") {
-            finishOnServer();
-            return;
+          if (typeof ClerkObj.signOut === "function") {
+            await ClerkObj.signOut();
           }
-          await ClerkObj.signOut({ redirectUrl: doneUrl });
-        } catch (_) {
-          finishOnServer();
-        }
+        } catch (_) {}
+
+        finishOnServer();
       });
     })();
   </script>

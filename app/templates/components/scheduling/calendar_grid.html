@@ -1,0 +1,7 @@
+{% if view == 'day' %}
+{% include "components/scheduling/calendar_day_grid.html" %}
+{% elif view == 'week' %}
+{% include "components/scheduling/calendar_week_grid.html" %}
+{% elif view == 'month' %}
+{% include "components/scheduling/calendar_month_grid.html" %}
+{% endif %}

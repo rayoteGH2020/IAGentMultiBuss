@@ -1,0 +1,13 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Revisar documento · Admin{% endblock %}
+{% block page_title %}Revisar documento rechazado{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <a href="/sadm/documents" class="text-xs text-primary-600 hover:underline">
+    ← Volver a documentos rechazados
+  </a>
+
+  {% include "pages/sadm/documents/_review.html" %}
+</div>
+{% endblock %}

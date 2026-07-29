@@ -98,11 +98,12 @@ async def list_threads(
     user_id: UUID,
     filters: ChatThreadListFilters | None = None,
 ) -> Page[ChatThreadRead]:
-    """Lista hilos del usuario ordenados por actividad reciente."""
+    """Lista hilos visibles del usuario ordenados por actividad reciente."""
     f = filters or ChatThreadListFilters()
     base = select(ChatThread).where(
         ChatThread.tenant_id == tenant_id,
         ChatThread.user_id == user_id,
+        ChatThread.is_hidden.is_(False),
     )
     count_stmt = select(func.count()).select_from(base.subquery())
     total = int((await db.execute(count_stmt)).scalar_one())
@@ -118,12 +119,34 @@ async def list_threads(
     )
 
 
+async def hide_thread(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    thread_id: UUID,
+) -> ChatThreadRead:
+    """Oculta un hilo del listado sin borrar filas ni mensajes."""
+    thread = await get_thread(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        thread_id=thread_id,
+        allow_hidden=True,
+    )
+    thread.is_hidden = True
+    await db.flush()
+    await db.refresh(thread)
+    return ChatThreadRead.model_validate(thread)
+
+
 async def get_thread(
     db: AsyncSession,
     *,
     tenant_id: UUID,
     user_id: UUID,
     thread_id: UUID,
+    allow_hidden: bool = False,
 ) -> ChatThread:
     """Carga un hilo verificando tenant y ownership."""
     stmt = select(ChatThread).where(
@@ -136,6 +159,8 @@ async def get_thread(
         raise NotFoundError(f"Chat thread {thread_id} not found")
     if thread.user_id != user_id:
         raise ForbiddenError("You do not have access to this chat thread")
+    if thread.is_hidden and not allow_hidden:
+        raise NotFoundError(f"Chat thread {thread_id} not found")
     return thread
 
 

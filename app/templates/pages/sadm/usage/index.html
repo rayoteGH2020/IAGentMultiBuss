@@ -1,0 +1,14 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Consumo por organización · Admin{% endblock %}
+{% block page_title %}Consumo por organización{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Documentos procesados, tokens y coste LLM del periodo {{ period }}. Base para los límites
+    por plan que se aplicarán más adelante.
+  </p>
+
+  {% include "pages/sadm/usage/_table.html" %}
+</div>
+{% endblock %}

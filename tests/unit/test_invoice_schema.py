@@ -68,3 +68,61 @@ def test_vat_breakdown_json_roundtrip() -> None:
     assert len(restored) == 2
     assert restored[0].amount == Decimal("10")
     assert restored[1].percent == Decimal("21")
+
+
+def test_factura_accepts_international_vat_and_null_cif() -> None:
+    factura = Factura(
+        fecha=date(2024, 7, 24),
+        proveedor="Polar Electro Oy",
+        cif_nif="NL858683118B01",
+        base_imponible=Decimal("53.72"),
+        iva_percent=Decimal("21"),
+        iva_amount=Decimal("11.28"),
+        total=Decimal("65.00"),
+        confidence=0.9,
+    )
+    assert factura.cif_nif == "NL858683118B01"
+
+    without_cif = Factura(
+        fecha=date(2023, 7, 24),
+        proveedor="Decathlon",
+        cif_nif=None,
+        base_imponible=Decimal("55.80"),
+        iva_percent=Decimal("21"),
+        iva_amount=Decimal("11.72"),
+        total=Decimal("67.52"),
+        confidence=0.85,
+    )
+    assert without_cif.cif_nif is None
+
+
+def test_factura_normalizes_null_string_cif() -> None:
+    factura = Factura.model_validate(
+        {
+            "fecha": "2023-07-24",
+            "proveedor": "Tienda",
+            "cif_nif": "null",
+            "base_imponible": 10,
+            "iva_percent": 21,
+            "iva_amount": 2.1,
+            "total": 12.1,
+            "confidence": 0.5,
+        },
+    )
+    assert factura.cif_nif is None
+
+
+def test_factura_invalid_cif_becomes_none() -> None:
+    factura = Factura.model_validate(
+        {
+            "fecha": "2023-07-24",
+            "proveedor": "Tienda",
+            "cif_nif": "!!!invalid!!!",
+            "base_imponible": 10,
+            "iva_percent": 21,
+            "iva_amount": 2.1,
+            "total": 12.1,
+            "confidence": 0.5,
+        },
+    )
+    assert factura.cif_nif is None

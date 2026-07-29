@@ -21,16 +21,27 @@ import structlog
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
 from app.core.errors import LLMCompleteError
+from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_invoice
-from app.services import invoice_service
+from app.services import document_processing_service, invoice_service, processing_charge_service
 
 logger = structlog.get_logger(__name__)
 
 
-async def process_invoice(ctx: dict[str, Any], invoice_id: str, tenant_id: str) -> dict[str, Any]:
-    """Descarga fichero desde R2, extrae con LLM y guarda en `Invoice` / `InvoiceLine`."""
+async def process_invoice(
+    ctx: dict[str, Any],
+    invoice_id: str,
+    tenant_id: str,
+    max_pdf_pages: int | None = None,
+) -> dict[str, Any]:
+    """Descarga fichero desde R2, extrae con LLM y guarda en `Invoice` / `InvoiceLine`.
+
+    Args:
+        max_pdf_pages: Tope de páginas de esta ejecución. Llega con valor solo
+            en el procesado excepcional autorizado por el superadmin.
+    """
     # Los argumentos llegan como str porque ARQ serializa a JSON; UUID no es
     # serializable directamente, se convirtieron a str en enqueue_invoice_processing.
     inv_uuid = uuid.UUID(invoice_id)
@@ -57,6 +68,13 @@ async def process_invoice(ctx: dict[str, Any], invoice_id: str, tenant_id: str) 
         # Re-leer la factura desde BD aunque el route la creó momentos antes:
         # el worker corre en un proceso separado sin estado compartido con la app.
         invoice_row = await invoice_service.get_invoice(db, t_uuid, inv_uuid)
+
+        await document_processing_service.begin_processing_attempt(
+            db,
+            tenant_id=t_uuid,
+            document_kind="invoice",
+            document_id=inv_uuid,
+        )
 
         if not invoice_row.source_file_key:
             # Caso de integridad: el fichero nunca llegó a R2 (bug o condición
@@ -88,12 +106,20 @@ async def process_invoice(ctx: dict[str, Any], invoice_id: str, tenant_id: str) 
                 tenant_id=t_uuid,
                 db=db,
                 source_filename=invoice_row.source_filename,
+                max_pdf_pages=max_pdf_pages,
             )
 
             await invoice_service.apply_extraction_result(
                 db,
                 invoice=invoice_row,
                 factura=extraction.factura,
+                llm_call_id=extraction.llm_call_id,
+            )
+            await processing_charge_service.settle_charge(
+                db,
+                tenant_id=t_uuid,
+                document_kind="invoice",
+                document_id=inv_uuid,
                 llm_call_id=extraction.llm_call_id,
             )
             # Commit único: persiste en una sola transacción el Invoice
@@ -108,6 +134,29 @@ async def process_invoice(ctx: dict[str, Any], invoice_id: str, tenant_id: str) 
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "invoice_id": invoice_id}
+
+        except MediaLimitExceeded as exc:
+            # Rechazo determinista: el fichero no cabe en los límites. No es un
+            # fallo transitorio, así que se cierra sin reintento y con un motivo
+            # que la UI puede explicar.
+            await db.rollback()
+            await set_tenant_context(db, str(t_uuid))
+            await invoice_service.mark_failed(
+                db,
+                invoice_id=inv_uuid,
+                tenant_id=t_uuid,
+                error=exc.message,
+                error_code=exc.error_code,
+                detail=exc.detail,
+            )
+            await db.commit()
+            logger.warning(
+                "worker.invoice.rejected_by_limits",
+                invoice_id=invoice_id,
+                tenant_id=tenant_id,
+                error_code=exc.error_code.value,
+            )
+            return {"status": "rejected", "invoice_id": invoice_id}
 
         except LLMCompleteError as exc:
             # La fila `llm_calls` ya está en sesión tras el flush en complete().

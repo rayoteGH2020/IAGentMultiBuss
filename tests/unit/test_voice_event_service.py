@@ -238,6 +238,107 @@ async def test_draft_assembles_voiceeventdraft() -> None:
     assert draft.confidence == 0.85
 
 
+async def test_draft_logs_audit_voice_transcribed() -> None:
+    """Tras transcribir debe registrarse calendar.voice_transcribed en audit_log."""
+    from app.schemas.calendar import _VoiceEventExtraction
+    from app.services.audit_service import (
+        ACTION_CALENDAR_VOICE_TRANSCRIBED,
+        RESOURCE_VOICE_TRANSCRIPTION,
+    )
+
+    extraction = _VoiceEventExtraction(
+        summary="Reunión",
+        start="2025-06-03T17:00:00+02:00",
+        end="2025-06-03T18:00:00+02:00",
+        confidence=0.85,
+        needs_clarification=True,
+    )
+    db = _db()
+    mock_audit = AsyncMock()
+    with (
+        patch(
+            "app.services.voice_event_service.calendar_service.get_integration",
+            AsyncMock(return_value=_active_integration()),
+        ),
+        patch(
+            "app.services.voice_event_service.validate_voice_upload",
+            return_value="audio/ogg",
+        ),
+        patch(
+            "app.services.voice_event_service._check_voice_rate_limit",
+            AsyncMock(),
+        ),
+        patch(
+            "app.services.voice_event_service.voice_calendar.transcribe_audio",
+            AsyncMock(return_value="quedamos un día de estos"),
+        ),
+        patch(
+            "app.services.voice_event_service.voice_calendar.draft_event_from_transcript",
+            AsyncMock(return_value=extraction),
+        ),
+        patch(
+            "app.services.voice_event_service.audit_service.log_action",
+            mock_audit,
+        ),
+    ):
+        await voice_event_service.draft_from_audio(
+            db,
+            tenant_id=TENANT_ID,
+            user_id=USER_ID,
+            audio=_OGG_MAGIC,
+            mime_type="audio/ogg",
+            redis=_redis(),
+        )
+
+    mock_audit.assert_awaited_once()
+    kwargs = mock_audit.await_args.kwargs
+    assert kwargs["action"] == ACTION_CALENDAR_VOICE_TRANSCRIBED
+    assert kwargs["resource_type"] == RESOURCE_VOICE_TRANSCRIPTION
+    assert kwargs["metadata"]["needs_clarification"] is True
+
+
+async def test_confirm_logs_audit_event_created_from_voice() -> None:
+    """Tras confirmar debe registrarse calendar.event_created_from_voice."""
+    from app.schemas.calendar import CalendarEvent
+    from app.services.audit_service import (
+        ACTION_CALENDAR_EVENT_CREATED_FROM_VOICE,
+        RESOURCE_CALENDAR_EVENT,
+    )
+
+    created = CalendarEvent(
+        id="evt-audit-1",
+        summary="Reunión",
+        start="2025-06-03T17:00:00+02:00",
+        end="2025-06-03T18:00:00+02:00",
+    )
+    db = _db()
+    mock_audit = AsyncMock()
+    event = CalendarEventCreate(
+        summary="Reunión",
+        start="2025-06-03T17:00:00+02:00",
+        end="2025-06-03T18:00:00+02:00",
+    )
+    with (
+        patch(
+            "app.services.voice_event_service.calendar_service.create_calendar_event",
+            AsyncMock(return_value=created),
+        ),
+        patch(
+            "app.services.voice_event_service.audit_service.log_action",
+            mock_audit,
+        ),
+    ):
+        await voice_event_service.confirm_event(
+            db, tenant_id=TENANT_ID, user_id=USER_ID, event=event
+        )
+
+    mock_audit.assert_awaited_once()
+    kwargs = mock_audit.await_args.kwargs
+    assert kwargs["action"] == ACTION_CALENDAR_EVENT_CREATED_FROM_VOICE
+    assert kwargs["resource_type"] == RESOURCE_CALENDAR_EVENT
+    assert kwargs["metadata"]["event_id"] == "evt-audit-1"
+
+
 # ---------------------------------------------------------------------------
 # confirm_event
 # ---------------------------------------------------------------------------

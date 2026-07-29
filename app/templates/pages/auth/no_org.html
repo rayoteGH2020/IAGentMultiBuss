@@ -9,13 +9,7 @@
   Crea una para continuar.
 </p>
 <div id="clerk-create-org"></div>
-<script
-  async
-  crossorigin="anonymous"
-  data-clerk-publishable-key="{{ clerk_pub_key }}"
-  src="https://{{ clerk_frontend_host }}/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
-  type="text/javascript"
-></script>
+{% include "components/clerk_browser_script.html" %}
 <script>
   window.addEventListener("load", async () => {
     const C = window.Clerk;

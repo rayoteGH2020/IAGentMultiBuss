@@ -1,0 +1,93 @@
+{# Grid de horario del profesional: marcar/desmarcar tramos del horario del centro. #}
+{% if not professional_hours_grid.has_center_hours %}
+<div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+  Configura primero el <a href="/settings/business-hours" class="font-medium underline cursor-pointer">horario del centro</a>
+  para poder definir la disponibilidad del profesional.
+</div>
+{% else %}
+<section class="space-y-3" x-data="professionalHoursGrid">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <h4 class="text-sm font-semibold text-slate-900">Horario semanal</h4>
+      <p class="text-xs text-slate-500">
+        Activa los tramos de {{ professional_hours_grid.granularity_minutes }} min en los que atiende.
+        Solo se muestran franjas abiertas del centro.
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs">
+      <button type="button" @click="selectAll()" class="btn-secondary cursor-pointer px-2 py-1">Marcar todo</button>
+      <button type="button" @click="clearAll()" class="btn-secondary cursor-pointer px-2 py-1">Desmarcar todo</button>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto rounded-lg border border-slate-200">
+    <table class="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+      <thead>
+        <tr class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <th class="border-b border-r border-slate-200 px-3 py-2 text-left w-24">Día</th>
+          <th class="border-b border-slate-200 px-3 py-2 text-left">Franjas del centro (clic para marcar/desmarcar)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for weekday in range(7) %}
+        {% set periods = professional_hours_grid.periods_by_weekday[weekday] %}
+        <tr class="{{ 'bg-slate-50/50' if weekday >= 5 else 'bg-white' }}">
+          <td class="border-b border-r border-slate-200 px-3 py-3 align-top font-semibold text-slate-800">
+            {{ weekday_labels[weekday] }}
+          </td>
+          <td class="border-b border-slate-200 px-3 py-3 align-top">
+            {% if not periods %}
+            <span class="text-xs text-slate-400">Centro cerrado</span>
+            {% else %}
+            <div class="space-y-3">
+              {% for period in periods %}
+              <div class="space-y-1.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-slate-600">
+                    {{ period.period_label }}
+                    <span class="font-normal text-slate-400">· {{ period.period_range }}</span>
+                  </span>
+                  <span class="inline-flex gap-1">
+                    <button type="button"
+                            class="cursor-pointer rounded px-1.5 py-0.5 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                            @click="selectPeriod({{ weekday }}, {{ period.sort_order }})">Todo</button>
+                    <button type="button"
+                            class="cursor-pointer rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100"
+                            @click="clearPeriod({{ weekday }}, {{ period.sort_order }})">Ninguno</button>
+                  </span>
+                </div>
+                <div class="flex flex-wrap gap-1"
+                     data-weekday="{{ weekday }}"
+                     data-sort-order="{{ period.sort_order }}">
+                  {% for minutes, label in period.slots %}
+                  {% set slot_key = weekday ~ ':' ~ minutes %}
+                  <label class="group relative cursor-pointer"
+                         title="{{ label }}">
+                    <input type="checkbox"
+                           name="working_slots"
+                           value="{{ slot_key }}"
+                           class="peer sr-only professional-slot-checkbox"
+                           data-weekday="{{ weekday }}"
+                           data-sort-order="{{ period.sort_order }}"
+                           {% if slot_key in professional_hours_grid.selected_slot_keys %}checked{% endif %}>
+                    <span class="flex h-7 min-w-[2.1rem] items-center justify-center rounded border border-slate-200 bg-white px-1 text-[10px] tabular-nums text-slate-500 transition-colors
+                                 peer-checked:border-emerald-400 peer-checked:bg-emerald-500 peer-checked:text-white
+                                 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-200
+                                 group-hover:border-slate-300">
+                      {{ label }}
+                    </span>
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}

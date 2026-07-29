@@ -1,8 +1,90 @@
-"""Mensajes de error de procesamiento documental legibles para el usuario."""
+"""Clasificación y mensajes de error de procesamiento documental."""
 
 from __future__ import annotations
 
 import re
+from enum import StrEnum
+
+
+class DocumentErrorCode(StrEnum):
+    """Motivo estructurado por el que un documento no se pudo procesar.
+
+    Se persiste en `invoices.error_code`, `tickets.error_code` y
+    `document_processing_attempts.error_code`. Sustituye a inferir el motivo
+    buscando subcadenas en el texto del error, que era frágil y no permitía
+    decidir de forma fiable si un reintento tiene sentido.
+    """
+
+    too_many_pages = "too_many_pages"
+    image_too_large = "image_too_large"
+    unreadable_file = "unreadable_file"
+    file_too_large = "file_too_large"
+    unsupported_type = "unsupported_type"
+    extraction_failed = "extraction_failed"
+
+
+# Rechazos que dependen del fichero, no del momento: reintentar con el mismo
+# fichero volvería a fallar y consumiría cuota. La UI oculta el botón y el
+# procesado solo puede desbloquearlo el superadmin.
+NON_RETRYABLE_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset(
+    {
+        DocumentErrorCode.too_many_pages,
+        DocumentErrorCode.image_too_large,
+        DocumentErrorCode.unreadable_file,
+        DocumentErrorCode.file_too_large,
+        DocumentErrorCode.unsupported_type,
+    },
+)
+
+_ADMIN_CONTACT_HINT = (
+    "Ponte en contacto con el administrador del sitio para gestionar su procesado."
+)
+
+_REJECTION_REASONS: dict[DocumentErrorCode, str] = {
+    DocumentErrorCode.too_many_pages: "El documento tiene más páginas de las admitidas.",
+    DocumentErrorCode.image_too_large: "La imagen tiene una resolución demasiado grande.",
+    DocumentErrorCode.unreadable_file: "El archivo está dañado o no se puede leer.",
+    DocumentErrorCode.file_too_large: "El archivo supera el tamaño máximo permitido (20 MB).",
+    DocumentErrorCode.unsupported_type: "El formato del archivo no es compatible.",
+    DocumentErrorCode.extraction_failed: "No se pudieron extraer los datos del documento.",
+}
+
+
+def is_retryable(error_code: str | None) -> bool:
+    """True si reintentar el procesado del mismo fichero puede dar otro resultado."""
+    if not error_code:
+        return True
+    try:
+        code = DocumentErrorCode(error_code)
+    except ValueError:
+        return True
+    return code not in NON_RETRYABLE_ERROR_CODES
+
+
+def rejection_message(
+    error_code: DocumentErrorCode,
+    *,
+    filename: str | None,
+    detail: str | None = None,
+) -> str:
+    """Mensaje de rechazo listo para la UI, con el motivo y la vía de escape.
+
+    Args:
+        error_code: Motivo estructurado del rechazo.
+        filename: Nombre original del fichero, para que el usuario lo identifique.
+        detail: Concreción del motivo (p. ej. "12 páginas; el máximo son 3").
+    """
+    display_name = (filename or "").strip() or "documento"
+    reason = _REJECTION_REASONS.get(
+        error_code, _REJECTION_REASONS[DocumentErrorCode.unreadable_file]
+    )
+    parts = [f'Error al procesar el documento "{display_name}".', reason]
+    if detail:
+        parts.append(f"({detail}).")
+    if error_code in NON_RETRYABLE_ERROR_CODES:
+        parts.append(_ADMIN_CONTACT_HINT)
+    return " ".join(parts)
+
 
 # Etiquetas amigables por campo del schema de extracción.
 _FIELD_REASONS: dict[str, str] = {
@@ -113,3 +195,21 @@ def format_user_processing_error(
     normalized = _normalize_raw_error(raw_error)
     reason = _reason_from_error(normalized)
     return f'Error al procesar el documento "{display_name}". {reason}'
+
+
+def failure_message(
+    raw_error: str,
+    *,
+    error_code: DocumentErrorCode,
+    filename: str | None,
+    detail: str | None = None,
+) -> str:
+    """Mensaje de UI para un fallo, según haya motivo estructurado o no.
+
+    `extraction_failed` es el cajón de sastre del pipeline LLM: ahí el texto
+    técnico sí aporta pistas (qué campo no validó) y se traduce. El resto de
+    códigos son rechazos deterministas con mensaje propio.
+    """
+    if error_code is DocumentErrorCode.extraction_failed:
+        return format_user_processing_error(raw_error, filename=filename)[:2000]
+    return rejection_message(error_code, filename=filename, detail=detail)[:2000]

@@ -32,21 +32,36 @@
   {% if threads %}
     <ul class="space-y-1">
       {% for t in threads %}
-        <li>
+        <li class="{% if active_thread_id and active_thread_id == t.id %}chat-thread-link--active{% else %}chat-thread-link--idle{% endif %} rounded-lg px-3 py-2.5">
           <a
             href="/chat?thread_id={{ t.id }}"
             hx-get="/chat/threads/{{ t.id }}"
             hx-target="#chat-main"
             hx-swap="innerHTML"
             hx-push-url="/chat?thread_id={{ t.id }}"
-            class="chat-thread-link {% if active_thread_id and active_thread_id == t.id %}chat-thread-link--active{% else %}chat-thread-link--idle{% endif %}">
-            <span class="block truncate">{{ t.title or "Sin título" }}</span>
-            {% if t.updated_at %}
-              <span class="mt-0.5 block text-[10px] font-normal text-slate-400">
-                {{ t.updated_at | local_datetime("%d/%m %H:%M") }}
-              </span>
-            {% endif %}
+            class="block min-w-0 cursor-pointer text-sm">
+            <span class="block truncate font-medium">{{ t.title or "Sin título" }}</span>
           </a>
+          <div class="mt-0.5 flex items-center justify-between gap-2">
+            <span class="min-w-0 truncate text-[10px] font-normal text-slate-400">
+              {% if t.updated_at %}{{ t.updated_at | local_datetime("%d/%m %H:%M") }}{% else %}—{% endif %}
+            </span>
+            <button
+              type="button"
+              class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-400 hover:text-red-600 cursor-pointer"
+              title="Quitar de la lista"
+              aria-label="Quitar de la lista"
+              hx-post="/chat/threads/{{ t.id }}/hide"
+              hx-vals='{"was_active": {% if active_thread_id and active_thread_id == t.id %}true{% else %}false{% endif %}{% if active_thread_id %}, "active_thread_id": "{{ active_thread_id }}"{% endif %}}'
+              hx-target="#chat-sidebar-inner"
+              hx-swap="innerHTML"
+              hx-confirm="¿Quitar esta conversación de la lista? No se borrarán los mensajes.">
+              <svg class="h-4 w-4" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
         </li>
       {% endfor %}
     </ul>

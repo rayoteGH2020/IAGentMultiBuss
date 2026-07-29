@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core import telegram_client
 from app.core.db import set_tenant_context
-from app.core.errors import AppError, NotFoundError
+from app.core.errors import AppError, NotFoundError, public_error_message
 from app.core.templating import render
 from app.deps import SuperAdmin, get_db_no_tenant
 from app.services import channel_integration_service
@@ -86,7 +86,10 @@ async def admin_whatsapp_save(
         )
         logger.info("admin.whatsapp.saved", tenant_id=str(tenant_id))
     except AppError as exc:
-        error = exc.message
+        error = public_error_message(
+            exc,
+            fallback="No se pudo guardar la integración de WhatsApp.",
+        )
     ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
@@ -111,7 +114,10 @@ async def admin_whatsapp_disconnect(
         await channel_integration_service.revoke_integration(db, tenant_id, "whatsapp")
         logger.info("admin.whatsapp.revoked", tenant_id=str(tenant_id))
     except (AppError, NotFoundError) as exc:
-        error = exc.message
+        error = public_error_message(
+            exc,
+            fallback="No se pudo desconectar la integración de WhatsApp.",
+        )
     ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
@@ -165,7 +171,10 @@ async def admin_telegram_save(
             integration_id=str(integration.id),
         )
     except AppError as exc:
-        error = exc.message
+        error = public_error_message(
+            exc,
+            fallback="No se pudo guardar la integración de Telegram.",
+        )
     ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(
@@ -197,7 +206,10 @@ async def admin_telegram_disconnect(
         await channel_integration_service.revoke_integration(db, tenant_id, "telegram")
         logger.info("admin.telegram.revoked", tenant_id=str(tenant_id))
     except (AppError, NotFoundError) as exc:
-        error = exc.message
+        error = public_error_message(
+            exc,
+            fallback="No se pudo desconectar la integración de Telegram.",
+        )
     ctx = await channel_integration_service.build_admin_integrations_context(db, tenant)
     ctx["error_message"] = error
     return render(

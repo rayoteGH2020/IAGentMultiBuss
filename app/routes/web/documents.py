@@ -8,12 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ValidationError
 from app.core.templating import render
-from app.core.uploads import UploadValidationError, validate_invoice_upload
+from app.core.uploads import (
+    MAX_FILE_SIZE,
+    UploadValidationError,
+    read_upload_limited,
+    validate_invoice_upload,
+)
 from app.deps import CurrentTenant, CurrentUser, get_db
 from app.schemas.document_panel import PanelListParams
 from app.services import (
     doc_type_service,
     document_panel_service,
+    document_processing_service,
     document_upload_service,
     invoice_service,
     ticket_service,
@@ -190,7 +196,7 @@ async def upload_documents(
         display_name = upload.filename or "file"
 
         try:
-            data = await upload.read()
+            data = await read_upload_limited(upload, max_bytes=MAX_FILE_SIZE)
 
             mime = validate_invoice_upload(display_name, data)
 
@@ -243,3 +249,79 @@ async def upload_documents(
         partial="components/invoices_panel.html",
         ctx=ctx,
     )
+
+
+async def _document_row_response(
+    request: Request,
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    kind: str,
+    document_id: UUID,
+) -> HTMLResponse:
+    if kind == "invoice":
+        invoice = await invoice_service.get_invoice(db, tenant_id, document_id)
+        document = document_panel_service.row_from_invoice(invoice)
+    elif kind == "ticket":
+        ticket = await ticket_service.get_ticket(db, tenant_id, document_id)
+        document = document_panel_service.row_from_ticket(ticket)
+    else:
+        raise ValidationError("Tipo de documento no válido.")
+
+    return render(
+        request,
+        full="components/document_row.html",
+        partial="components/document_row.html",
+        ctx={
+            "document": document,
+            "just_uploaded_ids": [],
+        },
+    )
+
+
+@router.post("/{kind}/{document_id}/retry")
+async def document_retry(
+    request: Request,
+    kind: str,
+    document_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    if kind not in ("invoice", "ticket"):
+        raise ValidationError("Tipo de documento no válido.")
+    await document_processing_service.retry_processing(
+        db,
+        tenant_id=tenant.id,
+        document_kind=kind,  # type: ignore[arg-type]
+        document_id=document_id,
+    )
+    await db.commit()
+    return await _document_row_response(
+        request,
+        db,
+        tenant.id,
+        kind=kind,
+        document_id=document_id,
+    )
+
+
+@router.post("/{kind}/{document_id}/dismiss")
+async def document_dismiss(
+    request: Request,
+    kind: str,
+    document_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    if kind not in ("invoice", "ticket"):
+        raise ValidationError("Tipo de documento no válido.")
+    await document_processing_service.dismiss_from_panel(
+        db,
+        tenant_id=tenant.id,
+        document_kind=kind,  # type: ignore[arg-type]
+        document_id=document_id,
+    )
+    await db.commit()
+    return HTMLResponse(status_code=200, content="")

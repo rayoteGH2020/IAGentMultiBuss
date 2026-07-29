@@ -1,0 +1,24 @@
+<tr id="service-{{ service.id }}">
+  <td class="font-medium {% if not service.is_active %}text-red-600{% endif %}">
+    {{ service.name }}
+    {% if not service.is_active %}<span class="ml-2 text-xs rounded bg-red-50 text-red-700 px-2 py-0.5">Inactivo</span>{% endif %}
+  </td>
+  <td>{{ service.duration_minutes }} min</td>
+  <td>{{ "Activo" if service.is_active else "Inactivo" }}</td>
+  <td>
+    <form hx-post="/settings/services/{{ service.id }}"
+          hx-target="#service-{{ service.id }}"
+          hx-swap="outerHTML"
+          hx-confirm="¿Guardar cambios en este servicio?"
+          class="flex flex-wrap items-center gap-2 justify-end">
+      <input type="hidden" name="name" value="{{ service.name }}">
+      <input type="number" name="duration_minutes" value="{{ service.duration_minutes }}"
+             min="15" max="240" class="w-20 rounded border border-slate-300 px-2 py-1 text-sm">
+      <label class="text-xs inline-flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" name="is_active" value="true" {% if service.is_active %}checked{% endif %}>
+        Activo
+      </label>
+      <button type="submit" class="text-primary-600 text-sm cursor-pointer">Guardar</button>
+    </form>
+  </td>
+</tr>

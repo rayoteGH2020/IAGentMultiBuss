@@ -10,6 +10,9 @@ repos:
     rev: v1.13.0
     hooks:
       - id: mypy
+        # Alineado con pyproject [tool.mypy] exclude = tests/; pre-commit
+        # pasa paths explícitos y si no filtramos, mypy ignora ese exclude.
+        files: ^app/
         additional_dependencies:
           - pydantic>=2.10.0
           - pydantic-settings>=2.6.0

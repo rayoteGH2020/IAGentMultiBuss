@@ -2,7 +2,7 @@
     "_comment": "Dataset de evals del módulo 1. JSON puro (sin comentarios nativos); los campos '_comment' son documentación y son ignorados por el runner.",
     "version": "v1",
     "_version_comment": "Versión del dataset, no del modelo. Al cambiar la estructura del ground_truth o añadir campos nuevos se incrementa a v2 y se crea un fichero separado. El runner carga el dataset por nombre (invoices_v1.json), por lo que v1 y v2 pueden coexistir.",
-    "model_target": "gemini-2.5-flash",
+    "model_target": "gemini-2.0-flash",
     "_model_target_comment": "Modelo LLM contra el que se anotan los ground truths. Si se cambia el modelo por defecto en DEFAULT_MODELS (llm/client.py), los ground truths deben re-validarse con el nuevo modelo porque los valores extraídos pueden diferir.",
     "notes": "Ground-truth placeholder. Rellenar a mano con los valores reales de cada factura en tests/fixtures/invoices/. Casos con ground_truth a null se omiten en el runner (marcados como 'skipped', no como 'failed'). Ver _ground_truth_schema para el formato esperado.",
     "_ground_truth_schema": {
@@ -47,7 +47,7 @@
                 "proveedor": "ALDI",
                 "cif_nif": "B84160233",
                 "base_imponible": "24.85",
-                "iva_amount": "21",
+                "iva_amount": "2.80",
                 "total": "27.65"
             }
         },
@@ -57,30 +57,23 @@
             "ground_truth": {
                 "fecha": "2023-07-26",
                 "proveedor": "COLEGIO CARDENAL SPINOLA",
-                "cif_nif": "52P",
-                "base_imponible": "31.2",
-                "iva_amount": "1.9",
+                "cif_nif": "G686992807",
+                "base_imponible": "31.02",
+                "iva_amount": "2.08",
                 "total": "33.1"
             }
         },
         {
             "id": "inv_005",
             "file": "ejemplo_05.png",
-            "ground_truth": {
-                "fecha": "",
-                "proveedor": "",
-                "cif_nif": "",
-                "base_imponible": "",
-                "iva_amount": "",
-                "total": ""
-            }
+            "ground_truth": null
         },
         {
             "id": "inv_006",
             "file": "ejemplo_06.png",
             "ground_truth": {
                 "fecha": "2024-11-25",
-                "proveedor": "pccomponentes",
+                "proveedor": "PC Componentes",
                 "cif_nif": "b73347494",
                 "base_imponible": "371.06",
                 "iva_amount": "77.92",
@@ -105,7 +98,7 @@
             "ground_truth": {
                 "fecha": "2024-07-24",
                 "proveedor": "polar",
-                "cif_nif": "nl858683118b01",
+                "cif_nif": "NL858683118B01",
                 "base_imponible": "53.72",
                 "iva_amount": "11.28",
                 "total": "65.0"
@@ -129,7 +122,7 @@
             "ground_truth": {
                 "fecha": "2023-08-28",
                 "proveedor": "la mata",
-                "cif_nif": "b10267409",
+                "cif_nif": "",
                 "base_imponible": "98.91",
                 "iva_amount": "9.89",
                 "total": "108.8"
@@ -139,7 +132,7 @@
             "id": "inv_011",
             "file": "ejemplo_11.png",
             "ground_truth": {
-                "fecha": "2023-07-24",
+                "fecha": "2023-07-26",
                 "proveedor": "decathlon",
                 "cif_nif": "",
                 "base_imponible": "55.80",
@@ -152,7 +145,7 @@
             "file": "ejemplo_12.pdf",
             "ground_truth": {
                 "fecha": "2026-04-28",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "63.61",
                 "iva_amount": "6.36",
@@ -163,8 +156,8 @@
             "id": "inv_013",
             "file": "ejemplo_13.pdf",
             "ground_truth": {
-                "fecha": "2025-11-03",
-                "proveedor": "asenergy",
+                "fecha": "2025-10-29",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "20.80",
                 "iva_amount": "4.37",
@@ -176,7 +169,7 @@
             "file": "ejemplo_14.pdf",
             "ground_truth": {
                 "fecha": "2025-02-21",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "110.08",
                 "iva_amount": "23.12",
@@ -187,8 +180,8 @@
             "id": "inv_015",
             "file": "ejemplo_15.pdf",
             "ground_truth": {
-                "fecha": "2025-02-21",
-                "proveedor": "asenergy",
+                "fecha": "2024-06-28",
+                "proveedor": "ASENERGY",
                 "cif_nif": "a42785949",
                 "base_imponible": "33.69",
                 "iva_amount": "7.07",
@@ -200,7 +193,7 @@
             "file": "ejemplo_16.pdf",
             "ground_truth": {
                 "fecha": "2023-12-21",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "130.75",
                 "iva_amount": "6.54",
@@ -212,7 +205,7 @@
             "file": "ejemplo_17.pdf",
             "ground_truth": {
                 "fecha": "2026-05-04",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "34.61",
                 "iva_amount": "3.46",
@@ -224,7 +217,7 @@
             "file": "ejemplo_18.pdf",
             "ground_truth": {
                 "fecha": "2026-03-02",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "38.69",
                 "iva_amount": "8.12",
@@ -236,7 +229,7 @@
             "file": "ejemplo_19.pdf",
             "ground_truth": {
                 "fecha": "2025-08-01",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "39.56",
                 "iva_amount": "8.31",
@@ -248,7 +241,7 @@
             "file": "ejemplo_20.pdf",
             "ground_truth": {
                 "fecha": "2024-11-29",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "40.14",
                 "iva_amount": "4.01",
@@ -260,7 +253,7 @@
             "file": "ejemplo_21.pdf",
             "ground_truth": {
                 "fecha": "2024-04-30",
-                "proveedor": "asenergy",
+                "proveedor": "Alquiler Seguro Energía",
                 "cif_nif": "a42785949",
                 "base_imponible": "29.47",
                 "iva_amount": "6.19",
@@ -271,8 +264,8 @@
             "id": "inv_022",
             "file": "ejemplo_22.pdf",
             "ground_truth": {
-                "fecha": "2022-06-03",
-                "proveedor": "comercializador de ultimo recurso",
+                "fecha": "2025-06-03",
+                "proveedor": "Curenergía",
                 "cif_nif": "A95554630",
                 "base_imponible": "3.44",
                 "iva_amount": "0.72",
@@ -284,7 +277,7 @@
             "file": "ejemplo_23.pdf",
             "ground_truth": {
                 "fecha": "2025-04-07",
-                "proveedor": "comercializador de ultimo recurso",
+                "proveedor": "Curenergía",
                 "cif_nif": "A95554630",
                 "base_imponible": "32.45",
                 "iva_amount": "6.81",
@@ -296,7 +289,7 @@
             "file": "ejemplo_24.pdf",
             "ground_truth": {
                 "fecha": "2025-08-12",
-                "proveedor": "comercializador de ultimo recurso",
+                "proveedor": "Curenergía",
                 "cif_nif": "A95554630",
                 "base_imponible": "11.33",
                 "iva_amount": "2.38",
@@ -308,7 +301,7 @@
             "file": "ejemplo_25.pdf",
             "ground_truth": {
                 "fecha": "2025-12-10",
-                "proveedor": "comercializador de ultimo recurso",
+                "proveedor": "Curenergía",
                 "cif_nif": "A95554630",
                 "base_imponible": "24.16",
                 "iva_amount": "5.07",
@@ -320,7 +313,7 @@
             "file": "ejemplo_26.pdf",
             "ground_truth": {
                 "fecha": "2025-10-14",
-                "proveedor": "comercializador de ultimo recurso",
+                "proveedor": "Curenergía",
                 "cif_nif": "A95554630",
                 "base_imponible": "9.09",
                 "iva_amount": "1.91",

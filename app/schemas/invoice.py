@@ -12,11 +12,15 @@ su redacción afecta directamente a la calidad de la extracción.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_CIF_NIF_PATTERN = re.compile(r"^[A-Z0-9]{2,15}$")
 
 
 class DesgloseIVA(BaseModel):
@@ -61,9 +65,11 @@ class Factura(BaseModel):
 
     fecha: date = Field(description="Fecha de emisión de la factura")
     proveedor: str = Field(description="Razón social o nombre del emisor")
-    cif_nif: str = Field(
-        description="CIF, NIF o NIE del emisor en España",
-        pattern=r"^[A-Z0-9]{8,10}$",
+    cif_nif: str | None = Field(
+        default=None,
+        description=(
+            "CIF, NIF, NIE o VAT intracomunitario del emisor. Null si no aparece en el documento."
+        ),
     )
     numero_factura: str | None = Field(
         default=None,
@@ -103,6 +109,28 @@ class Factura(BaseModel):
         le=1,
         description="Tu confianza global en la extracción (0=incierto, 1=seguro)",
     )
+
+    @field_validator("cif_nif", mode="before")
+    @classmethod
+    def _normalize_cif_nif(cls, v: object) -> object:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        cleaned = v.strip()
+        if not cleaned or cleaned.lower() == "null":
+            return None
+        normalized = (
+            unicodedata.normalize("NFKD", cleaned)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .upper()
+            .replace("-", "")
+            .replace(" ", "")
+        )
+        if not _CIF_NIF_PATTERN.fullmatch(normalized):
+            return None
+        return normalized
 
     @field_validator("fecha", mode="before")
     @classmethod

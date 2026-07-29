@@ -1,0 +1,15 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Trazas de chat · Admin{% endblock %}
+{% block page_title %}Trazas de chat{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Conversaciones de <code class="text-xs">/chat</code> de todos los tenants.
+    El detalle muestra mensajes en orden de creación, tools, <code class="text-xs">llm_calls</code>
+    y eventos de auditoría. Contiene datos de cliente: acceso solo SuperAdmin.
+  </p>
+
+  {% include "pages/sadm/chat_traces/_list.html" %}
+</div>
+{% endblock %}

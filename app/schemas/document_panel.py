@@ -8,6 +8,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from app.core.document_processing_errors import is_retryable
+
 if TYPE_CHECKING:
     from app.models import Invoice, LLMCall, Ticket
 
@@ -74,8 +76,14 @@ class PanelDocumentRow:
     error_message: str | None
     doc_type_code: str
     doc_type_label: str
+    error_code: str | None = None
     invoice: Invoice | None = None
     ticket: Ticket | None = None
+
+    @property
+    def can_retry(self) -> bool:
+        """False en rechazos por límites: el mismo fichero volvería a fallar."""
+        return is_retryable(self.error_code)
 
     @property
     def llm_call(self) -> LLMCall | None:

@@ -19,9 +19,11 @@ if TYPE_CHECKING:
     from fastapi.responses import HTMLResponse
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.calendar_datetime import local_input_to_google_iso
-from app.core.errors import AppError, ValidationError
+from app.core.errors import AppError, ValidationError, public_error_message
 from app.core.templating import render
+from app.core.uploads import UploadValidationError, read_upload_limited
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
 from app.schemas.calendar import CalendarEventCreate, CalendarIntegrationStatus
 from app.services import calendar_service, voice_event_service
@@ -70,7 +72,14 @@ async def voice_transcribe(
 ) -> HTMLResponse:
     """Recibe el audio grabado, transcribe y devuelve el fragmento de confirmación."""
     try:
-        audio_bytes = await audio.read()
+        settings = get_settings()
+        audio_bytes = await read_upload_limited(
+            audio,
+            max_bytes=settings.voice_max_audio_bytes,
+            too_large_message=(
+                f"Audio too large: more than {settings.voice_max_audio_bytes} bytes"
+            ),
+        )
         mime_type = audio.content_type or "application/octet-stream"
 
         draft = await voice_event_service.draft_from_audio(
@@ -88,6 +97,19 @@ async def voice_transcribe(
             partial="components/voice_event_confirm.html",
             ctx={"draft": draft, "tenant": tenant, "user": user},
         )
+    except UploadValidationError as exc:
+        logger.warning(
+            "voice.upload_rejected",
+            tenant_id=str(tenant.id),
+            user_id=str(user.id),
+            error=str(exc),
+        )
+        return render(
+            request,
+            full="components/voice_event_recorder.html",
+            partial="components/voice_event_recorder.html",
+            ctx={"error_message": str(exc), "tenant": tenant, "user": user},
+        )
     except AppError as exc:
         logger.warning(
             "voice.transcribe_error",
@@ -99,7 +121,14 @@ async def voice_transcribe(
             request,
             full="components/voice_event_recorder.html",
             partial="components/voice_event_recorder.html",
-            ctx={"error_message": exc.message, "tenant": tenant, "user": user},
+            ctx={
+                "error_message": public_error_message(
+                    exc,
+                    fallback="No se pudo procesar el audio. Inténtalo de nuevo.",
+                ),
+                "tenant": tenant,
+                "user": user,
+            },
         )
 
 
@@ -156,6 +185,10 @@ async def voice_confirm(
             },
         )
     except AppError as exc:
+        error_message = public_error_message(
+            exc,
+            fallback="No se pudo crear el evento. Inténtalo de nuevo.",
+        )
         logger.warning(
             "voice.confirm_error",
             tenant_id=str(tenant.id),
@@ -167,7 +200,7 @@ async def voice_confirm(
             full="components/voice_event_confirm.html",
             partial="components/voice_event_confirm.html",
             ctx={
-                "error_message": exc.message,
+                "error_message": error_message,
                 "form_summary": summary,
                 "form_start": start,
                 "form_end": end,

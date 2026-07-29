@@ -4,6 +4,8 @@ from typing import Literal, Self
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.clerk_frontend import DEFAULT_CLERK_JS_VERSION
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -30,6 +32,11 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # Zona horaria por defecto para mostrar timestamps en plantillas (BD sigue en UTC).
     app_display_timezone: str = "Europe/Madrid"
+    # Seguridad HTTP. En produccion se fuerza HTTPS redirect y HSTS desde create_app().
+    # SECURITY_ALLOWED_HOSTS debe incluir dominios publicos y hosts internos del proxy.
+    security_allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver", "test"]
+    security_https_redirect: bool = False
+    security_hsts_enabled: bool = False
 
     # Database
     # Sin defaults: ambas conexiones son imprescindibles para cualquier request.
@@ -63,6 +70,8 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = ""
     clerk_jwks_url: str = ""
     clerk_webhook_secret: SecretStr = SecretStr("")
+    # Versión fijada de @clerk/clerk-js (CDN). No usar @latest (supply chain).
+    clerk_js_version: str = DEFAULT_CLERK_JS_VERSION
 
     # LLM providers — se usan en Paso 10
     anthropic_api_key: SecretStr = SecretStr("")
@@ -75,6 +84,11 @@ class Settings(BaseSettings):
     # En local apunta al Langfuse del docker-compose; en prod a la instancia
     # self-hosted en la VPS (arquitectura.md §2).
     langfuse_host: str = "http://localhost:3000"
+    # Captura de contenido íntegro (prompts, documentos, respuestas) en las
+    # trazas. Por defecto solo se envían metadatos de evaluación: el contenido
+    # de cliente no sale de Postgres/R2 (arquitectura.md §8). Solo activable en
+    # desarrollo y con datos sintéticos.
+    langfuse_capture_content: bool = False
 
     # Overrides opcionales del router de modelos (arquitectura.md §8).
     # Si son None, LLMClient usa los DEFAULT_MODELS definidos en llm/client.py.
@@ -91,7 +105,36 @@ class Settings(BaseSettings):
     # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
     llm_model_transcription: str | None = None
 
+    # Límites de recursos en procesado documental.
+    # Un PDF o una imagen pequeños en bytes pueden expandirse a gigabytes al
+    # decodificarse (decompression bomb). Estos topes se validan ANTES de
+    # decodificar y son fail-closed: si no se pueden verificar, se rechaza.
+    # Páginas admitidas por documento de negocio (factura, ticket). Todas se
+    # envían al LLM, así que subir este número multiplica coste y latencia.
+    document_max_pdf_pages: int = 3
+    # Área máxima en píxeles tras decodificar (unos 8000 por 5000). Pillow
+    # aborta la decodificación al superarlo (Image.MAX_IMAGE_PIXELS).
+    document_max_image_pixels: int = 40_000_000
+    # Lado máximo: descarta imágenes tipo 1 por 500.000 px que pasan el área.
+    document_max_image_edge_px: int = 20_000
+    # Techo duro del procesado excepcional autorizado por el superadmin. El
+    # override salta los límites de negocio, no los de supervivencia del worker.
+    document_override_max_pdf_pages: int = 100
+    # Estimación mostrada al superadmin antes de autorizar. Calibrado a ojo con
+    # extracciones de 1-3 páginas; ajustar con datos reales de llm_calls.
+    document_estimated_seconds_per_page: float = 15.0
+    document_estimated_input_tokens_per_page: int = 2_500
+    document_estimated_output_tokens_per_page: int = 900
+    # Multiplicador sobre el coste de proveedor al repercutir un procesado
+    # excepcional al cliente (1.0 = a coste, sin margen).
+    document_override_charge_multiplier: float = 1.0
+
     # Knowledge / RAG ingesta (Paso 18)
+    # Los documentos de conocimiento son libros o manuales: el tope es mucho más
+    # alto que en facturas, pero existe (pypdf recorre página a página).
+    knowledge_max_pdf_pages: int = 300
+    # Techo de texto extraído antes de chunkificar (~325k tokens).
+    knowledge_max_extracted_chars: int = 1_300_000
     knowledge_max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
     knowledge_chunk_target_tokens: int = 600
     knowledge_chunk_overlap_tokens: int = 100
@@ -210,6 +253,10 @@ class Settings(BaseSettings):
     # ID de la organización Clerk que identifica al superadmin (Ruben).
     # Si está vacío, las rutas /admin devuelven 403.
     admin_clerk_org_id: str = ""
+    # Allowlist opcional (defensa en profundidad): clerk_user_id separados por
+    # coma. Vacío = cualquier admin activo de ADMIN_CLERK_ORG_ID. Con valores,
+    # además del rol admin el usuario debe estar en la lista.
+    superadmin_clerk_user_ids: str = ""
 
     # Email SMTP — notificaciones internas (Paso 21, solución temporal)
     # Si smtp_host está vacío, los envíos se omiten silenciosamente (útil en dev).
@@ -259,6 +306,13 @@ class Settings(BaseSettings):
         return self.app_env == "development"
 
     @property
+    def superadmin_clerk_user_id_set(self) -> frozenset[str]:
+        """Allowlist de superadmins; vacía significa "sin restricción extra"."""
+        return frozenset(
+            part.strip() for part in self.superadmin_clerk_user_ids.split(",") if part.strip()
+        )
+
+    @property
     def allows_unsigned_webhooks(self) -> bool:
         """Permite omitir verificación criptográfica solo en dev con flag explícito."""
         return self.is_dev and self.webhook_allow_unsigned
@@ -268,6 +322,14 @@ class Settings(BaseSettings):
         if self.webhook_allow_unsigned and not self.is_dev:
             raise ValueError(
                 "WEBHOOK_ALLOW_UNSIGNED must be false when APP_ENV is staging or production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_langfuse_content_outside_dev(self) -> Self:
+        if self.langfuse_capture_content and not self.is_dev:
+            raise ValueError(
+                "LANGFUSE_CAPTURE_CONTENT must be false when APP_ENV is staging or production"
             )
         return self
 

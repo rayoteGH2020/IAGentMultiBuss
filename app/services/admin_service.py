@@ -83,7 +83,14 @@ async def create_user_in_org(
         # set_tenant_context obligatorio: memberships tiene FORCE ROW LEVEL SECURITY.
         await set_tenant_context(db, str(tenant_id))
         user = await resolve_user(db, clerk_user_id)
-        await ensure_membership(db, user.id, tenant_id, role=role)
+        user.force_password_reset = True
+        await ensure_membership(
+            db,
+            user.id,
+            tenant_id,
+            role=role,
+            allow_reactivation=True,
+        )
         await db.flush()
     except Exception:
         try:
@@ -110,6 +117,7 @@ async def remove_user_from_org(
         select(Membership).where(
             Membership.user_id == user_id,
             Membership.tenant_id == tenant_id,
+            Membership.is_active.is_(True),
         )
     )
     membership = result.scalar_one_or_none()
@@ -125,7 +133,7 @@ async def remove_user_from_org(
     if user and user.clerk_user_id and tenant and tenant.clerk_org_id:
         await clerk_client.remove_org_member(tenant.clerk_org_id, user.clerk_user_id)
 
-    await db.delete(membership)
+    membership.is_active = False
     await db.flush()
     log.info("admin.user_removed", user_id=str(user_id), tenant_id=str(tenant_id))
 
@@ -142,7 +150,10 @@ async def list_tenant_members(db: AsyncSession, tenant_id: UUID) -> list[tuple[U
     result = await db.execute(
         select(User, Membership)
         .join(Membership, Membership.user_id == User.id)
-        .where(Membership.tenant_id == tenant_id)
+        .where(
+            Membership.tenant_id == tenant_id,
+            Membership.is_active.is_(True),
+        )
         .order_by(User.email)
     )
     return [(row[0], row[1]) for row in result.all()]

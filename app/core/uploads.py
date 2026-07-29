@@ -11,7 +11,12 @@ previene que un atacante renombre `malware.exe` a `factura.pdf` y lo suba.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
+
+if TYPE_CHECKING:
+    from fastapi import UploadFile
 
 logger = structlog.get_logger(__name__)
 
@@ -19,6 +24,7 @@ logger = structlog.get_logger(__name__)
 # embebido en base64. Coincide también con el límite validado en extract_invoice().
 # Expresado como producto para que el número sea legible sin calculadora.
 MAX_FILE_SIZE = 20 * 1024 * 1024
+UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
 
 # frozenset (no set): inmutable, sin riesgo de modificación accidental en runtime.
 # La búsqueda `in` es O(1), igual que en set.
@@ -52,6 +58,30 @@ class UploadValidationError(Exception):
     (patrón de éxito parcial: 3 de 5 ficheros válidos). Si fuera ValidationError
     aborataría el request completo en lugar de continuar con los siguientes.
     """
+
+
+async def read_upload_limited(
+    upload: UploadFile,
+    *,
+    max_bytes: int,
+    too_large_message: str | None = None,
+) -> bytes:
+    """Lee un UploadFile en chunks y corta en cuanto supera max_bytes."""
+    chunks: list[bytes] = []
+    total = 0
+
+    while True:
+        read_size = min(UPLOAD_READ_CHUNK_SIZE, max_bytes + 1 - total)
+        chunk = await upload.read(read_size)
+        if not chunk:
+            return b"".join(chunks)
+
+        total += len(chunk)
+        if total > max_bytes:
+            raise UploadValidationError(
+                too_large_message or f"File too large: more than {max_bytes} bytes"
+            )
+        chunks.append(chunk)
 
 
 def _mime_from_signatures(data: bytes) -> str | None:

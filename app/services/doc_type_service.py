@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -13,6 +14,49 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+# Alineado con migrations/versions/p11_doc_types_tickets_01_*.py
+DEFAULT_DOC_TYPES: tuple[tuple[str, str, str], ...] = (
+    (DocTypeCode.factura.value, "Factura", "Factura emitida o recibida"),
+    (DocTypeCode.ticket.value, "Ticket", "Ticket o recibo simplificado"),
+    (DocTypeCode.ticket.value, "Contrato", "Contrato de servicio"),
+    (DocTypeCode.ticket.value, "Seguros", "Seguros"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class DocTypeSeedResult:
+    """Resultado de un seed idempotente del catálogo."""
+
+    inserted: tuple[str, ...]
+    skipped: tuple[str, ...]
+
+
+async def ensure_default_doc_types(db: AsyncSession) -> DocTypeSeedResult:
+    """Inserta filas del catálogo base si faltan (no reactiva ni renombra existentes)."""
+    result = await db.execute(select(DocType.code))
+    existing = set(result.scalars().all())
+
+    inserted: list[str] = []
+    skipped: list[str] = []
+    for code, name, description in DEFAULT_DOC_TYPES:
+        if code in existing:
+            skipped.append(code)
+            continue
+        db.add(
+            DocType(
+                code=code,
+                name=name,
+                description=description,
+                is_active=True,
+            )
+        )
+        inserted.append(code)
+
+    if inserted:
+        await db.flush()
+
+    return DocTypeSeedResult(inserted=tuple(inserted), skipped=tuple(skipped))
 
 
 async def get_doc_type_id(

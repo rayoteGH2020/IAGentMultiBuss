@@ -30,6 +30,12 @@ from app.models.membership import Membership
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services import audit_service, channel_chat_service, channel_integration_service
+from app.services.audit_service import (
+    ACTION_CHANNEL_ESCALATED,
+    ACTION_CHANNEL_MESSAGE_RECEIVED,
+    ACTION_CHANNEL_MESSAGE_SENT,
+    RESOURCE_CHANNEL_CONVERSATION,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -116,7 +122,11 @@ async def _get_admin_email(db: Any, tenant_id: uuid.UUID) -> str | None:
     stmt = (
         select(User.email)
         .join(Membership, Membership.user_id == User.id)
-        .where(Membership.tenant_id == tenant_id, Membership.role == "admin")
+        .where(
+            Membership.tenant_id == tenant_id,
+            Membership.role == "admin",
+            Membership.is_active.is_(True),
+        )
         .limit(1)
     )
     result = await db.execute(stmt)
@@ -184,8 +194,8 @@ async def process_channel_message(
                 db,
                 tenant_id=tenant_uuid,
                 user_id=None,
-                action="channel.message_received",
-                resource_type="channel_conversation",
+                action=ACTION_CHANNEL_MESSAGE_RECEIVED,
+                resource_type=RESOURCE_CHANNEL_CONVERSATION,
                 resource_id=None,
                 metadata={
                     "channel": channel,
@@ -229,6 +239,36 @@ async def process_channel_message(
             )
             response_text = response.text
             response_confidence = response.confidence
+
+            if response_confidence >= confidence_threshold:
+                await audit_service.log_action(
+                    db,
+                    tenant_id=tenant_uuid,
+                    user_id=None,
+                    action=ACTION_CHANNEL_MESSAGE_SENT,
+                    resource_type=RESOURCE_CHANNEL_CONVERSATION,
+                    metadata={
+                        "channel": channel,
+                        "customer_identifier": customer_identifier,
+                        "confidence": response_confidence,
+                        "citations_count": response.citations_count,
+                    },
+                )
+            else:
+                await audit_service.log_action(
+                    db,
+                    tenant_id=tenant_uuid,
+                    user_id=None,
+                    action=ACTION_CHANNEL_ESCALATED,
+                    resource_type=RESOURCE_CHANNEL_CONVERSATION,
+                    metadata={
+                        "channel": channel,
+                        "customer_identifier": customer_identifier,
+                        "confidence": response_confidence,
+                        "threshold": confidence_threshold,
+                        "question_preview": message_text[:200],
+                    },
+                )
 
             # Commit: persiste Conversation + ChannelMessages del turno
             await db.commit()

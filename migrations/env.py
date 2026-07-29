@@ -11,7 +11,20 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.models import Base
 
 # IMPORTANTE: importar todos los modelos para que autogenerate los detecte
-from app.models import invoice, llm_call, membership, tenant, user  # noqa: F401
+from app.models import (
+    appointment,
+    business_hour,
+    invoice,
+    llm_call,
+    membership,
+    professional,
+    professional_specialty,
+    professional_working_hour,
+    schedule_exception,
+    scheduling_service,
+    tenant,
+    user,
+)  # noqa: F401
 
 
 def _database_url() -> str:

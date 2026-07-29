@@ -13,7 +13,7 @@ from sqlalchemy import ColumnElement, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.datetime_display import display_today
-from app.core.document_processing_errors import format_user_processing_error
+from app.core.document_processing_errors import DocumentErrorCode, failure_message
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import invoice_key
 from app.core.storage import get_storage
@@ -122,7 +122,7 @@ async def list_invoices(
         # Filtro explícito de tenant aunque RLS lo aplique automáticamente:
         # defensa en profundidad (Agents.md §7) y mejor rendimiento (el índice
         # sobre tenant_id se usa incluso si RLS está activo).
-        .where(Invoice.tenant_id == tenant_id)
+        .where(Invoice.tenant_id == tenant_id, Invoice.dismissed_at.is_(None))
         # Más reciente primero: la UI muestra las facturas en orden cronológico
         # inverso para que las recién subidas aparezcan en la parte superior.
         .order_by(Invoice.created_at.desc())
@@ -281,6 +281,7 @@ async def apply_extraction_result(
     # después de un fallo previo (el invoice estaría en estado failed con
     # error_message relleno).
     invoice.error_message = None
+    invoice.error_code = None
 
     # Estrategia de reemplazo de líneas:
     # 1. Se vacía la lista en memoria (invoice.lines = []).
@@ -303,6 +304,17 @@ async def apply_extraction_result(
             ),
         )
     await db.flush()
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=invoice.tenant_id,
+        document_kind="invoice",
+        document_id=invoice.id,
+        status=ProcessingAttemptStatus.ok,
+        llm_call_id=llm_call_id,
+    )
     return invoice
 
 
@@ -313,8 +325,18 @@ async def mark_failed(
     tenant_id: UUID,
     error: str,
     llm_call_id: UUID | None = None,
+    error_code: DocumentErrorCode = DocumentErrorCode.extraction_failed,
+    detail: str | None = None,
 ) -> None:
-    """Marca una factura como fallida tras error en pipeline (worker/jobs)."""
+    """Marca una factura como fallida tras error en pipeline (worker/jobs).
+
+    Args:
+        error: Error técnico; se persiste solo en el log, nunca en la UI.
+        error_code: Motivo estructurado. Los códigos no reintentables bloquean
+            el botón de reintento y derivan al superadmin.
+        detail: Concreción del motivo para el mensaje al usuario
+            (p. ej. "12 páginas; el máximo admitido son 3").
+    """
     # Se usa get_invoice (que incluye el filtro de tenant) en lugar de un UPDATE
     # directo, para garantizar que el registro existe y pertenece al tenant
     # correcto antes de modificarlo. Evita actualizaciones ciegas.
@@ -327,15 +349,33 @@ async def mark_failed(
         invoice_id=str(invoice_id),
         tenant_id=str(tenant_id),
         source_filename=invoice.source_filename,
+        error_code=error_code.value,
         technical_error=error[:2000],
     )
-    invoice.error_message = format_user_processing_error(
+    invoice.error_code = error_code.value
+    invoice.error_message = failure_message(
         error,
+        error_code=error_code,
         filename=invoice.source_filename,
-    )[:2000]
+        detail=detail,
+    )
     # updated_at explícito: SQLAlchemy no actualiza onupdate automáticamente en
     # todos los drivers async; se establece manualmente para coherencia.
     invoice.updated_at = datetime.now(tz=UTC)
+
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=tenant_id,
+        document_kind="invoice",
+        document_id=invoice_id,
+        status=ProcessingAttemptStatus.failed,
+        llm_call_id=llm_call_id,
+        error_message=invoice.error_message,
+        error_code=error_code.value,
+    )
 
 
 def get_vat_breakdown(invoice: Invoice) -> list[DesgloseIVA]:

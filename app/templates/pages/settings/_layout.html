@@ -1,13 +1,21 @@
 {% extends "layouts/dashboard.html" %}
 
 {% block content %}
-<div class="max-w-4xl space-y-6">
-  <nav class="flex gap-1 border-b border-slate-200" aria-label="Ajustes">
+<div class="max-w-5xl space-y-6">
+  <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Ajustes">
     {% set tabs = [
       ("/settings/profile", "Mi cuenta"),
       ("/settings/billing", "Facturación"),
       ("/settings/integrations", "Integraciones"),
     ] %}
+    {% if membership and membership.role == 'admin' %}
+      {% set tabs = tabs + [
+        ("/settings/business-hours", "Horario del centro"),
+        ("/settings/professionals", "Profesionales"),
+        ("/settings/services", "Servicios"),
+        ("/settings/members", "Miembros"),
+      ] %}
+    {% endif %}
     {% for href, label in tabs %}
       {% set active = request.url.path == href %}
       <a href="{{ href }}"

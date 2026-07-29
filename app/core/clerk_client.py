@@ -86,3 +86,53 @@ async def add_org_member(
 
 async def remove_org_member(clerk_org_id: str, clerk_user_id: str) -> None:
     await _request("DELETE", f"/organizations/{clerk_org_id}/memberships/{clerk_user_id}")
+
+
+async def update_org_member_role(
+    clerk_org_id: str,
+    clerk_user_id: str,
+    role: str,
+) -> dict[str, Any]:
+    return await _request(
+        "PATCH",
+        f"/organizations/{clerk_org_id}/memberships/{clerk_user_id}",
+        json={"role": role},
+    )
+
+
+async def create_org_invitation(
+    clerk_org_id: str,
+    email: str,
+    role: str = "org:member",
+) -> dict[str, Any]:
+    return await _request(
+        "POST",
+        f"/organizations/{clerk_org_id}/invitations",
+        json={"email_address": email, "role": role},
+    )
+
+
+async def update_user(
+    clerk_user_id: str,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if first_name is not None:
+        payload["first_name"] = first_name
+    if last_name is not None:
+        payload["last_name"] = last_name
+    if not payload:
+        return await _request("GET", f"/users/{clerk_user_id}")
+    return await _request("PATCH", f"/users/{clerk_user_id}", json=payload)
+
+
+async def find_user_by_email(email: str) -> dict[str, Any] | None:
+    result = await _request("GET", "/users", params={"email_address": [email], "limit": 1})
+    data = result.get("data")
+    if isinstance(data, list) and data:
+        first = data[0]
+        if isinstance(first, dict):
+            return first
+    return None

@@ -70,6 +70,7 @@ Documentacion/**
 PendienteImplementar.md
 FicherosTtoDocs.md
 keepCoding.md
+Leeme.txt
 
 # Claude Code memoria local (contiene contexto personal entre sesiones)
 .claude/

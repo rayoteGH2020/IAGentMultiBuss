@@ -1,7 +1,9 @@
 {# Header tipo dashboard — el layout principal duplica esta estructura por el bloque `page_title` de Jinja. #}
-<header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
+<header class="relative z-20 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6"
+        x-data="{ userMenuOpen: false }"
+        @keydown.escape.window="userMenuOpen = false">
   <div class="flex items-center gap-3">
-    <button type="button" class="lg:hidden p-2 rounded-md hover:bg-slate-100">
+    <button type="button" class="lg:hidden p-2 rounded-md hover:bg-slate-100 cursor-pointer">
       <span class="sr-only">Menú</span>
       ☰
     </button>
@@ -16,28 +18,32 @@
       <span class="text-sm font-medium text-slate-900">{{ tenant.name }}</span>
       <span class="text-xs text-slate-500">{{ user.email }}</span>
     </div>
-    <div class="relative" x-data="{ open: false }">
-      <button
-        type="button"
-        id="topbar-user-menu"
-        aria-expanded="false"
-        :aria-expanded="open.toString()"
-        class="h-9 w-9 rounded-full bg-primary-600 text-white font-semibold flex items-center justify-center hover:bg-primary-700"
-        @click="open = !open">
+    <div class="relative" @click.outside="userMenuOpen = false">
+      <button type="button"
+              id="topbar-user-menu"
+              class="h-9 w-9 rounded-full bg-primary-600 text-white font-semibold flex items-center justify-center hover:bg-primary-700 cursor-pointer"
+              @click="userMenuOpen = !userMenuOpen"
+              :aria-expanded="userMenuOpen.toString()"
+              aria-haspopup="menu"
+              aria-label="Menú de usuario">
         {{ (user.name or user.email)[0] | upper }}
       </button>
-      <div x-show="open" x-cloak @click.outside="open = false" hx-boost="false"
-           class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
-        <a href="/settings/profile" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Mi cuenta</a>
-        <a href="/settings/billing" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Facturación</a>
-        <a href="/settings/integrations" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Integraciones</a>
-        <hr class="my-1 border-slate-200">
-        <button type="button"
-                class="block w-full px-4 py-2 text-sm text-left text-slate-700 hover:bg-slate-50"
-                @click="window.location.assign('/logout')">
-          Cerrar sesión
-        </button>
-      </div>
+      <template x-if="userMenuOpen">
+        <div hx-boost="false"
+             class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50"
+             role="menu">
+          <a href="/settings/profile" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Mi cuenta</a>
+          <a href="/settings/billing" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Facturación</a>
+          <a href="/settings/integrations" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Integraciones</a>
+          <hr class="my-1 border-slate-200">
+          <a href="/logout"
+             role="menuitem"
+             hx-boost="false"
+             class="block w-full px-4 py-2 text-sm text-left text-slate-700 hover:bg-slate-50">
+            Cerrar sesión
+          </a>
+        </div>
+      </template>
     </div>
   </div>
   {% endif %}

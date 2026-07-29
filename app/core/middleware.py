@@ -7,8 +7,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
 from app.config import get_settings
+from app.core.csrf import CSRF_HEADER_NAME, validate_csrf_token
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError
+from app.core.permissions import is_platform_superadmin
 from app.core.security import verify_clerk_jwt
 from app.services.auth_service import (
     ensure_membership,
@@ -38,6 +40,25 @@ SESSION_OPTIONAL_PATHS = frozenset(
     {"/login", "/signup", "/auth/organization", "/onboarding"},
 )
 
+CHANGE_PASSWORD_PATHS = frozenset({"/auth/change-password", "/auth/complete-password-reset"})
+CSRF_PROTECTED_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+CSRF_EXEMPT_PATHS = frozenset(
+    {
+        "/api/webhooks/clerk",
+        "/api/webhooks/whatsapp",
+    }
+)
+CSRF_EXEMPT_PREFIXES = ("/api/webhooks/telegram/",)
+
+
+def _is_force_password_exempt(path: str) -> bool:
+    """Rutas accesibles con force_password_reset activo (sin redirect)."""
+    if path in CHANGE_PASSWORD_PATHS:
+        return True
+    if _is_logout_related_path(path):
+        return True
+    return _is_public(path)
+
 
 def _is_logout_related_path(path: str) -> bool:
     return path == "/logout" or path.startswith("/logout/")
@@ -61,6 +82,55 @@ def _path_allowed_without_active_organization(path: str) -> bool:
     if _is_logout_related_path(path):
         return True
     return _is_public(path)
+
+
+def _htmx_aware_redirect(request: Request, url: str) -> Response:
+    """Redirect usable con hx-boost: HX-Redirect en lugar de 302 seguido por XHR.
+
+    Si HTMX sigue un 302 y el destino no tiene el mismo hx-select (#app-frame),
+    el swap deja la UI rota o vacía y el siguiente click parece "volver al inicio".
+    """
+    if request.headers.get("HX-Request") == "true":
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": url},
+            media_type="text/plain",
+            content=b"",
+        )
+    return RedirectResponse(url=url, status_code=302)
+
+
+def _csrf_exempt(path: str) -> bool:
+    return path in CSRF_EXEMPT_PATHS or path.startswith(CSRF_EXEMPT_PREFIXES)
+
+
+def _requires_csrf(request: Request) -> bool:
+    if request.method.upper() not in CSRF_PROTECTED_METHODS:
+        return False
+    if _csrf_exempt(request.url.path):
+        return False
+    return not _skip_session_resolution(request.url.path)
+
+
+def _csrf_error_response(request: Request) -> Response:
+    if request.headers.get("HX-Request") == "true":
+        return Response(
+            status_code=403,
+            media_type="application/json",
+            content=b'{"code":"csrf_failed","message":"Invalid CSRF token"}',
+        )
+    return Response(status_code=403, content=b"Forbidden")
+
+
+def _valid_csrf_request(request: Request) -> bool:
+    user = getattr(request.state, "user", None)
+    tenant = getattr(request.state, "tenant", None)
+    if user is None or tenant is None:
+        return False
+    token = request.headers.get(CSRF_HEADER_NAME, "")
+    if not token:
+        return False
+    return validate_csrf_token(token, user_id=user.id, tenant_id=tenant.id)
 
 
 def _extract_token(request: Request) -> str | None:
@@ -105,14 +175,30 @@ async def try_resolve_clerk_session(request: Request) -> None:
                 tenant.id,
                 role=org_role_from_claims(claims),
             )
+            if not membership.is_active:
+                await session.commit()
+                log.warning(
+                    "auth.membership_revoked",
+                    clerk_user_id=clerk_user_id,
+                    clerk_org_id=clerk_org_id,
+                )
+                return
             await session.commit()
             request.state.user = user
             request.state.tenant = tenant
             request.state.membership = membership
 
-            # Flag de conveniencia para templates: ¿es este tenant el org admin?
-            admin_org = get_settings().admin_clerk_org_id.strip()
-            request.state.is_superadmin = bool(admin_org and tenant.clerk_org_id == admin_org)
+            # Flag de conveniencia para templates. Mismo criterio que la
+            # dependencia current_superadmin: org SADM + rol admin activo.
+            settings = get_settings()
+            request.state.is_superadmin = is_platform_superadmin(
+                tenant=tenant,
+                membership=membership,
+                user=user,
+                admin_clerk_org_id=settings.admin_clerk_org_id,
+                allowed_clerk_user_ids=settings.superadmin_clerk_user_id_set,
+            )
+            request.state.force_password_reset = bool(user.force_password_reset)
         except Exception:
             await session.rollback()
             raise
@@ -131,6 +217,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.membership = None
         request.state.auth_missing_organization = False
         request.state.is_superadmin = False
+        request.state.force_password_reset = False
 
         try:
             if _skip_session_resolution(request.url.path):
@@ -142,15 +229,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.auth_missing_organization
                 and not _path_allowed_without_active_organization(request.url.path)
             ):
-                return RedirectResponse(url="/onboarding", status_code=302)
+                return _htmx_aware_redirect(request, "/onboarding")
+
+            if getattr(
+                request.state, "force_password_reset", False
+            ) and not _is_force_password_exempt(request.url.path):
+                return _htmx_aware_redirect(request, "/auth/change-password")
 
             if request.state.user is not None and request.url.path in SESSION_OPTIONAL_PATHS:
-                return RedirectResponse(url="/", status_code=302)
+                return _htmx_aware_redirect(request, "/")
+
+            if _requires_csrf(request) and not _valid_csrf_request(request):
+                log.warning(
+                    "csrf.invalid",
+                    path=request.url.path,
+                    method=request.method,
+                    authenticated=request.state.user is not None,
+                )
+                return _csrf_error_response(request)
 
             return await call_next(request)
 
         except Exception as exc:
             log.exception("auth_middleware_error", path=request.url.path, error=str(exc))
             resp = Response(status_code=500)
-            resp.headers["HX-Trigger"] = json.dumps({"appError": str(exc)})
+            resp.headers["HX-Trigger"] = json.dumps({"appError": "Internal server error"})
             return resp

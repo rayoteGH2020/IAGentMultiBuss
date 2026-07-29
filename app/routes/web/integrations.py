@@ -219,9 +219,8 @@ async def google_oauth_callback(
             error=str(exc),
             details=exc.details,
         )
-        error_code = "encryption_key" if "ENCRYPTION_KEY" in exc.message else "oauth_failed"
         return RedirectResponse(
-            url=f"/settings/integrations?error={error_code}",
+            url="/settings/integrations?error=oauth_failed",
             status_code=302,
         )
     except (AuthError, ExternalServiceError, ForbiddenError) as exc:

@@ -1,0 +1,75 @@
+<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+     x-data="{
+       role: '{{ member.role if member else 'member' }}',
+       perms: {
+         view: {{ 'true' if (not member or member.permissions.appointments.view) else 'false' }},
+         create: {{ 'true' if member and member.permissions.appointments.create else 'false' }},
+         edit: {{ 'true' if member and member.permissions.appointments.edit else 'false' }},
+         cancel: {{ 'true' if member and member.permissions.appointments.cancel else 'false' }}
+       },
+       applyViewerDefaults() {
+         if (this.role === 'viewer') {
+           this.perms = { view: true, create: false, edit: false, cancel: false };
+         }
+       }
+     }"
+     @change-role.window="applyViewerDefaults()">
+  <h3 class="text-lg font-semibold mb-4">{{ "Editar miembro" if member else "Nuevo miembro" }}</h3>
+
+  <form {% if member %}
+          hx-post="/settings/members/{{ member.membership_id }}"
+          hx-target="#member-{{ member.membership_id }}"
+          hx-swap="outerHTML"
+        {% else %}
+          hx-post="/settings/members"
+          hx-target="#members-list"
+          hx-swap="beforeend"
+        {% endif %}
+        class="space-y-4">
+
+    {% if not member %}
+    <label class="block text-sm">
+      <span class="text-slate-600">Email</span>
+      <input type="email" name="email" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+    {% endif %}
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Nombre</span>
+      <input type="text" name="name" required value="{{ member.name if member else '' }}"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Rol en la app</span>
+      <select name="role" x-model="role" @change="applyViewerDefaults()"
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        <option value="admin">Admin</option>
+        <option value="member">Member</option>
+        <option value="viewer">Viewer</option>
+      </select>
+    </label>
+
+    <fieldset class="text-sm space-y-2">
+      <legend class="font-medium text-slate-700">Permisos de citas</legend>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_view" value="true" x-model="perms.view"> Ver
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_create" value="true" x-model="perms.create"> Crear
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_edit" value="true" x-model="perms.edit"> Editar
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_cancel" value="true" x-model="perms.cancel"> Cancelar
+      </label>
+    </fieldset>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" @click="window.dispatchEvent(new CustomEvent('close-member-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+    </div>
+  </form>
+</div>

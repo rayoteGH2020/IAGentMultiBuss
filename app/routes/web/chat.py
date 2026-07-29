@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 import structlog
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.db import session_scope, set_tenant_context
-from app.core.errors import AppError
+from app.core.errors import AppError, public_error_message
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
 from app.schemas.chat import ChatMessageListFilters, ChatThreadListFilters
@@ -47,26 +47,31 @@ async def _chat_index_ctx(
         filters=ChatThreadListFilters(),
     )
     active_thread = None
-    messages = []
+    messages: list[Any] = []
+    active_id = thread_id
     if thread_id is not None:
-        thread = await chat_service.get_thread(
-            db,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            thread_id=thread_id,
-        )
-        active_thread = thread
-        messages = await chat_service.list_messages(
-            db,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            thread_id=thread_id,
-            filters=ChatMessageListFilters(),
-        )
+        try:
+            thread = await chat_service.get_thread(
+                db,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=thread_id,
+            )
+            active_thread = thread
+            messages = await chat_service.list_messages(
+                db,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=thread_id,
+                filters=ChatMessageListFilters(),
+            )
+        except AppError:
+            # Hilo oculto o inexistente: mostrar listado sin panel.
+            active_id = None
     return {
         "threads": threads_page.items,
         "active_thread": active_thread,
-        "active_thread_id": thread_id,
+        "active_thread_id": active_id,
         "messages": messages,
     }
 
@@ -147,6 +152,45 @@ async def chat_threads_create(
         },
     )
     response.headers["HX-Trigger"] = "chatThreadCreated"
+    return response
+
+
+@router.post("/threads/{thread_id}/hide")
+async def chat_thread_hide(
+    request: Request,
+    thread_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+    was_active: Annotated[bool, Form()] = False,
+    active_thread_id: Annotated[UUID | None, Form()] = None,
+) -> HTMLResponse:
+    """Oculta un hilo del listado (soft-hide; no borra filas ni mensajes)."""
+    await chat_service.hide_thread(
+        db,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        thread_id=thread_id,
+    )
+    page = await chat_service.list_threads(
+        db,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        filters=ChatThreadListFilters(),
+    )
+    remaining_active = None if was_active else active_thread_id
+    response = render(
+        request,
+        full="components/chat_thread_hide_result.html",
+        partial="components/chat_thread_hide_result.html",
+        ctx={
+            "threads": page.items,
+            "active_thread_id": remaining_active,
+            "clear_main": was_active,
+        },
+    )
+    if was_active:
+        response.headers["HX-Push-Url"] = "/chat"
     return response
 
 
@@ -259,7 +303,13 @@ async def chat_stream_assistant(
                 code=exc.code,
                 message=exc.message,
             )
-            yield {"event": "error", "data": exc.message}
+            yield {
+                "event": "error",
+                "data": public_error_message(
+                    exc,
+                    fallback="Ha ocurrido un error al procesar la consulta.",
+                ),
+            }
             yield {"event": "close", "data": ""}
         except Exception:
             logger.exception(

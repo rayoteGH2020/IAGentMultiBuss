@@ -1,0 +1,189 @@
+<div class="w-full max-w-5xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto"
+
+     @click.outside="window.dispatchEvent(new CustomEvent('close-professional-modal'))">
+
+  <h3 class="text-lg font-semibold mb-4">
+
+    {{ "Editar profesional" if professional else "Nuevo profesional" }}
+
+  </h3>
+
+
+
+  {% if hours_error_message %}
+
+  <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+
+    {{ hours_error_message }}
+
+  </div>
+
+  {% endif %}
+
+
+
+  <form {% if professional %}
+
+          hx-post="/settings/professionals/{{ professional.id }}"
+
+          hx-target="#professional-{{ professional.id }}"
+
+          hx-swap="outerHTML"
+
+        {% else %}
+
+          hx-post="/settings/professionals"
+
+          hx-target="#professionals-list"
+
+          hx-swap="beforeend"
+
+        {% endif %}
+
+        class="space-y-6">
+
+
+
+    <div class="space-y-4">
+
+      <label class="block text-sm">
+
+        <span class="text-slate-600">Nombre visible</span>
+
+        <input type="text" name="display_name" required maxlength="255"
+
+               value="{{ professional.display_name if professional else '' }}"
+
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+
+      </label>
+
+
+
+      <div class="grid gap-4 sm:grid-cols-2">
+
+        <label class="block text-sm">
+
+          <span class="text-slate-600">Color</span>
+
+          <input type="color" name="color" value="{{ professional.color | professional_color if professional else '#6366f1' }}"
+
+                 class="mt-1 h-10 w-full rounded border border-slate-300">
+
+        </label>
+
+        <label class="block text-sm">
+
+          <span class="text-slate-600">Usuario vinculado</span>
+
+          <select name="user_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+
+            <option value="">— Sin vincular —</option>
+
+            {% for m in members %}
+
+            <option value="{{ m.user_id }}"
+
+              {% if professional and professional.user_id == m.user_id %}selected{% endif %}>
+
+              {{ m.name or m.email }}
+
+            </option>
+
+            {% endfor %}
+
+          </select>
+
+        </label>
+
+      </div>
+
+
+
+      {% if professional %}
+
+      <div class="flex gap-4 text-sm">
+
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+
+          <input type="checkbox" name="is_active" value="true"
+
+                 {% if professional.is_active %}checked{% endif %}>
+
+          Activo
+
+        </label>
+
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+
+          <input type="checkbox" name="is_bookable" value="true"
+
+                 {% if professional.is_bookable %}checked{% endif %}>
+
+          Agendable
+
+        </label>
+
+      </div>
+
+      {% else %}
+
+      <input type="hidden" name="is_bookable" value="true">
+
+      <p class="text-xs text-slate-500">
+
+        Al crear, se copiará el horario del centro. Podrás ajustarlo marcando tramos al editar.
+
+      </p>
+
+      {% endif %}
+
+
+
+      <fieldset class="text-sm space-y-2">
+
+        <legend class="text-slate-600 font-medium">Especialidades (máx. 3, solo servicios activos)</legend>
+
+        {% for service in services if service.is_active %}
+
+        <label class="flex items-center gap-2 cursor-pointer">
+
+          <input type="checkbox" name="specialty_service_ids" value="{{ service.id }}"
+
+            {% if professional and service.id in professional.specialty_service_ids %}checked{% endif %}>
+
+          {{ service.name }}
+
+        </label>
+
+        {% endfor %}
+
+      </fieldset>
+
+    </div>
+
+
+
+    {% if professional %}
+
+    {% include "components/scheduling/professional_hours_grid.html" %}
+
+    {% endif %}
+
+
+
+    <div class="flex justify-end gap-2 pt-2 border-t border-slate-200">
+
+      <button type="button"
+
+              @click="window.dispatchEvent(new CustomEvent('close-professional-modal'))"
+
+              class="btn-secondary cursor-pointer">Cancelar</button>
+
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+
+    </div>
+
+  </form>
+
+</div>

@@ -8,6 +8,8 @@
   <title>{% block title %}Mi SaaS{% endblock %}</title>
 
   <link rel="stylesheet" href="/static/css/app.css">
+  {# Crítico antes de Alpine: evita FOUC de menús/modales con x-cloak. #}
+  <style>[x-cloak]{display:none!important}</style>
 
   <script src="/static/js/htmx.min.js" defer></script>
   <script src="/static/js/htmx-sse.js" defer></script>
@@ -16,15 +18,22 @@
   <script src="/static/js/alpine.min.js" defer></script>
 
   <script>
-    document.addEventListener("htmx:configRequest", () => {
-      // Espacio para inyectar CSRF cuando llegue
+    window.getCsrfToken = () => {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      return meta?.getAttribute("content") || "";
+    };
+    document.addEventListener("htmx:configRequest", (event) => {
+      const method = event.detail?.verb?.toUpperCase?.() || "GET";
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return;
+      const token = window.getCsrfToken();
+      if (token) event.detail.headers["X-CSRF-Token"] = token;
     });
     document.addEventListener("appError", (e) => {
       console.error("[middleware error]", e.detail.value ?? e.detail);
     });
   </script>
 </head>
-<body hx-boost="true" hx-ext="sse">
+<body hx-ext="sse">
   {% block body %}
     {% block content %}{% endblock %}
   {% endblock %}
