@@ -21,6 +21,14 @@ class DocumentErrorCode(StrEnum):
     file_too_large = "file_too_large"
     unsupported_type = "unsupported_type"
     extraction_failed = "extraction_failed"
+    # Fallo transitorio del proveedor LLM (503/overload/429). Reintentable.
+    provider_overload = "provider_overload"
+    # Job/worker interrumpido: attempt quedó en processing. Reintentable.
+    processing_interrupted = "processing_interrupted"
+    # Feature de plan desactivada: no reintentar ni llamar LLM.
+    plan_feature_disabled = "plan_feature_disabled"
+    # Mismatch de tipo factura/ticket: esperando confirmación HTMX (no encolar).
+    type_confirmation_required = "type_confirmation_required"
 
 
 # Rechazos que dependen del fichero, no del momento: reintentar con el mismo
@@ -33,11 +41,33 @@ NON_RETRYABLE_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset(
         DocumentErrorCode.unreadable_file,
         DocumentErrorCode.file_too_large,
         DocumentErrorCode.unsupported_type,
+        DocumentErrorCode.plan_feature_disabled,
     },
 )
 
 _ADMIN_CONTACT_HINT = (
     "Ponte en contacto con el administrador del sitio para gestionar su procesado."
+)
+
+# Mensaje de UI / Langfuse (sin nombre de fichero ni contenido del documento).
+PROVIDER_OVERLOAD_USER_MESSAGE = (
+    "El servidor de IA tiene muchas solicitudes y ha rechazado la tuya, "
+    "prueba de nuevo un poco más tarde"
+)
+
+PROCESSING_INTERRUPTED_USER_MESSAGE = (
+    "El procesado se interrumpió (por ejemplo, al reiniciar el servicio). Puedes reintentarlo."
+)
+
+_PROVIDER_OVERLOAD_MARKERS: tuple[str, ...] = (
+    "503",
+    "high demand",
+    "overloaded",
+    "service unavailable",
+    "429",
+    "rate limit",
+    "rate_limit",
+    "resource_exhausted",
 )
 
 _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
@@ -47,7 +77,20 @@ _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
     DocumentErrorCode.file_too_large: "El archivo supera el tamaño máximo permitido (20 MB).",
     DocumentErrorCode.unsupported_type: "El formato del archivo no es compatible.",
     DocumentErrorCode.extraction_failed: "No se pudieron extraer los datos del documento.",
+    DocumentErrorCode.provider_overload: PROVIDER_OVERLOAD_USER_MESSAGE,
+    DocumentErrorCode.processing_interrupted: PROCESSING_INTERRUPTED_USER_MESSAGE,
+    DocumentErrorCode.type_confirmation_required: (
+        "Confirma el tipo de documento antes de procesarlo."
+    ),
 }
+
+
+def is_provider_overload_error(raw_error: str | None) -> bool:
+    """True si el error técnico indica sobrecarga / rate-limit del proveedor LLM."""
+    if not raw_error or not raw_error.strip():
+        return False
+    low = raw_error.lower()
+    return any(marker in low for marker in _PROVIDER_OVERLOAD_MARKERS)
 
 
 def is_retryable(error_code: str | None) -> bool:
@@ -111,6 +154,10 @@ _KNOWN_LITERALS: tuple[tuple[str, str], ...] = (
     ("rate limit", "El servicio está ocupado. Inténtalo de nuevo en unos minutos."),
     ("timeout", "El procesamiento tardó demasiado. Inténtalo de nuevo."),
     ("connection", "No se pudo conectar con el servicio de extracción. Inténtalo más tarde."),
+    (
+        "empty_or_unusable_extraction",
+        "El documento no contiene información útil legible. No se ha guardado como válido.",
+    ),
 )
 
 _VALIDATION_FIELD_RE = re.compile(

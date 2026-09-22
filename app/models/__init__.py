@@ -43,6 +43,7 @@ from app.models.knowledge import (
 )
 from app.models.llm_call import LLMCall
 from app.models.membership import Membership
+from app.models.plan import Plan, PlanEntitlement
 from app.models.processing_charge import ProcessingCharge, ProcessingChargeStatus
 from app.models.professional import Professional
 from app.models.professional_specialty import ProfessionalSpecialty
@@ -89,6 +90,8 @@ __all__ = [
     "KnowledgeDocumentStatus",
     "LLMCall",
     "Membership",
+    "Plan",
+    "PlanEntitlement",
     "ProcessingAttemptStatus",
     "ProcessingCharge",
     "ProcessingChargeStatus",

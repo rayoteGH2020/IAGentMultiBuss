@@ -4,8 +4,13 @@ from uuid import uuid4
 
 import pytest
 from app.core.db import set_tenant_context
+from app.core.permissions import role_can_access_path
 from app.models import Membership, Tenant, User
-from app.services.auth_service import ensure_membership, revoke_clerk_membership
+from app.services.auth_service import (
+    ensure_membership,
+    revoke_clerk_membership,
+    sync_clerk_membership,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.integration
@@ -51,6 +56,28 @@ async def test_existing_membership_role_is_synchronized(db_session: AsyncSession
     assert result.id == membership.id
     assert result.role == "member"
     assert result.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_downgrade_admin_to_member_via_clerk_sync(
+    db_session: AsyncSession,
+) -> None:
+    """organizationMembership.updated (admin → member) pierde rutas de admin."""
+    tenant, user, membership = await _membership_fixture(db_session, role="admin")
+    assert role_can_access_path("admin", "/documents") is True
+
+    result = await sync_clerk_membership(
+        db_session,
+        user.clerk_user_id or "",
+        tenant.clerk_org_id or "",
+        "org:member",
+    )
+
+    assert result.id == membership.id
+    assert result.role == "member"
+    assert result.is_active is True
+    assert role_can_access_path(result.role, "/documents") is False
+    assert role_can_access_path(result.role, "/chat") is True
 
 
 @pytest.mark.asyncio
@@ -105,4 +132,28 @@ async def test_clerk_delete_event_revokes_local_membership(
     )
 
     assert revoked is True
+    assert membership.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_stale_jwt_cannot_restore_access_after_delete(
+    db_session: AsyncSession,
+) -> None:
+    """Tras deleted, ensure_membership (ruta JWT) no reactiva aunque el JWT diga admin."""
+    tenant, user, membership = await _membership_fixture(db_session, role="admin")
+    await revoke_clerk_membership(
+        db_session,
+        user.clerk_user_id or "",
+        tenant.clerk_org_id or "",
+    )
+
+    result = await ensure_membership(
+        db_session,
+        user.id,
+        tenant.id,
+        role="org:admin",
+    )
+
+    assert result.is_active is False
+    assert result.role == "admin"
     assert membership.is_active is False

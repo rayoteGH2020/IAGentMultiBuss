@@ -145,7 +145,8 @@ async def seed_committed_scheduling_tenant(
         tenant = Tenant(
             clerk_org_id=f"org_sched_{suffix}",
             name=f"Scheduling Tenant {suffix}",
-            plan="free",
+            plan="total",
+            plan_code="total",
             settings={},
         )
         user = User(

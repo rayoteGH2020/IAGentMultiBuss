@@ -1,7 +1,6 @@
 <tr id="member-{{ member.membership_id }}">
   <td class="text-sm">{{ member.email }}</td>
   <td>{{ member.name or "—" }}</td>
-  <td><span class="capitalize text-sm">{{ member.role }}</span></td>
   <td class="text-xs text-slate-600">
     {% if member.permissions.appointments.view %}Ver{% endif %}
     {% if member.permissions.appointments.create %}+ Crear{% endif %}
@@ -11,15 +10,15 @@
   <td class="text-right space-x-2">
     <button type="button"
             hx-get="/settings/members/{{ member.membership_id }}/edit"
-            hx-target="#member-modal"
+            hx-target="#member-modal-panel"
             hx-swap="innerHTML"
-            hx-on::after-request="window.dispatchEvent(new CustomEvent('open-member-modal'))"
+            hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-member-modal'))"
             class="text-primary-600 text-sm cursor-pointer">Editar</button>
     <button type="button"
             hx-delete="/settings/members/{{ member.membership_id }}"
             hx-target="#member-{{ member.membership_id }}"
             hx-swap="outerHTML"
-            hx-confirm="¿Eliminar este miembro del tenant?"
+            hx-confirm="¿Dar de baja este miembro en la aplicación? No se elimina de Clerk."
             class="text-red-600 text-sm cursor-pointer">Baja</button>
   </td>
 </tr>

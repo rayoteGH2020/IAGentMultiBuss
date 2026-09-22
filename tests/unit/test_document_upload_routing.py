@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from app.models import DocTypeCode
 from app.services import document_upload_service
+from app.services.document_classification import TypeVerificationResult
 
 
 @pytest.mark.asyncio
@@ -90,3 +91,101 @@ async def test_ingest_seguro_routes_to_insurance_pipeline() -> None:
     create_mock.assert_awaited_once()
     enqueue_mock.assert_awaited_once()
     ticket_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ingest_factura_mismatch_does_not_enqueue() -> None:
+    db = AsyncMock()
+    tenant_id = uuid4()
+    invoice = MagicMock()
+    invoice.id = uuid4()
+    verification = TypeVerificationResult(
+        user_choice=DocTypeCode.factura,
+        detected=DocTypeCode.ticket,
+        confidence=0.9,
+        needs_confirmation=True,
+        method="heuristic_mismatch",
+    )
+
+    with (
+        patch(
+            "app.services.document_upload_service.asyncio.to_thread",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.document_upload_service.document_classification.verify_user_doc_type",
+            new=AsyncMock(return_value=verification),
+        ),
+        patch(
+            "app.services.document_upload_service.invoice_service.create_invoice_from_upload",
+            new=AsyncMock(return_value=invoice),
+        ) as create_mock,
+        patch(
+            "app.services.document_upload_service.document_type_confirm_service."
+            "mark_invoice_awaiting_type_confirmation",
+            new=AsyncMock(return_value=invoice),
+        ) as await_mock,
+        patch(
+            "app.services.document_upload_service.enqueue_invoice_processing",
+            new=AsyncMock(),
+        ) as enqueue_mock,
+    ):
+        result = await document_upload_service.ingest_uploaded_document(
+            db,
+            tenant_id=tenant_id,
+            filename="ticket-as-factura.pdf",
+            file_bytes=b"%PDF",
+            mime_type="application/pdf",
+            doc_type=DocTypeCode.factura,
+        )
+
+    assert result.awaiting_type_confirmation is True
+    assert result.invoice is invoice
+    create_mock.assert_awaited_once()
+    await_mock.assert_awaited_once()
+    enqueue_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ingest_factura_match_enqueues() -> None:
+    db = AsyncMock()
+    tenant_id = uuid4()
+    invoice = MagicMock()
+    invoice.id = uuid4()
+    verification = TypeVerificationResult(
+        user_choice=DocTypeCode.factura,
+        detected=DocTypeCode.factura,
+        confidence=0.85,
+        needs_confirmation=False,
+        method="heuristic_match",
+    )
+
+    with (
+        patch(
+            "app.services.document_upload_service.asyncio.to_thread",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.document_upload_service.document_classification.verify_user_doc_type",
+            new=AsyncMock(return_value=verification),
+        ),
+        patch(
+            "app.services.document_upload_service.invoice_service.create_invoice_from_upload",
+            new=AsyncMock(return_value=invoice),
+        ),
+        patch(
+            "app.services.document_upload_service.enqueue_invoice_processing",
+            new=AsyncMock(),
+        ) as enqueue_mock,
+    ):
+        result = await document_upload_service.ingest_uploaded_document(
+            db,
+            tenant_id=tenant_id,
+            filename="factura.pdf",
+            file_bytes=b"%PDF",
+            mime_type="application/pdf",
+            doc_type=DocTypeCode.factura,
+        )
+
+    assert result.awaiting_type_confirmation is False
+    enqueue_mock.assert_awaited_once()

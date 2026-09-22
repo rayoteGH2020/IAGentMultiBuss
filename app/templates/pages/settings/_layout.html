@@ -6,15 +6,27 @@
     {% set tabs = [
       ("/settings/profile", "Mi cuenta"),
       ("/settings/billing", "Facturación"),
-      ("/settings/integrations", "Integraciones"),
     ] %}
+    {% if entitlements and entitlements.has("calendar_google") %}
+      {% set tabs = tabs + [("/settings/integrations", "Integraciones")] %}
+    {% elif not entitlements %}
+      {% set tabs = tabs + [("/settings/integrations", "Integraciones")] %}
+    {% endif %}
     {% if membership and membership.role == 'admin' %}
-      {% set tabs = tabs + [
-        ("/settings/business-hours", "Horario del centro"),
-        ("/settings/professionals", "Profesionales"),
-        ("/settings/services", "Servicios"),
-        ("/settings/members", "Miembros"),
-      ] %}
+      {% if entitlements and entitlements.has("appointments") %}
+        {% set tabs = tabs + [
+          ("/settings/business-hours", "Horario del centro"),
+          ("/settings/professionals", "Profesionales"),
+          ("/settings/services", "Servicios"),
+        ] %}
+      {% elif not entitlements %}
+        {% set tabs = tabs + [
+          ("/settings/business-hours", "Horario del centro"),
+          ("/settings/professionals", "Profesionales"),
+          ("/settings/services", "Servicios"),
+        ] %}
+      {% endif %}
+      {% set tabs = tabs + [("/settings/members", "Miembros")] %}
     {% endif %}
     {% for href, label in tabs %}
       {% set active = request.url.path == href %}

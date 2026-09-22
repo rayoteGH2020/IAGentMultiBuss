@@ -7,6 +7,9 @@ los slots del worker y bloquee a otros tenants.
 Cuando el tenant alcanza el límite, el job se difiere (arq.worker.Retry) en
 lugar de fallar: ARQ lo re-encola automáticamente sin consumir un intento
 de max_tries, por lo que el job se ejecutará en cuanto haya un slot libre.
+
+Si el worker muere tras INCR y antes del DECR, el contador podría quedar
+hinchado: la clave lleva TTL para que caduque sola.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 from arq.worker import Retry
+
+from app.config import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -41,13 +46,18 @@ _SLOT_KEY_TEMPLATE = "invoice:extract:active:{tenant_id}"
 _RETRY_DEFER_SECONDS = 2
 
 
+def slot_key_for_tenant(tenant_id: UUID) -> str:
+    """Clave Redis del semáforo de extracción para un tenant."""
+    return _SLOT_KEY_TEMPLATE.format(tenant_id=tenant_id)
+
+
 @asynccontextmanager
 async def tenant_invoice_extraction_slot(
     redis_conn: redis_ai.Redis,
     tenant_id: UUID,
 ) -> AsyncIterator[None]:
     """Limita paralelismo de extracción por tenant; si no hay cupo, difiere el job ARQ."""
-    key = _SLOT_KEY_TEMPLATE.format(tenant_id=tenant_id)
+    key = slot_key_for_tenant(tenant_id)
 
     # INCR atómico: incrementa el contador y obtiene el nuevo valor en una
     # operación. La atomicidad evita la condición de carrera TOCTOU ("check
@@ -76,6 +86,12 @@ async def tenant_invoice_extraction_slot(
             # consumiría un intento y podría llegar a marcar el job como failed.
             raise Retry(defer=_RETRY_DEFER_SECONDS)
 
+        # Renueva TTL en cada adquisición: si el worker muere sin DECR,
+        # la clave caduca y no bloquea el tenant de forma permanente.
+        ttl = get_settings().document_extraction_slot_ttl_seconds
+        if ttl > 0:
+            await redis_conn.expire(key, ttl)
+
         # El slot se adquirió; se marca hold_slot=True para que finally lo libere.
         hold_slot = True
         yield  # El código del caller (process_invoice) se ejecuta aquí.
@@ -86,10 +102,6 @@ async def tenant_invoice_extraction_slot(
                 # El try/except interior protege el DECR: si Redis no está
                 # disponible en este punto, no se puede hacer nada más (el job
                 # ya terminó), pero al menos el error queda en los logs.
-                # Limitación conocida: si el worker muere (SIGKILL, OOM) antes
-                # de llegar aquí, el contador no se decrementa y el slot queda
-                # "bloqueado" hasta que se reinicie el worker o se resetee la
-                # clave manualmente. Sin TTL en la clave, esto es permanente.
                 await redis_conn.decr(key)
             except Exception as exc:  # pragma: no cover - defensivo
                 logger.warning(

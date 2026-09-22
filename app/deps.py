@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_redis
 from app.core.db import get_sessionmaker, set_tenant_context
-from app.core.errors import AuthError, ForbiddenError
+from app.core.errors import AuthError, ForbiddenError, PlanRequiredError, ValidationError
 from app.core.permissions import is_platform_superadmin
 from app.models import Membership, Tenant, User
+from app.schemas.entitlements import Entitlements
+from app.services import entitlement_service
 
 log = structlog.get_logger(__name__)
 
@@ -189,6 +191,71 @@ RequireAppointmentEdit = Annotated[Membership, Depends(require_appointment_permi
 RequireAppointmentCancel = Annotated[Membership, Depends(require_appointment_permission("cancel"))]
 RequireAppointmentCreateOrEdit = Annotated[
     Membership, Depends(require_appointment_permission("create", "edit"))
+]
+
+
+async def get_entitlements(
+    request: Request,
+    tenant: Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_db),
+) -> Entitlements:
+    """Resuelve entitlements una vez por request (cache en ``request.state``)."""
+    cached = getattr(request.state, "entitlements", None)
+    if isinstance(cached, Entitlements):
+        return cached
+    try:
+        ents = await entitlement_service.resolve_entitlements(db, tenant)
+    except ValidationError:
+        log.warning(
+            "entitlements.resolve_failed",
+            tenant_id=str(tenant.id),
+            path=getattr(request.url, "path", None),
+        )
+        ents = entitlement_service.fail_closed_entitlements(
+            entitlement_service.resolve_plan_code_for_tenant(tenant)
+        )
+    request.state.entitlements = ents
+    return ents
+
+
+EntitlementsDep = Annotated[Entitlements, Depends(get_entitlements)]
+
+
+def require_feature(feature: str) -> Callable[..., Coroutine[Any, Any, Entitlements]]:
+    """Factory: deniega con ``PlanRequiredError`` si el plan no incluye ``feature``."""
+
+    async def _dep(ents: Entitlements = Depends(get_entitlements)) -> Entitlements:
+        if not ents.has(feature):
+            raise PlanRequiredError(feature)
+        return ents
+
+    return _dep
+
+
+def require_any_feature(
+    *features: str,
+) -> Callable[..., Coroutine[Any, Any, Entitlements]]:
+    """Factory: basta con una de las features (p. ej. chat documental o knowledge)."""
+    if not features:
+        msg = "require_any_feature requires at least one feature code"
+        raise ValueError(msg)
+
+    async def _dep(ents: Entitlements = Depends(get_entitlements)) -> Entitlements:
+        if any(ents.has(code) for code in features):
+            return ents
+        raise PlanRequiredError(features[0])
+
+    return _dep
+
+
+RequireDocuments = Annotated[Entitlements, Depends(require_feature("documents"))]
+RequireKnowledge = Annotated[Entitlements, Depends(require_feature("knowledge"))]
+RequireCalendarGoogle = Annotated[Entitlements, Depends(require_feature("calendar_google"))]
+RequireCalendarVoice = Annotated[Entitlements, Depends(require_feature("calendar_voice"))]
+RequireAppointments = Annotated[Entitlements, Depends(require_feature("appointments"))]
+RequireChat = Annotated[
+    Entitlements,
+    Depends(require_any_feature("documents_chat", "knowledge_chat")),
 ]
 
 

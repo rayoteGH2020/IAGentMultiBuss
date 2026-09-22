@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from app.schemas.invoice import DesgloseIVA, Factura, vat_breakdown_from_json, vat_breakdown_to_json
+import pytest
+from app.schemas.invoice import (
+    DesgloseIVA,
+    Factura,
+    LineaFactura,
+    vat_breakdown_from_json,
+    vat_breakdown_to_json,
+)
+from pydantic import ValidationError
 
 
 def test_factura_syncs_scalars_from_multi_vat_breakdown() -> None:
@@ -110,6 +118,27 @@ def test_factura_normalizes_null_string_cif() -> None:
         },
     )
     assert factura.cif_nif is None
+
+
+def test_linea_factura_strips_unit_mixed_into_cantidad() -> None:
+    linea = LineaFactura(
+        descripcion="Suministro eléctrico (energía + potencia contratada)",
+        cantidad="289 kWh",
+        precio_unitario="0,1740 €/kWh",
+        total=Decimal("50.29"),
+    )
+    assert linea.cantidad == Decimal("289")
+    assert linea.precio_unitario == Decimal("0.1740")
+
+
+def test_linea_factura_rejects_non_numeric_cantidad() -> None:
+    with pytest.raises(ValidationError):
+        LineaFactura(
+            descripcion="Suministro eléctrico",
+            cantidad="kWh",
+            precio_unitario=Decimal("0.174"),
+            total=Decimal("50.29"),
+        )
 
 
 def test_factura_invalid_cif_becomes_none() -> None:

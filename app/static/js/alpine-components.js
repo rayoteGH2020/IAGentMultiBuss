@@ -113,14 +113,52 @@ function registerChatMessagesScroll() {
 
 /** HTMX inserta HTML sin procesar; Alpine debe reinicializar el subárbol del swap.
  *  Solo afterSettle (una vez) y destroyTree antes de initTree evita listeners duplicados
- *  que rompían el primer click de la navegación tras un boost. */
+ *  que rompían el primer click de la navegación tras un boost.
+ *  No reinicializar #app-frame/body: destruye el shell y puede disparar restauración
+ *  de historial HTMX hacia la ruta previa (p. ej. "/").
+ *  Con hx-swap=outerHTML el target puede quedar detached; hx-target="this" (poll de
+ *  documentos) se resuelve por id del emisor. */
 function registerHtmxAlpineBridge() {
-  const initAlpineOnSwap = (event) => {
+  const resolveSwapRoot = (event) => {
     const target = event.detail?.target;
-    if (!(target instanceof Element)) return;
+    // HX-Retarget al panel de documentos: inicializar el contenedor entero.
+    if (
+      target instanceof Element &&
+      target.isConnected &&
+      target.id === "invoices-table-container"
+    ) {
+      return target;
+    }
+
+    const elt = event.detail?.elt;
+    if (elt instanceof Element) {
+      const hxTarget = elt.getAttribute("hx-target");
+      if (hxTarget === "this" && elt.id) {
+        const bySelf = document.getElementById(elt.id);
+        if (bySelf instanceof Element && bySelf.isConnected) return bySelf;
+      }
+      if (hxTarget && hxTarget.startsWith("#")) {
+        const byHx = document.querySelector(hxTarget);
+        if (byHx instanceof Element && byHx.isConnected) return byHx;
+      }
+    }
+    if (!(target instanceof Element)) return null;
+    if (target.id === "app-frame" || target === document.body) return null;
+    if (target.isConnected) return target;
+    if (target.id) {
+      const byId = document.getElementById(target.id);
+      if (byId instanceof Element && byId.isConnected) return byId;
+    }
+    return null;
+  };
+
+  const initAlpineOnSwap = (event) => {
     if (!window.Alpine) return;
-    window.Alpine.destroyTree(target);
-    window.Alpine.initTree(target);
+    const root = resolveSwapRoot(event);
+    if (!(root instanceof Element) || !root.isConnected) return;
+    if (root.id === "app-frame") return;
+    window.Alpine.destroyTree(root);
+    window.Alpine.initTree(root);
   };
   document.addEventListener("htmx:afterSettle", initAlpineOnSwap);
 }
@@ -559,6 +597,7 @@ document.addEventListener("alpine:init", () => {
   registerBusinessHoursTable();
   registerAppointmentStartPicker();
   registerProfessionalHoursGrid();
+  registerProfessionalColorPicker();
   registerKnowledgeUploadForm();
   registerDocumentUploadForm();
   registerDocumentRowActions();
@@ -969,47 +1008,134 @@ function registerDocumentUploadForm() {
   }));
 }
 
+/** Selector de color de profesional: trigger + panel fixed al viewport.
+ *  No usar la propiedad `open` (colisión con el modal padre).
+ *  `taken` es un array (no Set): Alpine no proxyfica bien los Set.
+ */
+function registerProfessionalColorPicker() {
+  Alpine.data("professionalColorPicker", (selected, takenList) => ({
+    menuOpen: false,
+    selected: typeof selected === "string" ? selected.toLowerCase() : "#6366f1",
+    taken: (Array.isArray(takenList) ? takenList : []).map((c) =>
+      typeof c === "string" ? c.toLowerCase() : c,
+    ),
+
+    isTaken(hex) {
+      if (typeof hex !== "string") return false;
+      return this.taken.includes(hex.toLowerCase());
+    },
+
+    toggleMenu() {
+      this.menuOpen = !this.menuOpen;
+      if (this.menuOpen) {
+        this.$nextTick(() => this.positionMenu());
+      }
+    },
+
+    positionMenu() {
+      const trigger = this.$refs.trigger;
+      const menu = this.$refs.menu;
+      if (!(trigger instanceof HTMLElement) || !(menu instanceof HTMLElement)) return;
+
+      const rect = trigger.getBoundingClientRect();
+      const width = menu.offsetWidth || 248;
+      let left = rect.left;
+      if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - width - 8);
+      }
+      let top = rect.bottom + 8;
+      const menuHeight = menu.offsetHeight || 280;
+      if (top + menuHeight > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - menuHeight - 8);
+      }
+      menu.style.top = `${Math.round(top)}px`;
+      menu.style.left = `${Math.round(left)}px`;
+    },
+
+    pick(hex) {
+      if (typeof hex !== "string" || this.isTaken(hex)) return;
+      this.selected = hex.toLowerCase();
+      this.menuOpen = false;
+    },
+  }));
+}
+
 /** Grid horario profesional: marcar/desmarcar tramos del centro. */
 function registerProfessionalHoursGrid() {
   Alpine.data("professionalHoursGrid", () => ({
     slotCheckboxes() {
-      return Array.from(document.querySelectorAll(".professional-slot-checkbox"));
+      const root = this.$root instanceof Element ? this.$root : document;
+      return Array.from(root.querySelectorAll(".professional-slot-checkbox"));
     },
 
-    selectAll() {
-      this.slotCheckboxes().forEach((el) => {
+    periodCheckboxes(weekday, sortOrder) {
+      return this.slotCheckboxes().filter(
+        (el) =>
+          Number(el.dataset.weekday) === Number(weekday) &&
+          Number(el.dataset.sortOrder) === Number(sortOrder),
+      );
+    },
+
+    dayCheckboxes(weekday) {
+      return this.slotCheckboxes().filter(
+        (el) => Number(el.dataset.weekday) === Number(weekday),
+      );
+    },
+
+    hasDayBelow(weekday) {
+      const next = Number(weekday) + 1;
+      return next <= 6 && this.dayCheckboxes(next).length > 0;
+    },
+
+    selectPeriod(weekday, sortOrder) {
+      this.periodCheckboxes(weekday, sortOrder).forEach((el) => {
         el.checked = true;
       });
     },
 
-    clearAll() {
-      this.slotCheckboxes().forEach((el) => {
+    clearPeriod(weekday, sortOrder) {
+      this.periodCheckboxes(weekday, sortOrder).forEach((el) => {
         el.checked = false;
       });
     },
 
-    selectPeriod(weekday, sortOrder) {
-      this.slotCheckboxes()
-        .filter(
-          (el) =>
-            Number(el.dataset.weekday) === Number(weekday) &&
-            Number(el.dataset.sortOrder) === Number(sortOrder),
-        )
-        .forEach((el) => {
-          el.checked = true;
-        });
-    },
+    /**
+     * Copia el horario completo del día (todos los tramos) al día inferior.
+     * Empareja por sort_order + minuto; si no hay match, por índice en el tramo.
+     */
+    copyDayToBelow(weekday) {
+      const next = Number(weekday) + 1;
+      if (next > 6) return;
+      const source = this.dayCheckboxes(weekday);
+      const target = this.dayCheckboxes(next);
+      if (source.length === 0 || target.length === 0) return;
 
-    clearPeriod(weekday, sortOrder) {
-      this.slotCheckboxes()
-        .filter(
-          (el) =>
-            Number(el.dataset.weekday) === Number(weekday) &&
-            Number(el.dataset.sortOrder) === Number(sortOrder),
-        )
-        .forEach((el) => {
-          el.checked = false;
-        });
+      const bySortAndMinutes = new Map();
+      const bySortIndex = new Map();
+      for (const el of source) {
+        const sortOrder = String(el.dataset.sortOrder);
+        const parts = String(el.value).split(":");
+        const minutes = parts.length >= 2 ? parts[1] : "";
+        bySortAndMinutes.set(`${sortOrder}:${minutes}`, el.checked);
+        if (!bySortIndex.has(sortOrder)) bySortIndex.set(sortOrder, []);
+        bySortIndex.get(sortOrder).push(el.checked);
+      }
+
+      const targetIndexBySort = new Map();
+      for (const el of target) {
+        const sortOrder = String(el.dataset.sortOrder);
+        const parts = String(el.value).split(":");
+        const minutes = parts.length >= 2 ? parts[1] : "";
+        const key = `${sortOrder}:${minutes}`;
+        if (bySortAndMinutes.has(key)) {
+          el.checked = Boolean(bySortAndMinutes.get(key));
+          continue;
+        }
+        const idx = targetIndexBySort.get(sortOrder) ?? 0;
+        targetIndexBySort.set(sortOrder, idx + 1);
+        const sourceChecks = bySortIndex.get(sortOrder) ?? [];
+        el.checked = idx < sourceChecks.length ? Boolean(sourceChecks[idx]) : false;
+      }
     },
   }));
 }

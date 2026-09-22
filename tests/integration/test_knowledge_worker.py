@@ -64,7 +64,7 @@ async def test_index_knowledge_document_worker_full_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Documento pending → worker ejecuta pipeline → status=ready, chunks > 0."""
-    tenant: Tenant = await tenant_factory()
+    tenant: Tenant = await tenant_factory(plan_code="medium")
     await set_tenant_context(db_session, str(tenant.id))
 
     # Parchear storage en knowledge_index_service, que es quien llama a get_storage.

@@ -16,6 +16,40 @@ MAX_SERVICE_DURATION = 240
 DEFAULT_PROFESSIONAL_COLOR = "#6366f1"
 _PROFESSIONAL_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
+# Paleta fija (~30) para el selector de profesionales: sin RGB libre.
+PROFESSIONAL_COLOR_PALETTE: tuple[str, ...] = (
+    "#ef4444",
+    "#f97316",
+    "#f59e0b",
+    "#eab308",
+    "#84cc16",
+    "#22c55e",
+    "#10b981",
+    "#14b8a6",
+    "#06b6d4",
+    "#0ea5e9",
+    "#3b82f6",
+    "#6366f1",
+    "#8b5cf6",
+    "#a855f7",
+    "#d946ef",
+    "#ec4899",
+    "#f43f5e",
+    "#fb7185",
+    "#fdba74",
+    "#fde047",
+    "#86efac",
+    "#5eead4",
+    "#7dd3fc",
+    "#a5b4fc",
+    "#c4b5fd",
+    "#f0abfc",
+    "#78716c",
+    "#64748b",
+    "#334155",
+    "#171717",
+)
+
 
 def validate_professional_color(value: str) -> str:
     """Valida color hex #RRGGBB (escritura)."""
@@ -36,6 +70,40 @@ def sanitize_professional_color(
         if _PROFESSIONAL_COLOR_RE.fullmatch(candidate):
             return candidate.lower()
     return default
+
+
+def resolve_palette_color(value: str | None) -> str:
+    """Elige un color de la paleta (el actual si está, si no el default)."""
+    sanitized = sanitize_professional_color(value)
+    if sanitized in PROFESSIONAL_COLOR_PALETTE:
+        return sanitized
+    return DEFAULT_PROFESSIONAL_COLOR
+
+
+def build_professional_color_swatches(
+    *,
+    selected_color: str,
+    taken_colors: set[str] | list[str] | tuple[str, ...],
+) -> list[dict[str, object]]:
+    """Paleta 6x5 con flags explícitos (evita `hex in taken` frágil en Jinja).
+
+    ``taken_colors`` = colores de *otros* profesionales (el actual ya excluido).
+    """
+    selected = resolve_palette_color(selected_color)
+    taken_normalized = {
+        resolve_palette_color(color) if isinstance(color, str) else DEFAULT_PROFESSIONAL_COLOR
+        for color in taken_colors
+    }
+    # El color del profesional en edición no se marca como ocupado.
+    taken_normalized.discard(selected)
+    return [
+        {
+            "hex": color,
+            "is_taken": color in taken_normalized,
+            "is_selected": color == selected,
+        }
+        for color in PROFESSIONAL_COLOR_PALETTE
+    ]
 
 
 class AppointmentStatus(enum.StrEnum):
@@ -160,6 +228,7 @@ class SchedulingServiceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, max_length=128)
     duration_minutes: int = Field(ge=MIN_SERVICE_DURATION, le=MAX_SERVICE_DURATION)
+    notes: str | None = Field(default=None, max_length=2000)
     is_active: bool = True
     sort_order: int = 0
 
@@ -172,6 +241,7 @@ class SchedulingServiceUpdate(BaseModel):
     duration_minutes: int | None = Field(
         default=None, ge=MIN_SERVICE_DURATION, le=MAX_SERVICE_DURATION
     )
+    notes: str | None = Field(default=None, max_length=2000)
     is_active: bool | None = None
     sort_order: int | None = None
 
@@ -183,6 +253,7 @@ class SchedulingServiceRead(BaseModel):
     name: str
     slug: str
     duration_minutes: int
+    notes: str | None = None
     is_active: bool
     sort_order: int
 
@@ -238,6 +309,7 @@ class ProfessionalRead(BaseModel):
     is_bookable: bool
     sort_order: int
     specialty_service_ids: list[UUID] = Field(default_factory=list)
+    specialty_names: list[str] = Field(default_factory=list)
 
     @field_validator("color", mode="before")
     @classmethod

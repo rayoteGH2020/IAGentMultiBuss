@@ -1,10 +1,39 @@
 from functools import lru_cache
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, BeforeValidator, Field, SecretStr, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.clerk_frontend import DEFAULT_CLERK_JS_VERSION
+
+
+def _parse_comma_or_json_str_list(value: object) -> list[str]:
+    """Acepta JSON ``["a","b"]`` o CSV ``a,b`` (Infisical suele usar CSV)."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            import json
+
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                raise ValueError("expected a JSON array of strings")
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        return [part.strip() for part in text.split(",") if part.strip()]
+    raise ValueError(f"unsupported list value type: {type(value)!r}")
+
+
+# NoDecode: pydantic-settings no intenta json.loads antes del validator.
+CommaSeparatedStrList = Annotated[
+    list[str],
+    NoDecode,
+    BeforeValidator(_parse_comma_or_json_str_list),
+]
 
 
 class Settings(BaseSettings):
@@ -33,8 +62,13 @@ class Settings(BaseSettings):
     # Zona horaria por defecto para mostrar timestamps en plantillas (BD sigue en UTC).
     app_display_timezone: str = "Europe/Madrid"
     # Seguridad HTTP. En produccion se fuerza HTTPS redirect y HSTS desde create_app().
-    # SECURITY_ALLOWED_HOSTS debe incluir dominios publicos y hosts internos del proxy.
-    security_allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver", "test"]
+    # SECURITY_ALLOWED_HOSTS: CSV (localhost,127.0.0.1) o JSON ["localhost"].
+    security_allowed_hosts: CommaSeparatedStrList = [
+        "localhost",
+        "127.0.0.1",
+        "testserver",
+        "test",
+    ]
     security_https_redirect: bool = False
     security_hsts_enabled: bool = False
 
@@ -72,6 +106,11 @@ class Settings(BaseSettings):
     clerk_webhook_secret: SecretStr = SecretStr("")
     # Versión fijada de @clerk/clerk-js (CDN). No usar @latest (supply chain).
     clerk_js_version: str = DEFAULT_CLERK_JS_VERSION
+    # Allowlists JWT session de Clerk (Paso01 §3). CSV o JSON.
+    # Si la lista no está vacía, el claim correspondiente es obligatorio y debe
+    # coincidir. En staging/production al menos una allowlist debe estar definida.
+    clerk_jwt_azp_allowlist: CommaSeparatedStrList = []
+    clerk_jwt_audience_allowlist: CommaSeparatedStrList = []
 
     # LLM providers — se usan en Paso 10
     anthropic_api_key: SecretStr = SecretStr("")
@@ -117,6 +156,14 @@ class Settings(BaseSettings):
     document_max_image_pixels: int = 40_000_000
     # Lado máximo: descarta imágenes tipo 1 por 500.000 px que pasan el área.
     document_max_image_edge_px: int = 20_000
+    # Tras este tiempo en processing sin finalizar, se considera huérfano
+    # (p. ej. worker reiniciado) y se puede abandonar / reintentar.
+    # 3 min: equilibrio entre no abortar extracciones lentas y no dejar la UI
+    # bloqueada tras un kill/OOM o un retry que dejó el attempt abierto.
+    document_processing_stale_after_seconds: int = 180
+    # TTL del semáforo Redis de extracción por tenant. Si el worker muere
+    # sin DECR, la clave caduca sola (evita cupos fantasma permanentes).
+    document_extraction_slot_ttl_seconds: int = 3600
     # Techo duro del procesado excepcional autorizado por el superadmin. El
     # override salta los límites de negocio, no los de supervivencia del worker.
     document_override_max_pdf_pages: int = 100
@@ -128,6 +175,10 @@ class Settings(BaseSettings):
     # Multiplicador sobre el coste de proveedor al repercutir un procesado
     # excepcional al cliente (1.0 = a coste, sin margen).
     document_override_charge_multiplier: float = 1.0
+
+    # Planes / entitlements (Paso02): kill-switch global de features.
+    # CSV o JSON de codigos FEATURE_* desactivados para todos los tenants.
+    entitlements_disabled_features: CommaSeparatedStrList = []
 
     # Knowledge / RAG ingesta (Paso 18)
     # Los documentos de conocimiento son libros o manuales: el tope es mucho más
@@ -147,7 +198,7 @@ class Settings(BaseSettings):
     knowledge_max_uploads_per_day: int = 20
     # MIME permitidos: PDF, texto plano, Markdown y fotos (JPEG/PNG/WebP).
     # Las imágenes pasan por OCR vía LLM antes de ser chunkificadas (Paso 22).
-    knowledge_allowed_mimes: list[str] = [
+    knowledge_allowed_mimes: CommaSeparatedStrList = [
         "application/pdf",
         "text/plain",
         "text/markdown",
@@ -183,8 +234,14 @@ class Settings(BaseSettings):
     knowledge_chat_max_citations: int = 5
     knowledge_chat_min_score_threshold: float = 0.0
     chat_daily_message_limit: int = 60
+    # Tope por usuario dentro del pool del tenant (anti abuso de un solo miembro).
+    chat_user_daily_message_limit: int = 40
     chat_max_message_bytes: int = 4096
     chat_history_message_limit: int = 20
+    # Máximo de mensajes persistidos por hilo (user+assistant+tool).
+    chat_max_messages_per_thread: int = 200
+    # Techo aproximado de caracteres de contexto enviados al LLM (system+historial).
+    chat_max_context_chars: int = 48_000
     chat_stream_chunk_chars: int = 80
 
     # Reintentos ante errores transitorios del proveedor LLM (HTTP 429/5xx/529).
@@ -230,6 +287,11 @@ class Settings(BaseSettings):
     # Webhooks externos (WhatsApp / Telegram) — fail-closed en staging/prod (Paso CDX 4).
     # True solo en dev local explícito; nunca en staging/production (validado abajo).
     webhook_allow_unsigned: bool = False
+    # Tope de body antes de parsear JSON (Paso01 §4). 256 KiB cubre payloads
+    # normales de WA/TG/Clerk; no loguear el cuerpo si se supera.
+    webhook_max_body_bytes: int = 262_144
+    # Ventana Redis SET NX anti-replay (reintentos Meta/Telegram/Svix).
+    webhook_dedupe_ttl_seconds: int = 86_400
 
     # Telegram Bot API (Paso 21 F)
     telegram_api_url: str = "https://api.telegram.org"
@@ -260,12 +322,26 @@ class Settings(BaseSettings):
 
     # Email SMTP — notificaciones internas (Paso 21, solución temporal)
     # Si smtp_host está vacío, los envíos se omiten silenciosamente (útil en dev).
+    # Puerto 587: SMTP_STARTTLS=true, SMTP_SSL=false
+    # Puerto 465: SMTP_STARTTLS=false, SMTP_SSL=true (TLS implícito)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_from: str = ""
     smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    # Destino de avisos "usuario sin organización" (onboarding). Infisical:
+    # EMAIL_SADM (también acepta email_sadam por typo histórico).
+    email_sadm: str = Field(  # type: ignore[pydantic-alias]
+        default="",
+        validation_alias=AliasChoices(
+            "EMAIL_SADM",
+            "email_sadm",
+            "EMAIL_SADAM",
+            "email_sadam",
+        ),
+    )
 
     # Métricas interno (Paso 15) — token para `/metrics/module1`
     # Bearer token simple para proteger el endpoint de métricas internas.
@@ -278,7 +354,7 @@ class Settings(BaseSettings):
     voice_max_audio_seconds: int = 60  # duración máx. de la nota
     # MIME aceptados por Gemini audio. audio/webm puede requerir transcodificación
     # en algunos entornos; preferir audio/ogg o audio/mp4 desde MediaRecorder.
-    voice_allowed_audio_mimes: list[str] = [
+    voice_allowed_audio_mimes: CommaSeparatedStrList = [
         "audio/ogg",
         "audio/mpeg",
         "audio/mp4",
@@ -332,6 +408,20 @@ class Settings(BaseSettings):
                 "LANGFUSE_CAPTURE_CONTENT must be false when APP_ENV is staging or production"
             )
         return self
+
+    @model_validator(mode="after")
+    def _require_clerk_jwt_audience_outside_dev(self) -> Self:
+        """En staging/prod con Clerk JWT activo, exigir azp o aud (fail-closed)."""
+        if self.is_dev:
+            return self
+        if not self.clerk_jwks_url:
+            return self
+        if self.clerk_jwt_azp_allowlist or self.clerk_jwt_audience_allowlist:
+            return self
+        raise ValueError(
+            "CLERK_JWT_AZP_ALLOWLIST or CLERK_JWT_AUDIENCE_ALLOWLIST must be set "
+            "when APP_ENV is staging or production and CLERK_JWKS_URL is configured"
+        )
 
 
 # Singleton de configuración: se construye una sola vez leyendo el entorno y

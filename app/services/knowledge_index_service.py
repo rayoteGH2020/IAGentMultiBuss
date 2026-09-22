@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.document_text import ExtractedTextResult, extract_knowledge_text
+from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
 from app.core.text_chunking import TooManyChunksError, chunk_text
 from app.llm.client import get_llm_client
@@ -43,6 +44,7 @@ _ERR_EMPTY_TEXT = "empty_text"
 _ERR_TOO_MANY_CHUNKS = "too_many_chunks"
 _ERR_EXTRACT = "extract_error"
 _ERR_EMBED = "embed_error"
+_ERR_MEDIA_LIMIT = "media_limit"
 
 
 async def run_index_pipeline(
@@ -73,6 +75,8 @@ async def run_index_pipeline(
 
     # --- Paso 2: Extracción de texto ---
     # Bifurcación: imágenes → OCR via LLM multimodal; texto/PDF → extracción clásica.
+    # Las imágenes pasan por media_limits dentro de extract_text_from_image
+    # (píxeles/edge/legibilidad) antes de cualquier llamada al LLM.
     if source_mime in KNOWLEDGE_IMAGE_MIMES:
         try:
             ocr_text = await extract_text_from_image(
@@ -87,6 +91,29 @@ async def run_index_pipeline(
                 page_count=None,
                 warnings=[],
             )
+        except MediaLimitExceeded as exc:
+            logger.warning(
+                "knowledge.index.media_limit",
+                document_id=str(document_id),
+                tenant_id=str(tenant_id),
+                mime_type=source_mime,
+                size_bytes=len(file_bytes),
+                error_code=exc.error_code.value,
+                reason=exc.message,
+            )
+            detail = exc.detail or (
+                "la imagen supera los límites permitidos o no se puede inspeccionar"
+            )
+            await mark_failed(
+                db,
+                tenant_id=tenant_id,
+                document_id=document_id,
+                error_message=(
+                    f"{_ERR_MEDIA_LIMIT}: {detail}. "
+                    "Reduce la resolución o el tamaño y vuelve a subirla."
+                ),
+            )
+            return
         except Exception as exc:
             logger.warning(
                 "knowledge.index.ocr_failed",

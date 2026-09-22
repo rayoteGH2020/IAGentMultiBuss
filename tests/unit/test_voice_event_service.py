@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ import pytest
 from app.core.errors import NotFoundError, RateLimitError, ValidationError
 from app.models.calendar_integration import CalendarIntegration, CalendarIntegrationStatus
 from app.schemas.calendar import CalendarEventCreate, VoiceEventDraft
+from app.schemas.entitlements import Entitlements
 from app.services import voice_event_service
 from app.services.voice_event_service import VOICE_REMINDERS
 
@@ -172,6 +174,17 @@ async def test_rate_limit_blocks_after_threshold(monkeypatch: pytest.MonkeyPatch
             "app.services.voice_event_service.validate_voice_upload",
             return_value="audio/ogg",
         ),
+        patch(
+            "app.services.entitlement_service.resolve_tenant",
+            AsyncMock(
+                return_value=Entitlements(
+                    plan_code="total",
+                    features=frozenset({"calendar_voice"}),
+                    limits={"voice_notes_per_hour": Decimal("5")},
+                    fail_closed=False,
+                )
+            ),
+        ),
         pytest.raises(RateLimitError),
     ):
         await voice_event_service.draft_from_audio(
@@ -207,7 +220,18 @@ async def test_draft_assembles_voiceeventdraft() -> None:
             return_value="audio/ogg",
         ),
         patch(
-            "app.services.voice_event_service._check_voice_rate_limit",
+            "app.services.entitlement_service.resolve_tenant",
+            AsyncMock(
+                return_value=Entitlements(
+                    plan_code="total",
+                    features=frozenset({"calendar_voice"}),
+                    limits={"voice_notes_per_hour": Decimal("60")},
+                    fail_closed=False,
+                )
+            ),
+        ),
+        patch(
+            "app.services.plan_quota_service.ensure_voice_note",
             AsyncMock(),
         ),
         patch(
@@ -265,7 +289,18 @@ async def test_draft_logs_audit_voice_transcribed() -> None:
             return_value="audio/ogg",
         ),
         patch(
-            "app.services.voice_event_service._check_voice_rate_limit",
+            "app.services.entitlement_service.resolve_tenant",
+            AsyncMock(
+                return_value=Entitlements(
+                    plan_code="total",
+                    features=frozenset({"calendar_voice"}),
+                    limits={"voice_notes_per_hour": Decimal("60")},
+                    fail_closed=False,
+                )
+            ),
+        ),
+        patch(
+            "app.services.plan_quota_service.ensure_voice_note",
             AsyncMock(),
         ),
         patch(

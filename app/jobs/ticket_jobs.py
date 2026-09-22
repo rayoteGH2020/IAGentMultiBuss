@@ -9,12 +9,18 @@ import structlog
 
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
+from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import LLMCompleteError
 from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_ticket
-from app.services import document_processing_service, processing_charge_service, ticket_service
+from app.services import (
+    document_processing_service,
+    entitlement_service,
+    processing_charge_service,
+    ticket_service,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -46,6 +52,22 @@ async def process_ticket(
             document_kind="ticket",
             document_id=ticket_uuid,
         )
+
+        if not await entitlement_service.ensure_feature(db, tenant_uuid, "documents"):
+            logger.info(
+                "worker.ticket.feature_disabled",
+                ticket_id=ticket_id,
+                tenant_id=tenant_id,
+            )
+            await ticket_service.mark_failed(
+                db,
+                ticket_id=ticket_uuid,
+                tenant_id=tenant_uuid,
+                error="plan_feature_disabled:documents",
+                error_code=DocumentErrorCode.plan_feature_disabled,
+            )
+            await db.commit()
+            return {"status": "skipped", "reason": "plan_required"}
 
         if not ticket_row.source_file_key:
             await ticket_service.mark_failed(
@@ -123,6 +145,7 @@ async def process_ticket(
                 tenant_id=tenant_uuid,
                 error=str(exc.message)[:500],
                 llm_call_id=exc.llm_call_id,
+                error_code=exc.document_error_code or DocumentErrorCode.extraction_failed,
             )
             await db.commit()
             logger.exception(

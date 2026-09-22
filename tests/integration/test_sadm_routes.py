@@ -217,7 +217,7 @@ def test_sadm_list_orgs_ok_for_superadmin(monkeypatch: pytest.MonkeyPatch) -> No
 
 @pytest.mark.parametrize(
     "path",
-    ["/sadm/documents", "/sadm/usage", "/sadm/chat-traces", "/sadm/chat-usage"],
+    ["/sadm/documents", "/sadm/usage", "/sadm/chat-traces", "/sadm/chat-usage", "/sadm/plans"],
 )
 def test_sadm_document_and_usage_consoles_render_for_superadmin(
     path: str,
@@ -254,7 +254,7 @@ def test_sadm_document_and_usage_consoles_render_for_superadmin(
 
 @pytest.mark.parametrize(
     "path",
-    ["/sadm/documents", "/sadm/usage", "/sadm/chat-traces", "/sadm/chat-usage"],
+    ["/sadm/documents", "/sadm/usage", "/sadm/chat-traces", "/sadm/chat-usage", "/sadm/plans"],
 )
 def test_sadm_document_and_usage_consoles_require_superadmin(
     path: str,
@@ -281,3 +281,47 @@ def test_sadm_document_and_usage_consoles_require_superadmin(
         )
     assert r.status_code == 403
     assert r.json()["code"] == "forbidden"
+
+
+def test_sadm_provision_routes_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST crear org/user y DELETE miembro ya no existen (D005 / Paso05)."""
+    from app.main import app
+
+    methods_by_path: dict[str, set[str]] = {}
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if path is None or not methods:
+            continue
+        methods_by_path.setdefault(path, set()).update(methods)
+
+    assert "POST" not in methods_by_path.get("/sadm/organizations", set())
+    assert "/sadm/users" not in methods_by_path
+    assert not any(
+        path.startswith("/sadm/users/") and "DELETE" in methods
+        for path, methods in methods_by_path.items()
+    )
+
+
+def test_sadm_orgs_page_is_readonly_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    admin_org = f"org_admin_{uuid4().hex[:8]}"
+    user_sub = f"user_{uuid4().hex[:12]}"
+    monkeypatch.setenv("ADMIN_CLERK_ORG_ID", admin_org)
+    monkeypatch.setenv("SUPERADMIN_CLERK_USER_IDS", "")
+    _clear_settings_cache()
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_session_with_org(org_id=admin_org, user_sub=user_sub),
+    )
+
+    from app.main import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(
+            "/sadm/organizations",
+            headers={"Authorization": "Bearer fake-jwt", "Accept": "text/html"},
+        )
+    assert r.status_code == 200
+    assert "Clerk Dashboard" in r.text
+    assert "Nueva organización" not in r.text
+    assert 'hx-post="/sadm/organizations"' not in r.text

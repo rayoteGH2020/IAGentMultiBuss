@@ -28,13 +28,17 @@ from app.core.calendar_datetime import (
 from app.core.datetime_display import display_today
 from app.core.errors import AppError, ValidationError, public_error_message
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, get_db
+from app.deps import CurrentTenant, CurrentUser, get_db, require_feature
 from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate, CalendarIntegrationStatus
 from app.services import calendar_service
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/calendar", tags=["calendar"])
+router = APIRouter(
+    prefix="/calendar",
+    tags=["calendar"],
+    dependencies=[Depends(require_feature("calendar_google"))],
+)
 
 
 async def _events_ctx(

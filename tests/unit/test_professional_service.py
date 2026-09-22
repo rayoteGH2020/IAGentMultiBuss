@@ -67,6 +67,63 @@ async def test_create_professional_copies_center_hours(
 
 
 @pytest.mark.asyncio
+async def test_professional_color_unique_per_tenant(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+) -> None:
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    await seed_default_business_hours(db_session, tenant.id)
+
+    first = await professional_service.create_professional(
+        db_session,
+        tenant.id,
+        ProfessionalCreate(display_name="Ana", color="#ef4444"),
+    )
+    assert first.color == "#ef4444"
+
+    with pytest.raises(ValidationError, match="color ya está asignado"):
+        await professional_service.create_professional(
+            db_session,
+            tenant.id,
+            ProfessionalCreate(display_name="Berta", color="#ef4444"),
+        )
+
+    second = await professional_service.create_professional(
+        db_session,
+        tenant.id,
+        ProfessionalCreate(display_name="Carla"),
+    )
+    assert second.color != first.color
+
+    with pytest.raises(ValidationError, match="color ya está asignado"):
+        await professional_service.update_professional(
+            db_session,
+            tenant.id,
+            second.id,
+            ProfessionalUpdate(color=first.color),
+        )
+
+    kept = await professional_service.update_professional(
+        db_session,
+        tenant.id,
+        first.id,
+        ProfessionalUpdate(color=first.color, display_name="Ana 2"),
+    )
+    assert kept.color == "#ef4444"
+    assert kept.display_name == "Ana 2"
+
+    taken_for_second = await professional_service.list_taken_professional_colors(
+        db_session,
+        tenant.id,
+        exclude_professional_id=second.id,
+    )
+    assert first.color in taken_for_second
+    assert second.color not in taken_for_second
+
+
+@pytest.mark.asyncio
 async def test_professional_accepts_up_to_three_specialties(
     db_session: AsyncSession,
     tenant_factory: object,
@@ -82,6 +139,7 @@ async def test_professional_accepts_up_to_three_specialties(
         ProfessionalCreate(display_name="Especialista", specialty_service_ids=service_ids),  # type: ignore[arg-type]
     )
     assert prof.specialty_service_ids == service_ids
+    assert prof.specialty_names == ["Servicio 1", "Servicio 2", "Servicio 3"]
 
 
 @pytest.mark.asyncio

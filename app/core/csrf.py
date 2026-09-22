@@ -8,15 +8,16 @@ import hashlib
 import hmac
 import json
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
+from uuid import UUID
 
 from app.config import get_settings
 
-if TYPE_CHECKING:
-    from uuid import UUID
-
 CSRF_HEADER_NAME = "X-CSRF-Token"
 CSRF_TOKEN_TTL_SECONDS = 8 * 60 * 60
+# Binding de CSRF cuando hay usuario autenticado en Clerk pero sin org activa
+# (onboarding). No es un tenant real.
+NO_ORG_CSRF_TENANT_ID = UUID("00000000-0000-4000-8000-000000000001")
 
 
 def _b64_encode(raw: bytes) -> str:
@@ -81,3 +82,16 @@ def validate_csrf_token(
 
     current = int(time.time()) if now is None else now
     return 0 <= current - issued_at <= CSRF_TOKEN_TTL_SECONDS
+
+
+def csrf_tenant_id_for_request(
+    *,
+    tenant_id: UUID | None,
+    missing_organization: bool,
+) -> UUID | None:
+    """Tenant id para firmar/validar CSRF; sentinel si falta org."""
+    if tenant_id is not None:
+        return tenant_id
+    if missing_organization:
+        return NO_ORG_CSRF_TENANT_ID
+    return None

@@ -44,8 +44,8 @@ from app.routes.web.admin import chat_usage as sadm_chat_usage
 from app.routes.web.admin import dashboard as sadm_dashboard
 from app.routes.web.admin import documents as sadm_documents
 from app.routes.web.admin import organizations as sadm_organizations
+from app.routes.web.admin import plans as sadm_plans
 from app.routes.web.admin import usage as sadm_usage
-from app.routes.web.admin import users as sadm_users
 
 
 @asynccontextmanager
@@ -143,11 +143,11 @@ def create_app() -> FastAPI:
     app.include_router(admin_channel_integrations.router)
     app.include_router(sadm_dashboard.router)
     app.include_router(sadm_organizations.router)
+    app.include_router(sadm_plans.router)
     app.include_router(sadm_documents.router)
     app.include_router(sadm_usage.router)
     app.include_router(sadm_chat_traces.router)
     app.include_router(sadm_chat_usage.router)
-    app.include_router(sadm_users.router)
     app.include_router(demo.router)
 
     @app.get("/invoices", include_in_schema=False)

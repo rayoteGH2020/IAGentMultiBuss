@@ -14,6 +14,8 @@ def _minimal_settings(*, app_env: str) -> Settings:
         database_url="postgresql+asyncpg://u:p@localhost/db",
         redis_url="redis://localhost:6379/0",
         app_env=app_env,  # type: ignore[arg-type]
+        # Anula JWKS de Infisical para no exigir allowlists azp/aud en este test.
+        clerk_jwks_url="",
     )
 
 

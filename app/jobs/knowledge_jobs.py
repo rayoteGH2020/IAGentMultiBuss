@@ -22,6 +22,7 @@ from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
 from app.jobs.knowledge_slots import tenant_knowledge_indexing_slot
 from app.models.knowledge import KnowledgeDocument
+from app.services import entitlement_service
 from app.services.knowledge_document_service import mark_failed
 from app.services.knowledge_index_service import run_index_pipeline
 
@@ -72,6 +73,21 @@ async def index_knowledge_document(
                 tenant_id=tenant_id,
             )
             return {"status": "not_found", "document_id": document_id}
+
+        if not await entitlement_service.ensure_feature(db, t_uuid, "knowledge"):
+            logger.info(
+                "worker.knowledge.feature_disabled",
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+            await mark_failed(
+                db,
+                tenant_id=t_uuid,
+                document_id=doc_uuid,
+                error_message="plan_feature_disabled:knowledge",
+            )
+            await db.commit()
+            return {"status": "skipped", "reason": "plan_required"}
 
         try:
             # run_index_pipeline gestiona sus propios errores de extracción,

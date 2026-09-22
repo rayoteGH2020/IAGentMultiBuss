@@ -20,6 +20,7 @@ from app.llm.observability import (
     trace_status_message,
     trace_text,
 )
+from app.schemas.entitlements import Entitlements
 from pydantic import BaseModel, ValidationError
 
 SECRET = "Juan Perez 12345678Z"  # pragma: allowlist secret
@@ -106,6 +107,21 @@ def test_status_message_is_exception_type_only() -> None:
     assert trace_status_message(error_type=None, error=None) is None
 
 
+def test_status_message_prefers_safe_message_without_document_content() -> None:
+    from app.core.document_processing_errors import PROVIDER_OVERLOAD_USER_MESSAGE
+
+    assert (
+        trace_status_message(
+            error_type="ClientError",
+            error=f"503 high demand while parsing {SECRET}",
+            safe_message=PROVIDER_OVERLOAD_USER_MESSAGE,
+        )
+        == PROVIDER_OVERLOAD_USER_MESSAGE
+    )
+    assert SECRET not in PROVIDER_OVERLOAD_USER_MESSAGE
+    assert "muchas solicitudes" in PROVIDER_OVERLOAD_USER_MESSAGE
+
+
 def test_capture_content_flag_returns_raw_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(observability, "capture_content_enabled", lambda: True)
 
@@ -174,6 +190,17 @@ async def test_complete_sends_no_document_content(monkeypatch: pytest.MonkeyPatc
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.entitlement_service.resolve_tenant",
+        AsyncMock(
+            return_value=Entitlements(
+                plan_code="total",
+                features=frozenset(),
+                limits={"llm_budget_eur_month": None},
+                fail_closed=False,
+            )
+        ),
+    )
 
     await client.complete(
         task="extraction",
@@ -210,6 +237,17 @@ async def test_complete_error_sends_exception_type_only(monkeypatch: pytest.Monk
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.entitlement_service.resolve_tenant",
+        AsyncMock(
+            return_value=Entitlements(
+                plan_code="total",
+                features=frozenset(),
+                limits={"llm_budget_eur_month": None},
+                fail_closed=False,
+            )
+        ),
+    )
 
     from app.llm.client import LLMCompleteError
 
@@ -227,6 +265,60 @@ async def test_complete_error_sends_exception_type_only(monkeypatch: pytest.Monk
     assert SECRET not in sent
     assert "RuntimeError" in sent
     # El mensaje completo sí queda en llm_calls para diagnóstico interno.
+    assert SECRET in (db.add.call_args.args[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_complete_provider_overload_sends_safe_status_to_langfuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.document_processing_errors import (
+        PROVIDER_OVERLOAD_USER_MESSAGE,
+        DocumentErrorCode,
+    )
+    from app.llm.client import LLMCompleteError
+
+    fake = _CapturingLangfuse()
+    client = LLMClient.__new__(LLMClient)
+    client._settings = get_settings()
+    client._langfuse = fake
+
+    async def failing_invoke(**_kwargs: Any) -> tuple[_Extraction, Any]:
+        raise RuntimeError(f"503 UNAVAILABLE high demand while reading {SECRET}")
+
+    monkeypatch.setattr(client, "_invoke_sdk", failing_invoke)
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.entitlement_service.resolve_tenant",
+        AsyncMock(
+            return_value=Entitlements(
+                plan_code="total",
+                features=frozenset(),
+                limits={"llm_budget_eur_month": None},
+                fail_closed=False,
+            )
+        ),
+    )
+
+    with pytest.raises(LLMCompleteError) as exc_info:
+        await client.complete(
+            task="extraction",
+            messages=[{"role": "user", "content": SECRET}],
+            response_model=_Extraction,
+            tenant_id=uuid4(),
+            db=db,
+            prompt_version="v1",
+        )
+
+    assert exc_info.value.document_error_code is DocumentErrorCode.provider_overload
+    assert "muchas solicitudes" in exc_info.value.message
+    sent = fake.sent()
+    assert SECRET not in sent
+    assert PROVIDER_OVERLOAD_USER_MESSAGE in sent
+    # Raw técnico (con posible contenido) solo en BD.
     assert SECRET in (db.add.call_args.args[0].error or "")
 
 

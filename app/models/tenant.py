@@ -18,9 +18,18 @@ class Tenant(Base, IdMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     plan: Mapped[str] = mapped_column(
         String(32),
-        default="free",
-        server_default=text("'free'"),
+        default="basic",
+        server_default=text("'basic'"),
         nullable=False,
+    )
+    # Codigo canonico del catalogo `plans` (Paso02). `plan` se mantiene por
+    # compatibilidad una migracion mas; nuevos writes deben rellenar ambos.
+    plan_code: Mapped[str] = mapped_column(
+        String(32),
+        default="basic",
+        server_default=text("'basic'"),
+        nullable=False,
+        index=True,
     )
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB,

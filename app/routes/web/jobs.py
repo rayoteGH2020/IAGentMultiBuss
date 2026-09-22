@@ -1,13 +1,13 @@
-"""Polling HTMX sobre estado de jobs (facturas procesadas por ARQ).
+"""Estado de jobs para filas de documentos / knowledge.
 
-El patrón de polling funciona así (arquitectura.md §10):
-1. El endpoint /documents/upload devuelve filas HTML con `hx-trigger="every 2s"`
-   apuntando a este endpoint mientras el invoice esté en estado pending/processing.
-2. HTMX llama a este endpoint cada 2 segundos y reemplaza la fila con el HTML
-   devuelto (hx-swap="outerHTML" sobre la fila correspondiente).
-3. Cuando el invoice pasa a ready o failed, el template de la fila ya no incluye
-   el atributo `hx-trigger`, por lo que el polling se detiene solo, sin
-   necesidad de ninguna coordinación adicional en el servidor.
+El panel de documentos hace polling HTMX nativo
+(``hx-trigger="every 2s"`` en el ``<tbody>``, como knowledge), con
+``hx-boost/push-url/history`` desactivados en la fila y
+``HX-Push-Url: false`` en la respuesta.
+
+Mientras el documento sigue busy se intercambia solo la fila. Al terminar
+(ready/failed/…), se responde el panel completo con ``HX-Retarget`` para
+quitar «Recién subidos» y dejar el listado unificado «Documentos».
 """
 
 from uuid import UUID
@@ -18,10 +18,12 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, get_db
+from app.deps import CurrentTenant, CurrentUser, get_db, require_feature
+from app.schemas.document_panel import PanelDocumentRow
 from app.services import (
     contract_service,
     document_panel_service,
+    document_processing_service,
     insurance_service,
     invoice_service,
     knowledge_document_service,
@@ -32,8 +34,59 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
+_RequireDocumentsFeature = Depends(require_feature("documents"))
+_RequireKnowledgeFeature = Depends(require_feature("knowledge"))
 
-@router.get("/invoice/{invoice_id}/status")
+
+def _status_row_response(
+    request: Request, *, template: str, ctx: dict[str, object]
+) -> HTMLResponse:
+    response = render(
+        request,
+        full=template,
+        partial=template,
+        ctx=ctx,
+    )
+    response.headers["HX-Push-Url"] = "false"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def _document_status_response(
+    request: Request,
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document: PanelDocumentRow,
+) -> HTMLResponse:
+    """Fila mientras busy; panel completo (sin recién subidos) al terminar."""
+    if document_panel_service.is_document_status_busy(document.status):
+        return _status_row_response(
+            request,
+            template="components/document_row.html",
+            ctx={"document": document, "just_uploaded_ids": []},
+        )
+
+    ctx = await document_panel_service.build_invoices_panel_ctx(
+        db,
+        tenant_id,
+        just_uploaded_ids=[],
+    )
+    response = render(
+        request,
+        full="components/invoices_panel.html",
+        partial="components/invoices_panel.html",
+        ctx=ctx,
+    )
+    response.headers["HX-Push-Url"] = "false"
+    response.headers["Cache-Control"] = "no-store"
+    # El poll apunta al <tbody>; al terminar redirigimos el swap al panel entero.
+    response.headers["HX-Retarget"] = "#invoices-table-container"
+    response.headers["HX-Reswap"] = "outerHTML"
+    return response
+
+
+@router.get("/invoice/{invoice_id}/status", dependencies=[_RequireDocumentsFeature])
 async def invoice_job_status_row(
     request: Request,
     invoice_id: UUID,
@@ -41,9 +94,12 @@ async def invoice_job_status_row(
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    # Se pasa tenant.id al servicio para que la query incluya el filtro de
-    # tenant, añadiendo una capa de defensa además de RLS: un usuario no podría
-    # conocer el estado de la factura de otro tenant aunque adivinase su UUID.
+    await document_processing_service.abandon_stale_processing(
+        db,
+        tenant_id=tenant.id,
+        document_kind="invoice",
+        document_id=invoice_id,
+    )
     invoice = await invoice_service.get_invoice(db, tenant.id, invoice_id)
     document = document_panel_service.row_from_invoice(invoice)
     logger.debug(
@@ -52,18 +108,15 @@ async def invoice_job_status_row(
         tenant_id=str(tenant.id),
         status=document.status,
     )
-    return render(
+    return await _document_status_response(
         request,
-        full="components/document_row.html",
-        partial="components/document_row.html",
-        ctx={
-            "document": document,
-            "just_uploaded_ids": [],
-        },
+        db,
+        tenant_id=tenant.id,
+        document=document,
     )
 
 
-@router.get("/ticket/{ticket_id}/status")
+@router.get("/ticket/{ticket_id}/status", dependencies=[_RequireDocumentsFeature])
 async def ticket_job_status_row(
     request: Request,
     ticket_id: UUID,
@@ -71,6 +124,12 @@ async def ticket_job_status_row(
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    await document_processing_service.abandon_stale_processing(
+        db,
+        tenant_id=tenant.id,
+        document_kind="ticket",
+        document_id=ticket_id,
+    )
     ticket = await ticket_service.get_ticket(db, tenant.id, ticket_id)
     document = document_panel_service.row_from_ticket(ticket)
     logger.debug(
@@ -79,18 +138,15 @@ async def ticket_job_status_row(
         tenant_id=str(tenant.id),
         status=document.status,
     )
-    return render(
+    return await _document_status_response(
         request,
-        full="components/document_row.html",
-        partial="components/document_row.html",
-        ctx={
-            "document": document,
-            "just_uploaded_ids": [],
-        },
+        db,
+        tenant_id=tenant.id,
+        document=document,
     )
 
 
-@router.get("/contract/{contract_id}/status")
+@router.get("/contract/{contract_id}/status", dependencies=[_RequireDocumentsFeature])
 async def contract_job_status_row(
     request: Request,
     contract_id: UUID,
@@ -98,6 +154,12 @@ async def contract_job_status_row(
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    await document_processing_service.abandon_stale_processing(
+        db,
+        tenant_id=tenant.id,
+        document_kind="contract",
+        document_id=contract_id,
+    )
     contract = await contract_service.get_contract(db, tenant.id, contract_id)
     document = document_panel_service.row_from_contract(contract)
     logger.debug(
@@ -106,18 +168,15 @@ async def contract_job_status_row(
         tenant_id=str(tenant.id),
         status=document.status,
     )
-    return render(
+    return await _document_status_response(
         request,
-        full="components/document_row.html",
-        partial="components/document_row.html",
-        ctx={
-            "document": document,
-            "just_uploaded_ids": [],
-        },
+        db,
+        tenant_id=tenant.id,
+        document=document,
     )
 
 
-@router.get("/insurance/{insurance_id}/status")
+@router.get("/insurance/{insurance_id}/status", dependencies=[_RequireDocumentsFeature])
 async def insurance_job_status_row(
     request: Request,
     insurance_id: UUID,
@@ -125,6 +184,12 @@ async def insurance_job_status_row(
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    await document_processing_service.abandon_stale_processing(
+        db,
+        tenant_id=tenant.id,
+        document_kind="insurance",
+        document_id=insurance_id,
+    )
     insurance = await insurance_service.get_insurance(db, tenant.id, insurance_id)
     document = document_panel_service.row_from_insurance(insurance)
     logger.debug(
@@ -133,18 +198,15 @@ async def insurance_job_status_row(
         tenant_id=str(tenant.id),
         status=document.status,
     )
-    return render(
+    return await _document_status_response(
         request,
-        full="components/document_row.html",
-        partial="components/document_row.html",
-        ctx={
-            "document": document,
-            "just_uploaded_ids": [],
-        },
+        db,
+        tenant_id=tenant.id,
+        document=document,
     )
 
 
-@router.get("/knowledge/{document_id}/status")
+@router.get("/knowledge/{document_id}/status", dependencies=[_RequireKnowledgeFeature])
 async def knowledge_job_status_row(
     request: Request,
     document_id: UUID,
@@ -164,9 +226,8 @@ async def knowledge_job_status_row(
         tenant_id=str(tenant.id),
         status=doc.status,
     )
-    return render(
+    return _status_row_response(
         request,
-        full="components/knowledge_row.html",
-        partial="components/knowledge_row.html",
+        template="components/knowledge_row.html",
         ctx={"document": doc},
     )

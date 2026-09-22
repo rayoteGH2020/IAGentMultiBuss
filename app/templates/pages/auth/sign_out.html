@@ -63,6 +63,7 @@
             afterSignInUrl: "/",
             afterSignUpUrl: "/",
             afterSignOutUrl: doneUrl,
+            taskUrls: { "choose-organization": "/onboarding" },
           });
           if (typeof ClerkObj.signOut === "function") {
             await ClerkObj.signOut();

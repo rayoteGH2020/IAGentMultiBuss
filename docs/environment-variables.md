@@ -45,6 +45,8 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `CLERK_PUBLISHABLE_KEY` | En prod | Clave pública usada en el frontend para inicializar el widget de Clerk. |
 | `CLERK_JWKS_URL` | En prod | URL del endpoint JWKS de Clerk desde el que el backend descarga las claves públicas para verificar JWTs. Se cachea 1 h. |
 | `CLERK_WEBHOOK_SECRET` | En prod | Secreto para verificar la firma de los webhooks de Clerk (eventos de usuario/organización). |
+| `CLERK_JWT_AZP_ALLOWLIST` | En staging/prod si hay JWKS | CSV de valores `azp` aceptados del session JWT. Si no está vacío, el claim es obligatorio. Evita aceptar tokens de otro cliente/entorno. |
+| `CLERK_JWT_AUDIENCE_ALLOWLIST` | En staging/prod si hay JWKS (alternativa o complemento a azp) | CSV de valores `aud` aceptados. Misma política fail-closed que azp. Al menos una de las dos allowlists debe definirse fuera de development cuando `CLERK_JWKS_URL` está configurada. |
 
 ### Proveedores LLM
 
@@ -76,6 +78,8 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `ENCRYPTION_KEY` | En prod | Clave AES-256 (32 bytes en base64) para cifrar campos sensibles en BD (conexiones de clientes, tokens OAuth). |
 | `METRICS_TOKEN` | No | Bearer token para el endpoint `GET /metrics/module1`. Autenticación máquina-a-máquina (CI, dashboards internos); no es auth de usuario. |
 | `WEBHOOK_ALLOW_UNSIGNED` | No | Default `false`. Si `true` **y** `APP_ENV=development`, permite procesar webhooks de WhatsApp/Telegram sin verificación criptográfica (solo dev local). Prohibido en staging/production (la app no arranca). |
+| `WEBHOOK_MAX_BODY_BYTES` | No | Tope de bytes del body **antes** de parsear JSON (default `262144` = 256 KiB). Aplica a WhatsApp, Telegram y Clerk. |
+| `WEBHOOK_DEDUPE_TTL_SECONDS` | No | TTL de la clave Redis `SET NX` anti-replay (default `86400`). Claves `webhook:dedupe:<provider>:<event_id>`. |
 | `WHATSAPP_APP_SECRET` | En prod | Secreto de la app Meta para validar `X-Hub-Signature-256` en POST `/api/webhooks/whatsapp`. Obligatorio en staging/production antes de guardar integraciones WhatsApp. |
 | `WHATSAPP_VERIFY_TOKEN` | En prod | Token arbitrario que Meta devuelve en la verificación GET del webhook. |
 

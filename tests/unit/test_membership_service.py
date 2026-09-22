@@ -220,90 +220,7 @@ async def test_create_tenant_member_reactivates_revoked_membership(
 
 
 @pytest.mark.asyncio
-async def test_update_tenant_member_syncs_role(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tenant = await _tenant_with_org(db_session)
-    user = User(clerk_user_id=f"user_{uuid4().hex[:8]}", email="u@example.com", name="U")
-    db_session.add_all([tenant, user])
-    await db_session.flush()
-    await set_tenant_context(db_session, str(tenant.id))
-    membership = Membership(user_id=user.id, tenant_id=tenant.id, role="member")
-    db_session.add(membership)
-    await db_session.flush()
-
-    calls: list[str] = []
-
-    async def fake_update_role(org_id: str, clerk_user_id: str, role: str) -> dict[str, str]:
-        calls.append(role)
-        return {"role": role}
-
-    monkeypatch.setattr(
-        "app.services.membership_service.clerk_client.update_org_member_role",
-        fake_update_role,
-    )
-
-    async def fake_update_user(*args: object, **kwargs: object) -> dict[str, str]:
-        return {}
-
-    monkeypatch.setattr(
-        "app.services.membership_service.clerk_client.update_user",
-        fake_update_user,
-    )
-
-    await set_tenant_context(db_session, str(tenant.id))
-    updated = await membership_service.update_tenant_member(
-        db_session,
-        tenant.id,
-        membership.id,
-        TenantMemberUpdate(role="admin"),
-    )
-    assert updated.role == "admin"
-    assert calls == ["org:admin"]
-
-
-@pytest.mark.asyncio
-async def test_update_tenant_member_does_not_persist_when_clerk_fails(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tenant = await _tenant_with_org(db_session)
-    user = User(clerk_user_id=f"user_{uuid4().hex[:8]}", email="persist@example.com", name="U")
-    db_session.add_all([tenant, user])
-    await db_session.flush()
-    await set_tenant_context(db_session, str(tenant.id))
-    membership = Membership(user_id=user.id, tenant_id=tenant.id, role="member")
-    db_session.add(membership)
-    await db_session.flush()
-    membership_id = membership.id
-
-    async def boom(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("Clerk role sync failed")
-
-    monkeypatch.setattr(
-        "app.services.membership_service.clerk_client.update_org_member_role",
-        boom,
-    )
-
-    await set_tenant_context(db_session, str(tenant.id))
-    with pytest.raises(RuntimeError, match="Clerk role sync failed"):
-        await membership_service.update_tenant_member(
-            db_session,
-            tenant.id,
-            membership_id,
-            TenantMemberUpdate(role="admin"),
-        )
-
-    with db_session.no_autoflush:
-        result = await db_session.execute(
-            select(Membership.role).where(Membership.id == membership_id)
-        )
-        assert result.scalar_one() == "member"
-
-
-@pytest.mark.asyncio
-async def test_update_tenant_member_permissions(
+async def test_update_tenant_member_permissions_local_only_no_clerk(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -315,13 +232,18 @@ async def test_update_tenant_member_permissions(
     membership = Membership(user_id=user.id, tenant_id=tenant.id, role="member")
     db_session.add(membership)
     await db_session.flush()
+    original_role = membership.role
 
-    async def fake_update_role(*args: object, **kwargs: object) -> dict[str, str]:
-        return {}
+    async def boom_clerk(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Clerk must not be called on member update")
 
     monkeypatch.setattr(
         "app.services.membership_service.clerk_client.update_org_member_role",
-        fake_update_role,
+        boom_clerk,
+    )
+    monkeypatch.setattr(
+        "app.services.membership_service.clerk_client.update_user",
+        boom_clerk,
     )
 
     await set_tenant_context(db_session, str(tenant.id))
@@ -335,10 +257,11 @@ async def test_update_tenant_member_permissions(
         TenantMemberUpdate(permissions=perms),
     )
     assert updated.permissions.appointments.create is True
+    assert updated.role == original_role
 
 
 @pytest.mark.asyncio
-async def test_remove_tenant_member_calls_clerk_and_revokes_row(
+async def test_remove_tenant_member_revokes_local_row_without_calling_clerk(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -353,53 +276,20 @@ async def test_remove_tenant_member_calls_clerk_and_revokes_row(
     await db_session.flush()
     membership_id = membership.id
 
-    removed: list[tuple[str, str]] = []
-
-    async def fake_remove(org_id: str, clerk_user_id: str) -> None:
-        removed.append((org_id, clerk_user_id))
+    async def boom_remove(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Clerk remove_org_member must not be called")
 
     monkeypatch.setattr(
         "app.services.membership_service.clerk_client.remove_org_member",
-        fake_remove,
+        boom_remove,
     )
 
     await set_tenant_context(db_session, str(tenant.id))
     await membership_service.remove_tenant_member(db_session, tenant.id, membership_id)
 
-    assert removed == [(tenant.clerk_org_id, clerk_id)]
     stored = await db_session.get(Membership, membership_id)
     assert stored is not None
     assert stored.is_active is False
-
-
-@pytest.mark.asyncio
-async def test_remove_tenant_member_keeps_row_when_clerk_fails(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tenant = await _tenant_with_org(db_session)
-    user = User(clerk_user_id=f"user_{uuid4().hex[:8]}", email="stay@example.com", name="Stay")
-    db_session.add_all([tenant, user])
-    await db_session.flush()
-    await set_tenant_context(db_session, str(tenant.id))
-    membership = Membership(user_id=user.id, tenant_id=tenant.id, role="member")
-    db_session.add(membership)
-    await db_session.flush()
-    membership_id = membership.id
-
-    async def boom(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("Clerk remove failed")
-
-    monkeypatch.setattr(
-        "app.services.membership_service.clerk_client.remove_org_member",
-        boom,
-    )
-
-    await set_tenant_context(db_session, str(tenant.id))
-    with pytest.raises(RuntimeError, match="Clerk remove failed"):
-        await membership_service.remove_tenant_member(db_session, tenant.id, membership_id)
-
-    assert await db_session.get(Membership, membership_id) is not None
 
 
 @pytest.mark.asyncio

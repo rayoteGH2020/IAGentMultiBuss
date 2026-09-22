@@ -5,13 +5,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_dashboard_main_disinherits_app_frame_htmx_attrs() -> None:
-    """#app-frame usa hx-select; #main-content debe cortar la herencia."""
-    source = (ROOT / "app/templates/layouts/dashboard.html").read_text(encoding="utf-8")
-    assert 'id="app-frame"' in source
-    assert 'hx-select="#app-frame"' in source
-    assert 'id="main-content"' in source
-    assert 'hx-disinherit="*"' in source
+def test_dashboard_main_disinherits_and_sidebar_owns_boost() -> None:
+    """Boost en sidebar; #main-content corta herencia por defensa en profundidad."""
+    layout = (ROOT / "app/templates/layouts/dashboard.html").read_text(encoding="utf-8")
+    sidebar = (ROOT / "app/templates/components/sidebar.html").read_text(encoding="utf-8")
+    assert 'id="app-frame"' in layout
+    assert 'hx-boost="true"' not in layout
+    assert 'hx-boost="true"' in sidebar
+    assert 'hx-select="#app-frame"' in sidebar
+    assert 'id="main-content"' in layout
+    assert 'hx-disinherit="*"' in layout
 
 
 def test_chat_shell_disinherits_htmx_attrs() -> None:

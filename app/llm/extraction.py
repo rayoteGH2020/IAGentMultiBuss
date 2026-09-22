@@ -15,7 +15,7 @@ from instructor.processing.multimodal import PDF, Image
 from pydantic import BaseModel, Field
 
 from app.core.document_processing_errors import DocumentErrorCode
-from app.core.media_limits import MediaLimitExceeded
+from app.core.media_limits import MediaLimitExceeded, inspect_document
 from app.llm.client import get_llm_client
 from app.llm.extraction_media import prepare_invoice_media
 from app.llm.prompts_loader import load_prompt
@@ -34,7 +34,7 @@ logger = structlog.get_logger(__name__)
 # app/llm/prompts/ (extraction_v1.txt). Cambiar aquí automáticamente actualiza
 # el campo prompt_version en llm_calls, permitiendo correlacionar resultados
 # con la versión del prompt en el dashboard de métricas.
-PROMPT_VERSION = "extraction_v3"
+PROMPT_VERSION = "extraction_v3_2"
 TICKET_PROMPT_VERSION = "ticket_extraction_v1"
 CONTRACT_PROMPT_VERSION = "contract_extraction_v1"
 INSURANCE_PROMPT_VERSION = "insurance_extraction_v1"
@@ -369,6 +369,10 @@ async def extract_text_from_image(
     mismo punto de entrada LLMClient.complete() para garantizar trazabilidad en
     llm_calls y Langfuse.
 
+    Antes de construir el prompt multimodal se inspecciona la imagen con
+    ``media_limits.inspect_document`` (píxeles, edge, legibilidad). Fail-closed:
+    sin inspección válida no hay llamada al LLM.
+
     Args:
         file_bytes: Bytes completos de la imagen (JPEG, PNG o WebP).
         mime_type: MIME ya validado; debe estar en KNOWLEDGE_IMAGE_MIMES.
@@ -379,10 +383,17 @@ async def extract_text_from_image(
         Texto extraído de la imagen como cadena UTF-8. Puede ser vacío si la
         imagen no contiene texto legible; el pipeline de indexación detectará
         este caso y marcará el documento como failed.
+
+    Raises:
+        MediaLimitExceeded: Imagen fuera de límites o no inspeccionable.
+        ValueError: MIME no soportado para OCR knowledge.
     """
     if mime_type not in KNOWLEDGE_IMAGE_MIMES:
         msg = f"extract_text_from_image: mime_type no soportado: {mime_type}"
         raise ValueError(msg)
+
+    # Barrera de recursos antes del OCR: no decodificar/enviar bombas al modelo.
+    await asyncio.to_thread(inspect_document, file_bytes, mime_type)
 
     messages = _build_extraction_messages(
         system_prompt=load_prompt(KNOWLEDGE_OCR_PROMPT_VERSION),

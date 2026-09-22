@@ -36,6 +36,18 @@
   .card {
     @apply rounded-xl bg-white shadow-sm border border-slate-200 p-6;
   }
+  /* Especialidades del profesional: 4 columnas a ancho completo; texto largo
+     envuelve y sube el alto de toda la fila CSS grid. */
+  .professional-specialties-grid {
+    @apply mt-2 grid w-full gap-x-4 gap-y-2;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .professional-specialties-grid__item {
+    @apply flex min-w-0 items-start gap-2;
+  }
+  .professional-specialties-grid__label {
+    @apply min-w-0 break-words text-slate-700;
+  }
   /* Tabla genérica (reutilizable fuera de /documents). */
   .data-table {
     @apply w-full text-sm border-collapse;
@@ -126,7 +138,7 @@
   .invoices-col-tipo,
   .invoices-th--tipo,
   .invoices-td--tipo {
-    width: 7.5rem;
+    width: 8.75rem;
   }
   .invoices-col-fecha,
   .invoices-th--fecha,

@@ -108,6 +108,13 @@ def test_row_from_ticket_maps_comercio_to_proveedor() -> None:
     assert row.status_poll_url.endswith(f"/jobs/ticket/{ticket.id}/status")
 
 
+def test_row_from_invoice_without_loaded_doc_type_uses_fallback() -> None:
+    """No debe disparar lazy-load de doc_type (async greenlet)."""
+    row = document_panel_service.row_from_invoice(_invoice())
+    assert row.doc_type_code == DocTypeCode.factura.value
+    assert row.doc_type_label == "Factura"
+
+
 def test_row_from_contract_maps_panel_columns() -> None:
     contract = _contract()
     row = document_panel_service.row_from_contract(contract)

@@ -30,7 +30,8 @@ def _fake_clerk_resolve(request: Request, *, user_sub: str, org_id: str) -> None
     tenant = Tenant(
         clerk_org_id=org_id,
         name="Test Org",
-        plan="free",
+        plan="basic",
+        plan_code="basic",
         settings={},
         created_at=now,
         updated_at=now,
@@ -70,9 +71,8 @@ def test_chat_get_page(
             headers={"Authorization": "Bearer fake-jwt", "Accept": "text/html"},
         )
     assert r.status_code == 200
-    assert "Consulta sobre tus documentos" in r.text
-    assert "chat-sidebar" in r.text
     assert "Consulta documental" in r.text
+    assert "chat-sidebar" in r.text
     assert "base de conocimiento" in r.text
     assert 'hx-disinherit="*"' in r.text
     assert 'id="chat-app"' in r.text

@@ -69,7 +69,7 @@ async def get_ticket(
     stmt = (
         select(Ticket)
         .where(Ticket.tenant_id == tenant_id, Ticket.id == ticket_id)
-        .options(selectinload(Ticket.llm_call))
+        .options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     )
     result = await db.execute(stmt)
     ticket = result.scalar_one_or_none()
@@ -127,6 +127,29 @@ async def create_ticket_from_upload(
     return ticket
 
 
+async def create_ticket_from_existing_storage(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_file_key: str,
+    source_filename: str,
+    source_mime: str,
+    doc_type: DocTypeCode = DocTypeCode.ticket,
+) -> Ticket:
+    """Crea stub de ticket reutilizando un fichero ya subido a R2."""
+    ticket = await create_ticket_stub(
+        db,
+        tenant_id,
+        source_file_key=source_file_key,
+        source_filename=original_upload_filename(source_filename),
+        source_mime=source_mime,
+        doc_type=doc_type,
+    )
+    ticket.status = TicketStatus.processing
+    await db.flush()
+    return ticket
+
+
 async def apply_extraction_result(
     db: AsyncSession,
     *,
@@ -134,7 +157,46 @@ async def apply_extraction_result(
     recibo: TicketRecibo,
     llm_call_id: UUID,
 ) -> Ticket:
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        ticket_extraction_is_usable,
+    )
+
     ticket.llm_call_id = llm_call_id
+    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
+    ticket.raw_extraction = recibo.model_dump(mode="json")
+    ticket.updated_at = datetime.now(tz=UTC)
+
+    if not ticket_extraction_is_usable(recibo):
+        ticket.status = TicketStatus.failed
+        ticket.error_code = DocumentErrorCode.extraction_failed.value
+        ticket.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=ticket.source_filename,
+        )
+        logger.warning(
+            "ticket.extraction_unusable",
+            ticket_id=str(ticket.id),
+            tenant_id=str(ticket.tenant_id),
+            confidence=float(ticket.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=ticket.tenant_id,
+            document_kind="ticket",
+            document_id=ticket.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=ticket.error_message,
+            error_code=ticket.error_code,
+        )
+        await db.flush()
+        return ticket
+
     ticket.fecha = recibo.fecha
     ticket.comercio = recibo.comercio[:300]
     ticket.numero_ticket = recibo.numero_ticket[:100] if recibo.numero_ticket else None
@@ -144,10 +206,7 @@ async def apply_extraction_result(
     ticket.iva_amount = recibo.iva_amount
     ticket.total = recibo.total
     ticket.currency = recibo.currency[:3]
-    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
-    ticket.raw_extraction = recibo.model_dump(mode="json")
     ticket.status = TicketStatus.ready
-    ticket.updated_at = datetime.now(tz=UTC)
     ticket.error_message = None
     ticket.error_code = None
     await db.flush()

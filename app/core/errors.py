@@ -3,12 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, status
-
-if TYPE_CHECKING:
-    from uuid import UUID
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from app.core.document_processing_errors import DocumentErrorCode
 
 log = get_logger(__name__)
 
@@ -77,6 +79,19 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
+class PlanRequiredError(ForbiddenError):
+    """Modulo o feature no incluido en el plan del tenant (Paso03)."""
+
+    code = "plan_required"
+
+    def __init__(self, feature: str, *, message: str | None = None) -> None:
+        super().__init__(
+            message or f"Feature '{feature}' is not included in your plan",
+            details={"code": "plan_required", "feature": feature},
+        )
+        self.feature = feature
+
+
 class RateLimitError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "rate_limited"
@@ -91,12 +106,20 @@ class ExternalServiceError(AppError):
 class LLMCompleteError(ExternalServiceError):
     """Fallo en LLMClient.complete() tras persistir la fila en `llm_calls`."""
 
-    def __init__(self, message: str, *, llm_call_id: UUID) -> None:
-        super().__init__(
-            message,
-            details={"llm_call_id": str(llm_call_id)},
-        )
+    def __init__(
+        self,
+        message: str,
+        *,
+        llm_call_id: UUID,
+        document_error_code: DocumentErrorCode | None = None,
+    ) -> None:
+        details: dict[str, object] = {"llm_call_id": str(llm_call_id)}
+        if document_error_code is not None:
+            details["document_error_code"] = document_error_code.value
+        super().__init__(message, details=details)
         self.llm_call_id = llm_call_id
+        # Motivo estructurado para mark_failed (p. ej. provider_overload).
+        self.document_error_code = document_error_code
 
 
 _INTERNAL_MESSAGE_MARKERS = (
@@ -133,6 +156,11 @@ def public_error_message(
         if exc.details.get("code") == "no_active_organization":
             return "No hay una organización activa."
         return "Sesión no válida. Inicia sesión de nuevo."
+    if isinstance(exc, PlanRequiredError):
+        return (
+            "Esta función no está incluida en tu plan. "
+            "Contacta con el administrador para ampliarla."
+        )
     if isinstance(exc, ExternalServiceError):
         return fallback
     if isinstance(exc, ForbiddenError) and _looks_external_forbidden(exc):
@@ -237,6 +265,44 @@ def register_error_handlers(app: FastAPI) -> None:
                 )
             if "text/html" in accept:
                 return RedirectResponse(url=redirect_url, status_code=302)
+
+        if isinstance(exc, PlanRequiredError):
+            from app.core.entitlement_codes import feature_ui_label
+            from app.core.templating import render
+
+            feature = str(exc.details.get("feature") or getattr(exc, "feature", ""))
+            ctx = {
+                "feature": feature,
+                "feature_label": feature_ui_label(feature),
+                "error_message": public_error_message(exc),
+            }
+            accept = request.headers.get("accept", "")
+            is_htmx = request.headers.get("HX-Request") == "true"
+            is_boosted = request.headers.get("HX-Boosted") == "true"
+            if is_htmx and not is_boosted:
+                return render(
+                    request,
+                    full="pages/errors/plan_required.html",
+                    partial="components/plan_required_fragment.html",
+                    ctx=ctx,
+                    status_code=exc.status_code,
+                )
+            if "text/html" in accept or is_boosted or is_htmx:
+                return render(
+                    request,
+                    full="pages/errors/plan_required.html",
+                    partial=None,
+                    ctx=ctx,
+                    status_code=exc.status_code,
+                )
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "code": exc.code,
+                    "message": public_error_message(exc),
+                    "details": public_error_details(exc),
+                },
+            )
 
         # Resto de AppErrors (NotFoundError, ValidationError, ForbiddenError…):
         # respuesta JSON estándar con el código y mensaje del error de dominio.

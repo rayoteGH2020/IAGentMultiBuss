@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db
-from app.services import tenant_service
+from app.deps import CurrentTenant, CurrentUser, get_db
+from app.services import entitlement_service, plan_quota_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -23,7 +23,7 @@ async def settings_profile(
     return render(
         request,
         full="pages/settings/profile.html",
-        ctx={"user": user, "tenant": tenant, "saved": False},
+        ctx={"user": user, "tenant": tenant},
     )
 
 
@@ -38,23 +38,12 @@ async def settings_billing(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-) -> HTMLResponse:
-    return render(request, full="pages/settings/billing.html", ctx={"user": user, "tenant": tenant})
-
-
-@router.post("/organization/name")
-async def update_organization_name(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    _: RequireAdmin,
     db: AsyncSession = Depends(get_db),
-    name: str = Form(..., min_length=2, max_length=120),
 ) -> HTMLResponse:
-    await tenant_service.update_tenant_display_name(db, tenant, name)
+    ents = await entitlement_service.resolve_entitlements(db, tenant)
+    usage = await plan_quota_service.get_usage_snapshot(db, ents, tenant.id)
     return render(
         request,
-        full="components/tenant_info.html",
-        partial="components/tenant_info.html",
-        ctx={"user": user, "tenant": tenant, "saved": True},
+        full="pages/settings/billing.html",
+        ctx={"user": user, "tenant": tenant, "usage": usage, "ents": ents},
     )

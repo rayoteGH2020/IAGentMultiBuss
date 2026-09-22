@@ -9,20 +9,27 @@
     <p class="text-sm text-slate-500">Gestiona el equipo agendable y sus especialidades.</p>
     <button type="button"
             hx-get="/settings/professionals/new"
-            hx-target="#professional-modal"
+            hx-target="#professional-modal-panel"
             hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-professional-modal'))"
             class="btn-primary cursor-pointer">
       Nuevo profesional
     </button>
   </div>
 
   <div class="card p-0 overflow-hidden">
-    <table class="data-table">
+    <table class="data-table table-fixed w-full">
+      <colgroup>
+        <col class="w-[26%]">
+        <col>
+        <col class="w-24">
+        <col class="w-16">
+      </colgroup>
       <thead>
         <tr>
           <th>Nombre</th>
-          <th>Estado</th>
           <th>Especialidades</th>
+          <th>Estado</th>
           <th></th>
         </tr>
       </thead>
@@ -37,11 +44,16 @@
   </div>
 </div>
 
-<div id="professional-modal"
-     x-data="{ open: false }"
+{# Alpine open state MUST NOT be on the hx-target (same race as members modal). #}
+<div x-data="{ open: false }"
      @open-professional-modal.window="open = true"
-     x-show="open"
-     x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+     @close-professional-modal.window="open = false; $refs.panel.innerHTML = ''">
+  <div x-show="open"
+       x-cloak
+       @keydown.escape.window="if (open) open = false"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @click.self="open = false">
+    <div id="professional-modal-panel" x-ref="panel"></div>
+  </div>
 </div>
 {% endblock %}

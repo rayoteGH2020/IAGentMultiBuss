@@ -1,19 +1,37 @@
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.core.clerk_frontend import clerk_browser_script_url
+from app.core.errors import AppError, AuthError, ForbiddenError, RateLimitError
 from app.core.session_cookies import clear_clerk_session_cookie
 from app.core.templating import render
-from app.deps import CurrentUser, get_db_no_tenant
-from app.services import auth_service
+from app.deps import CurrentUser, RedisDep, get_db_no_tenant
+from app.services import auth_service, onboarding_notify_service
 
 router = APIRouter(tags=["auth"])
 
 _NO_STORE_CACHE = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
+
+_NOTIFY_ERROR_MESSAGES: dict[str, str] = {
+    "email_sadm_missing": ("Falta configurar EMAIL_SADM. Contacta al superadmin por otro canal."),
+    "smtp_not_configured": (
+        "Falta configurar SMTP en el servidor. Contacta al superadmin por otro canal."
+    ),
+    "missing_org_notify_send_failed": (
+        "No se pudo enviar el email. Inténtalo de nuevo en unos minutos."
+    ),
+}
+
+
+def _notify_error_message(exc: AppError) -> str:
+    code = exc.details.get("code") if isinstance(exc.details, dict) else None
+    if isinstance(code, str) and code in _NOTIFY_ERROR_MESSAGES:
+        return _NOTIFY_ERROR_MESSAGES[code]
+    return "No se pudo enviar el aviso. Inténtalo de nuevo."
 
 
 def _extract_host(jwks_url: str) -> str:
@@ -62,18 +80,77 @@ async def signup_page(request: Request) -> Response:
 
 @router.get("/auth/organization")
 async def organization_legacy_redirect() -> RedirectResponse:
-    """Alias histórico: Paso08 usa /onboarding con creación de org."""
+    """Alias histórico: redirige a la pantalla de aviso sin organización."""
     return RedirectResponse(url="/onboarding", status_code=302)
 
 
 @router.get("/onboarding")
 async def onboarding_page(request: Request) -> Response:
-    """Usuario autenticado en Clerk sin organización activa en el JWT."""
+    """Usuario autenticado en Clerk sin organización: aviso + notify al SADM.
+
+    No se permite crear organizaciones desde el cliente; el alta es exclusiva
+    del superadmin.
+    """
     settings = get_settings()
     resp = render(
         request,
         full="pages/auth/no_org.html",
         ctx=_clerk_page_ctx(settings),
+    )
+    return _cache_control_no_store(resp)
+
+
+@router.post("/onboarding/notify-superadmin", response_class=HTMLResponse)
+async def notify_superadmin_missing_org(
+    request: Request,
+    redis: RedisDep,
+) -> Response:
+    """Envía al superadmin el aviso de usuario sin organización (HTMX)."""
+    if not getattr(request.state, "auth_missing_organization", False):
+        raise ForbiddenError("Organization already active")
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise AuthError("Not authenticated")
+
+    try:
+        result = await onboarding_notify_service.notify_superadmin_missing_organization(
+            user_email=user.email,
+            user_id=user.id,
+            redis=redis,
+        )
+    except RateLimitError:
+        # Si ya se intentó (p. ej. fallo SMTP previo), ofrecer mailto si aplica.
+        settings = get_settings()
+        to = settings.email_sadm.strip()
+        mailto_url = None
+        if to and not settings.smtp_host.strip():
+            mailto_url = onboarding_notify_service.build_missing_org_mailto_url(
+                to=to,
+                user_email=user.email,
+            )
+        resp = render(
+            request,
+            full="components/no_org_notified.html",
+            partial="components/no_org_notified.html",
+            ctx={"mailto_url": mailto_url},
+        )
+        return _cache_control_no_store(resp)
+    except AppError as exc:
+        # 200 a propósito: HTMX no hace swap en 4xx y el clic parece "no hacer nada".
+        resp = render(
+            request,
+            full="components/no_org_notify_prompt.html",
+            partial="components/no_org_notify_prompt.html",
+            ctx={"notify_error": _notify_error_message(exc)},
+            status_code=200,
+        )
+        return _cache_control_no_store(resp)
+
+    resp = render(
+        request,
+        full="components/no_org_notified.html",
+        partial="components/no_org_notified.html",
+        ctx={"mailto_url": result.mailto_url},
     )
     return _cache_control_no_store(resp)
 

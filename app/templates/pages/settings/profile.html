@@ -29,7 +29,7 @@
   <section class="space-y-4 border-t border-slate-200 pt-6">
     <div>
       <h2 class="text-base font-semibold text-slate-900">Organización</h2>
-      <p class="text-sm text-slate-500">Datos de la organización a la que perteneces.</p>
+      <p class="text-sm text-slate-500">Datos de la organización a la que perteneces (solo lectura).</p>
     </div>
 
     {% include "components/tenant_info.html" %}
@@ -42,8 +42,8 @@
     <div class="card space-y-2">
       <h3 class="font-semibold">Miembros del equipo</h3>
       {% if membership and membership.role == 'admin' %}
-      <p class="text-sm text-slate-500">Invita usuarios y configura permisos de citas desde la app.</p>
-      <a href="/settings/members" class="btn-secondary inline-flex cursor-pointer text-sm">Gestionar miembros</a>
+      <p class="text-sm text-slate-500">Usuarios y roles en Clerk; aquí solo permisos de citas de la app.</p>
+      <a href="/settings/members" class="btn-secondary inline-flex cursor-pointer text-sm">Permisos de citas</a>
       {% else %}
       <p class="text-sm text-slate-500">Contacta con un administrador para cambios de membresía.</p>
       {% endif %}

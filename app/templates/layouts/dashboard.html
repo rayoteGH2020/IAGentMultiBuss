@@ -1,19 +1,16 @@
 {% extends "base.html" %}
 
 {% block body %}
-{# Navegación HTMX acotada a #app-frame (no al <body>):
-   - hx-select evita meter un HTML completo dentro de un fragmento.
-   - El sidebar se refresca en cada navegación (estado activo correcto).
-   - Logout y menú usuario usan hx-boost="false" (navegación completa). #}
+{# Shell del dashboard. La navegación hx-boost vive SOLO en el sidebar
+   (components/sidebar.html), no en #app-frame: si boost/push-url envuelven
+   todo el frame, el polling y otros hx-get del main pueden heredarlos y
+   corromper el historial (síntoma: salto a "/").
+   Sin cabecera superior: el ítem activo del sidebar basta como contexto;
+   el nombre de organización va junto al logo; cerrar sesión en el pie del sidebar. #}
 <div id="app-frame"
      class="min-h-screen flex bg-slate-50"
-     x-data="{ sidebarOpen: false, userMenuOpen: false }"
-     @keydown.escape.window="userMenuOpen = false; sidebarOpen = false"
-     hx-boost="true"
-     hx-target="#app-frame"
-     hx-select="#app-frame"
-     hx-swap="outerHTML"
-     hx-push-url="true">
+     x-data="{ sidebarOpen: false }"
+     @keydown.escape.window="sidebarOpen = false">
   {% include "components/sidebar.html" %}
 
   <template x-if="sidebarOpen">
@@ -24,60 +21,21 @@
   </template>
 
   <div class="flex-1 flex flex-col min-w-0">
-    <header class="relative z-20 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-      <div class="flex items-center gap-3">
-        <button type="button"
-                class="lg:hidden p-2 rounded-md hover:bg-slate-100 cursor-pointer"
-                @click="sidebarOpen = !sidebarOpen; userMenuOpen = false"
-                :aria-expanded="sidebarOpen.toString()"
-                aria-label="Abrir menú">
-          <span class="sr-only">Menú</span>
-          ☰
-        </button>
-        <h1 class="text-lg font-semibold text-slate-900">{% block page_title %}{% endblock %}</h1>
-      </div>
-
-      {% if tenant and user %}
-      <div class="flex items-center gap-4">
-        <div class="hidden md:flex flex-col items-end leading-tight">
-          <span class="text-sm font-medium text-slate-900">{{ tenant.name }}</span>
-          <span class="text-xs text-slate-500">{{ user.email }}</span>
-        </div>
-        {# Dropdown Alpine: x-if (no x-show+display:none). #}
-        <div class="relative" @click.outside="userMenuOpen = false">
-          <button type="button"
-                  class="h-9 w-9 rounded-full bg-primary-600 text-white font-semibold flex items-center justify-center hover:bg-primary-700 cursor-pointer"
-                  @click="userMenuOpen = !userMenuOpen"
-                  :aria-expanded="userMenuOpen.toString()"
-                  aria-haspopup="menu"
-                  aria-label="Menú de usuario">
-            {{ (user.name or user.email)[0] | upper }}
-          </button>
-          <template x-if="userMenuOpen">
-            <div hx-boost="false"
-                 class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50"
-                 role="menu">
-              <a href="/settings/profile" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Mi cuenta</a>
-              <a href="/settings/billing" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Facturación</a>
-              <a href="/settings/integrations" role="menuitem" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Integraciones</a>
-              <hr class="my-1 border-slate-200">
-              <a href="/logout"
-                 role="menuitem"
-                 hx-boost="false"
-                 class="block w-full px-4 py-2 text-sm text-left text-slate-700 hover:bg-slate-50">
-                Cerrar sesión
-              </a>
-            </div>
-          </template>
-        </div>
-      </div>
-      {% endif %}
-    </header>
+    {# Único resto de cabecera: abrir sidebar en móvil (en lg+ el aside ya es visible). #}
+    <div class="lg:hidden sticky top-0 z-20 flex items-center px-4 py-3 bg-slate-50">
+      <button type="button"
+              class="p-2 rounded-md hover:bg-slate-100 cursor-pointer"
+              @click="sidebarOpen = !sidebarOpen"
+              :aria-expanded="sidebarOpen.toString()"
+              aria-label="Abrir menú">
+        <span class="sr-only">Menú</span>
+        ☰
+      </button>
+    </div>
 
     <main id="main-content"
           class="flex-1 p-6 lg:p-8 overflow-y-auto"
-          {# Evita heredar hx-select/target del #app-frame: los fragments HTMX
-             (chat, knowledge, documentos…) devolverían vacío al hacer swap. #}
+          {# Defensa: no heredar hx-* del sidebar boost si el DOM se reordena. #}
           hx-disinherit="*">
       {% block content %}{% endblock %}
     </main>

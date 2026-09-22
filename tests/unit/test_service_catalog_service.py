@@ -65,6 +65,57 @@ async def test_update_service_name_regenerates_slug(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_create_and_update_service_notes(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+) -> None:
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    created = await service_catalog_service.create_service(
+        db_session,
+        tenant.id,
+        SchedulingServiceCreate(
+            name="Consulta",
+            duration_minutes=45,
+            notes="  Incluye valoración  ",
+        ),
+    )
+    assert created.notes == "Incluye valoración"
+    cleared = await service_catalog_service.update_service(
+        db_session,
+        tenant.id,
+        created.id,
+        SchedulingServiceUpdate(notes=""),
+    )
+    assert cleared.notes is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_delete_service(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+) -> None:
+    from uuid import uuid4
+
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    created = await service_catalog_service.create_service(
+        db_session,
+        tenant.id,
+        SchedulingServiceCreate(name="Temporal", duration_minutes=30),
+    )
+    await service_catalog_service.delete_service(db_session, tenant.id, created.id)
+    with pytest.raises(NotFoundError):
+        await service_catalog_service.get_service(db_session, tenant.id, created.id)
+    with pytest.raises(NotFoundError):
+        await service_catalog_service.delete_service(db_session, tenant.id, uuid4())
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_get_service_not_found(
     db_session: AsyncSession,
     tenant_factory: object,

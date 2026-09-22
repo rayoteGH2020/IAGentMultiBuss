@@ -29,7 +29,13 @@ from app.models.channel_integration import ChannelIntegrationStatus
 from app.models.membership import Membership
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.services import audit_service, channel_chat_service, channel_integration_service
+from app.services import (
+    audit_service,
+    channel_chat_service,
+    channel_integration_service,
+    entitlement_service,
+    plan_quota_service,
+)
 from app.services.audit_service import (
     ACTION_CHANNEL_ESCALATED,
     ACTION_CHANNEL_MESSAGE_RECEIVED,
@@ -182,6 +188,15 @@ async def process_channel_message(
                     channel=channel,
                 )
                 return
+            feature = "channel_whatsapp" if channel == "whatsapp" else "channel_telegram"
+            if not await entitlement_service.ensure_feature(db, tenant_uuid, feature):
+                logger.info(
+                    "channel.job.feature_disabled",
+                    tenant_id=tenant_id,
+                    channel=channel,
+                    feature=feature,
+                )
+                return
             confidence_threshold = integration.confidence_threshold
             api_token = channel_integration_service.decrypt_api_token(integration)
             phone_number_id = integration.phone_number_id
@@ -204,9 +219,13 @@ async def process_channel_message(
                 },
             )
 
-            # Rate-limit: máx. N mensajes/hora por customer_identifier
-            if not await _check_rate_limit(
-                redis_conn, tenant_id=tenant_id, customer_identifier=customer_identifier
+            # Rate-limit: max. N mensajes/hora por customer (plan comercial)
+            ents = await entitlement_service.resolve_tenant(db, tenant_uuid)
+            if not await plan_quota_service.ensure_channel_message_allowed(
+                redis_conn,
+                ents,
+                tenant_uuid,
+                customer_identifier,
             ):
                 limit_msg = (
                     "Hemos recibido demasiados mensajes. "

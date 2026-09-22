@@ -76,7 +76,8 @@ async def resolve_tenant(db: AsyncSession, clerk_org_id: str) -> Tenant:
     tenant = Tenant(
         clerk_org_id=clerk_org_id,
         name=display_name,
-        plan="free",
+        plan="basic",
+        plan_code="basic",
     )
     db.add(tenant)
     await db.flush()
@@ -91,7 +92,14 @@ async def ensure_membership(
     *,
     allow_reactivation: bool = False,
 ) -> Membership:
-    """Crea o sincroniza una membresía con el rol autoritativo de Clerk."""
+    """Crea o sincroniza una membresía con el rol autoritativo de Clerk.
+
+    Política:
+    - Membership activa: el rol del JWT/evento actualiza la fila local.
+    - Membership inactiva (revocada por webhook deleted): un JWT obsoleto
+      no reactiva ni cambia el rol. Solo ``allow_reactivation=True``
+      (eventos firmados created/updated) puede reactivar.
+    """
     normalized_role = normalize_org_role(role)
     result = await db.execute(
         select(Membership).where(

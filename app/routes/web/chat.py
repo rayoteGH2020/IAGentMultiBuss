@@ -14,7 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.core.db import session_scope, set_tenant_context
 from app.core.errors import AppError, public_error_message
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
+from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_any_feature
 from app.schemas.chat import ChatMessageListFilters, ChatThreadListFilters
 from app.services import chat_service
 from app.services.audit_service import AuditRequestContext
@@ -24,7 +24,11 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["chat"],
+    dependencies=[Depends(require_any_feature("documents_chat", "knowledge_chat"))],
+)
 
 
 def _audit_request_context(request: Request) -> AuditRequestContext:

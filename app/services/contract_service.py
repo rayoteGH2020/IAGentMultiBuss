@@ -69,7 +69,7 @@ async def get_contract(
     stmt = (
         select(Contract)
         .where(Contract.tenant_id == tenant_id, Contract.id == contract_id)
-        .options(selectinload(Contract.llm_call))
+        .options(selectinload(Contract.llm_call), selectinload(Contract.doc_type))
     )
     result = await db.execute(stmt)
     contract = result.scalar_one_or_none()
@@ -134,7 +134,46 @@ async def apply_extraction_result(
     data: ContratoDocumento,
     llm_call_id: UUID,
 ) -> Contract:
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        contract_extraction_is_usable,
+    )
+
     contract.llm_call_id = llm_call_id
+    contract.confidence = Decimal(str(data.confidence)).quantize(Decimal("0.01"))
+    contract.raw_extraction = data.model_dump(mode="json")
+    contract.updated_at = datetime.now(tz=UTC)
+
+    if not contract_extraction_is_usable(data):
+        contract.status = ContractStatus.failed
+        contract.error_code = DocumentErrorCode.extraction_failed.value
+        contract.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=contract.source_filename,
+        )
+        logger.warning(
+            "contract.extraction_unusable",
+            contract_id=str(contract.id),
+            tenant_id=str(contract.tenant_id),
+            confidence=float(contract.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=contract.tenant_id,
+            document_kind="contract",
+            document_id=contract.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=contract.error_message,
+            error_code=contract.error_code,
+        )
+        await db.flush()
+        return contract
+
     contract.titulo = data.titulo[:300]
     contract.numero_contrato = data.numero_contrato[:100] if data.numero_contrato else None
     contract.parte_contraria = data.parte_contraria[:300]
@@ -144,10 +183,7 @@ async def apply_extraction_result(
     contract.importe = data.importe
     contract.currency = data.currency[:3]
     contract.objeto = data.objeto
-    contract.confidence = Decimal(str(data.confidence)).quantize(Decimal("0.01"))
-    contract.raw_extraction = data.model_dump(mode="json")
     contract.status = ContractStatus.ready
-    contract.updated_at = datetime.now(tz=UTC)
     contract.error_message = None
     contract.error_code = None
     await db.flush()

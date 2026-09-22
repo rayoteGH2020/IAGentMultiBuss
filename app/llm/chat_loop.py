@@ -17,6 +17,10 @@ from google.genai import types as genai_types
 from langfuse.types import TraceContext
 
 from app.config import Settings
+from app.core.document_processing_errors import (
+    PROVIDER_OVERLOAD_USER_MESSAGE,
+    is_provider_overload_error,
+)
 from app.llm.observability import trace_messages, trace_status_message, trace_text
 from app.llm.pricing import compute_cost_eur
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
@@ -26,6 +30,7 @@ from app.schemas.chat import ChatCitation
 from app.services.chat_citations import (
     citations_to_json,
     extract_citations_from_tool_result,
+    filter_citations_existing_for_tenant,
     merge_citation_lists,
 )
 
@@ -290,7 +295,15 @@ async def run_tool_loop(
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=trace_status_message(error_type=error_type, error=error),
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=(
+                        PROVIDER_OVERLOAD_USER_MESSAGE
+                        if is_provider_overload_error(error)
+                        else None
+                    ),
+                ),
             )
             obs.end()
             langfuse.flush()
@@ -302,6 +315,12 @@ async def run_tool_loop(
         final_text = _EXHAUSTED_MESSAGE
 
     final_citations = merge_citation_lists(*citation_batches, settings=settings)
+    final_citations = await filter_citations_existing_for_tenant(
+        db,
+        tenant_id=tenant_id,
+        citations=final_citations,
+        settings=settings,
+    )
     citations_json = citations_to_json(final_citations) if final_citations else None
 
     if turn_messages:

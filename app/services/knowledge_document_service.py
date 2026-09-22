@@ -6,6 +6,7 @@ de indexación (eso es knowledge_index_service.py).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -18,8 +19,9 @@ from app.core.errors import NotFoundError
 from app.core.faq_serializer import FaqPair, deserialize_faq, serialize_faq
 from app.core.keys import document_key, knowledge_faq_key
 from app.core.knowledge_uploads import validate_knowledge_upload
+from app.core.media_limits import IMAGE_MIMES, MediaLimitExceeded, inspect_document
 from app.core.storage import get_storage
-from app.core.uploads import original_upload_filename
+from app.core.uploads import UploadValidationError, original_upload_filename
 from app.models.knowledge import KnowledgeDocument
 from app.schemas.knowledge import (
     KnowledgeDocumentFilters,
@@ -28,7 +30,7 @@ from app.schemas.knowledge import (
     KnowledgeDocumentStatus,
 )
 from app.schemas.pagination import Page
-from app.services import audit_service
+from app.services import audit_service, entitlement_service, plan_quota_service
 
 logger = structlog.get_logger(__name__)
 
@@ -58,6 +60,9 @@ async def create_from_upload(
     huérfano en R2 (aceptable: no se referencia desde ningún tenant y el job
     de retención GDPR lo eliminará según la política de retención configurada).
     """
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    await plan_quota_service.ensure_knowledge_docs_capacity(db, ents, tenant_id)
+
     settings = get_settings()
     mime_type = validate_knowledge_upload(
         filename,
@@ -65,6 +70,26 @@ async def create_from_upload(
         max_size_bytes=settings.knowledge_max_file_size_bytes,
         allowed_mimes=settings.knowledge_allowed_mimes,
     )
+
+    # Imágenes: media_limits antes de R2/OCR (píxeles, edge, cabecera legible).
+    # Bytes y MIME ya los cubre validate_knowledge_upload; esto cierra el gap
+    # de decompression bombs que pasan el tope de MB pero explotan al abrir.
+    if mime_type in IMAGE_MIMES:
+        try:
+            await asyncio.to_thread(inspect_document, file_bytes, mime_type)
+        except MediaLimitExceeded as exc:
+            logger.warning(
+                "knowledge.upload.rejected_by_limits",
+                tenant_id=str(tenant_id),
+                filename=filename,
+                mime_type=mime_type,
+                size_bytes=len(file_bytes),
+                error_code=exc.error_code.value,
+                reason=exc.message,
+            )
+            raise UploadValidationError(
+                exc.detail or "La imagen supera los límites permitidos o no se puede inspeccionar."
+            ) from exc
 
     storage = get_storage()
     key = document_key(tenant_id, filename)
@@ -126,6 +151,9 @@ async def create_from_faq(
     en estado pending. La key R2 es determinista (incluye doc UUID) para que
     update_faq_pairs pueda sobreescribirla sin dejar huérfanos.
     """
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    await plan_quota_service.ensure_knowledge_docs_capacity(db, ents, tenant_id)
+
     from uuid import uuid4
 
     text = serialize_faq(pairs)
@@ -402,6 +430,13 @@ async def delete_document(
     await db.delete(doc)
     await db.flush()
 
+    from app.services import channel_chat_service
+
+    await channel_chat_service.invalidate_response_cache_for_tenant(
+        db,
+        tenant_id=tenant_id,
+    )
+
     storage = get_storage()
     await storage.delete(key)
 
@@ -422,11 +457,17 @@ async def request_reindex(
 ) -> KnowledgeDocument:
     """Re-encola la indexación: status → pending y job ARQ."""
     from app.jobs.queue import enqueue_knowledge_indexing
+    from app.services import channel_chat_service
 
     doc = await _get_orm(db, tenant_id=tenant_id, document_id=document_id)
     doc.status = KnowledgeDocumentStatus.pending
     doc.error_message = None
     await db.flush()
+
+    await channel_chat_service.invalidate_response_cache_for_tenant(
+        db,
+        tenant_id=tenant_id,
+    )
 
     await audit_service.log_action(
         db,

@@ -46,7 +46,8 @@ def _fake_clerk_resolve(
     tenant = Tenant(
         clerk_org_id=org_id,
         name="Test Org",
-        plan="free",
+        plan="total",
+        plan_code="total",
         settings={},
         created_at=now,
         updated_at=now,
@@ -108,8 +109,10 @@ def voice_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr("app.core.middleware.try_resolve_clerk_session", fake_resolve)
 
-    from app.deps import get_db, get_redis_dep
+    from app.core.entitlement_codes import FEATURE_CODES, PLAN_CODE_TOTAL, PLAN_LIMITS
+    from app.deps import get_db, get_entitlements, get_redis_dep
     from app.main import create_app
+    from app.schemas.entitlements import Entitlements
 
     app = create_app()
 
@@ -119,8 +122,18 @@ def voice_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     async def mock_redis() -> AsyncMock:
         return AsyncMock()
 
+    async def mock_entitlements() -> Entitlements:
+        # get_db es AsyncMock: resolve_entitlements rompería con coroutines.
+        return Entitlements(
+            plan_code=PLAN_CODE_TOTAL,
+            features=frozenset(FEATURE_CODES),
+            limits=dict(PLAN_LIMITS[PLAN_CODE_TOTAL]),
+            fail_closed=False,
+        )
+
     app.dependency_overrides[get_db] = mock_db
     app.dependency_overrides[get_redis_dep] = mock_redis
+    app.dependency_overrides[get_entitlements] = mock_entitlements
 
     client = TestClient(app, raise_server_exceptions=False)
     client.headers.update(

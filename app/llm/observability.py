@@ -119,15 +119,26 @@ def trace_text(text: str | None) -> Any:
     return text_summary(text)
 
 
-def trace_status_message(*, error_type: str | None, error: str | None) -> str | None:
-    """Motivo de fallo para Langfuse: solo el tipo de excepción.
+def trace_status_message(
+    *,
+    error_type: str | None,
+    error: str | None,
+    safe_message: str | None = None,
+) -> str | None:
+    """Motivo de fallo para Langfuse.
 
-    El mensaje completo puede incluir la respuesta cruda del modelo cuando
-    falla la validación del schema —y con ella el documento del cliente—, así
-    que se queda en `llm_calls.error`, dentro de la BD con RLS.
+    - Con captura de contenido (solo debug): puede devolver el error técnico.
+    - En producción: prioriza ``safe_message`` (texto clasificado sin PII /
+      contenido de documento) y, si no hay, solo el tipo de excepción.
+
+    El mensaje completo del SDK puede incluir la respuesta cruda del modelo
+    cuando falla la validación del schema —y con ella el documento del
+    cliente—, así que se queda en ``llm_calls.error``, dentro de la BD con RLS.
     """
     if capture_content_enabled():
-        return error
+        return error or safe_message
+    if safe_message:
+        return safe_message
     return error_type
 
 

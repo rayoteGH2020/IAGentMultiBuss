@@ -12,6 +12,8 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, *, app_env: str) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x:x@localhost/x")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("APP_BASE_URL", "https://testserver")
+    # Infisical suele inyectar CLERK_JWKS_URL; en staging/prod Settings exige allowlist.
+    monkeypatch.setenv("CLERK_JWT_AZP_ALLOWLIST", "https://testserver")
     get_settings.cache_clear()
 
 

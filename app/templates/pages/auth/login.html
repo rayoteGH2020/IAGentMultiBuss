@@ -6,6 +6,7 @@
   No se pudo cargar el formulario de acceso. Recarga la página o revisa la consola del navegador.
 </p>
 {% include "components/clerk_browser_script.html" %}
+<script src="/static/js/clerk-auth.js"></script>
 <script>
   async function waitForClerk(timeoutMs) {
     const started = Date.now();
@@ -19,22 +20,18 @@
   window.addEventListener("load", async () => {
     const C = await waitForClerk(8000);
     const errorEl = document.getElementById("clerk-sign-in-error");
-    if (!C) {
+    if (!C || !window.MiSaaSClerkAuth) {
       if (errorEl) errorEl.classList.remove("hidden");
       return;
     }
-    await C.load({
-      signInUrl: "/login",
-      signUpUrl: "/signup",
-      afterSignInUrl: "/",
-      afterSignUpUrl: "/",
-      afterSignOutUrl: "/login",
-    });
+    await C.load(window.MiSaaSClerkAuth.loadOptions());
+    if (await window.MiSaaSClerkAuth.ensureOrgOrRedirect(C)) return;
+    window.MiSaaSClerkAuth.watchNoOrgRedirect(C);
     const el = document.getElementById("clerk-sign-in");
     if (el) {
       C.mountSignIn(el, {
-        afterSignInUrl: "/",
-        afterSignUpUrl: "/",
+        forceRedirectUrl: "/",
+        signUpUrl: "/signup",
       });
     }
   });

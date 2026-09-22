@@ -44,7 +44,7 @@ def test_home_without_session_redirects_to_login() -> None:
     assert r.headers.get("location") == "/login"
 
 
-def test_home_with_bearer_valid_user_but_no_org_redirects_to_org_picker(
+def test_home_with_bearer_valid_user_but_no_org_redirects_to_onboarding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_sub = f"user_{uuid4().hex[:16]}"
@@ -52,7 +52,32 @@ def test_home_with_bearer_valid_user_but_no_org_redirects_to_org_picker(
     def verify_no_org(_token: str) -> dict[str, object]:
         return {"sub": user_sub, "v": 2}
 
+    async def fake_resolve_user(_session: object, clerk_user_id: str) -> User:
+        user = User(
+            clerk_user_id=clerk_user_id,
+            email=f"{clerk_user_id}@test.local",
+            name="Test",
+        )
+        user.id = uuid4()
+        return user
+
+    class _FakeSession:
+        async def commit(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    class _FakeSessionCM:
+        async def __aenter__(self) -> _FakeSession:
+            return _FakeSession()
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
     monkeypatch.setattr("app.core.middleware.verify_clerk_jwt", verify_no_org)
+    monkeypatch.setattr("app.core.middleware.resolve_user", fake_resolve_user)
+    monkeypatch.setattr("app.core.middleware.get_sessionmaker", lambda: lambda: _FakeSessionCM())
     from app.main import app
 
     with TestClient(app, raise_server_exceptions=True) as client:

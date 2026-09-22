@@ -20,12 +20,18 @@ import structlog
 
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
+from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import LLMCompleteError
 from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_invoice
-from app.services import document_processing_service, invoice_service, processing_charge_service
+from app.services import (
+    document_processing_service,
+    entitlement_service,
+    invoice_service,
+    processing_charge_service,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +81,22 @@ async def process_invoice(
             document_kind="invoice",
             document_id=inv_uuid,
         )
+
+        if not await entitlement_service.ensure_feature(db, t_uuid, "documents"):
+            logger.info(
+                "worker.invoice.feature_disabled",
+                invoice_id=invoice_id,
+                tenant_id=tenant_id,
+            )
+            await invoice_service.mark_failed(
+                db,
+                invoice_id=inv_uuid,
+                tenant_id=t_uuid,
+                error="plan_feature_disabled:documents",
+                error_code=DocumentErrorCode.plan_feature_disabled,
+            )
+            await db.commit()
+            return {"status": "skipped", "reason": "plan_required"}
 
         if not invoice_row.source_file_key:
             # Caso de integridad: el fichero nunca llegó a R2 (bug o condición
@@ -169,6 +191,7 @@ async def process_invoice(
                 tenant_id=t_uuid,
                 error=str(exc.message)[:500],
                 llm_call_id=exc.llm_call_id,
+                error_code=exc.document_error_code or DocumentErrorCode.extraction_failed,
             )
             await db.commit()
             logger.exception(

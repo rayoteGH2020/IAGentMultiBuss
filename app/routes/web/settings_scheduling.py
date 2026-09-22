@@ -7,11 +7,11 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ValidationError, public_error_message
+from app.core.errors import AppError, NotFoundError, ValidationError, public_error_message
 from app.core.professional_hours_grid import (
     allowed_center_slot_keys,
     build_center_period_slot_grids,
@@ -22,9 +22,10 @@ from app.core.scheduling_form_parsers import parse_business_hours_form
 from app.core.scheduling_granularity import DEFAULT_SLOT_GRANULARITY_MINUTES
 from app.core.scheduling_ui import WEEKDAY_LABELS
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db
-from app.schemas.membership import TenantMemberCreate, TenantMemberUpdate
+from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db, require_feature
+from app.schemas.membership import TenantMemberUpdate
 from app.schemas.scheduling import (
+    PROFESSIONAL_COLOR_PALETTE,
     ProfessionalCreate,
     ProfessionalUpdate,
     ProfessionalWorkingHourRead,
@@ -33,6 +34,8 @@ from app.schemas.scheduling import (
     SchedulingServiceCreate,
     SchedulingServiceUpdate,
     TenantSchedulingSettingsUpdate,
+    build_professional_color_swatches,
+    resolve_palette_color,
 )
 from app.services import (
     business_hours_service,
@@ -45,29 +48,62 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings-scheduling"])
 
+# Gate de plan solo en mantenimiento de agenda (no en /settings/members).
+_RequireAppointmentsFeature = Depends(require_feature("appointments"))
+
+
+def _parse_specialty_service_ids(form: object) -> list[UUID]:
+    """Extrae UUIDs de checkboxes ``specialty_service_ids`` del form multipart."""
+    getlist = getattr(form, "getlist", None)
+    if not callable(getlist):
+        return []
+    ids: list[UUID] = []
+    for raw in getlist("specialty_service_ids"):
+        if isinstance(raw, str) and raw.strip():
+            ids.append(UUID(raw.strip()))
+    return ids
+
 
 async def _professional_form_ctx(
     db: AsyncSession,
     tenant_id: UUID,
     *,
-    professional: object | None,
+    professional_id: UUID | None,
 ) -> dict[str, object]:
     services = await service_catalog_service.list_services(db, tenant_id)
     members = await membership_service.list_tenant_members(db, tenant_id)
     business_hours = await business_hours_service.get_business_hours(db, tenant_id)
     scheduling_settings = await business_hours_service.get_scheduling_settings(db, tenant_id)
     working_hours: list[ProfessionalWorkingHourRead] = []
-    if professional is not None:
+    professional = None
+    if professional_id is not None:
+        professional = await professional_service.get_professional_read(
+            db, tenant_id, professional_id
+        )
         working_hours = await professional_service.get_working_hours(
             db,
             tenant_id,
-            professional.id,  # type: ignore[attr-defined]
+            professional_id,
         )
     hours_grid = build_professional_hours_grid_context(
         business_hours,
         working_hours,
         scheduling_settings.slot_granularity_minutes,
     )
+    taken_colors = await professional_service.list_taken_professional_colors(
+        db,
+        tenant_id,
+        exclude_professional_id=professional_id,
+    )
+    if professional is not None:
+        selected_color = resolve_palette_color(professional.color)
+    else:
+        selected_color = professional_service.initial_professional_color(taken_colors)
+    color_swatches = build_professional_color_swatches(
+        selected_color=selected_color,
+        taken_colors=taken_colors,
+    )
+    taken_for_ui = [str(row["hex"]) for row in color_swatches if row["is_taken"]]
     return {
         "professional": professional,
         "services": services,
@@ -76,6 +112,11 @@ async def _professional_form_ctx(
         "weekday_labels": WEEKDAY_LABELS,
         "scheduling_settings": scheduling_settings,
         "professional_hours_grid": hours_grid,
+        "color_palette": PROFESSIONAL_COLOR_PALETTE,
+        "selected_color": selected_color,
+        "taken_colors": taken_for_ui,
+        "color_swatches": color_swatches,
+        "available_color_count": len(color_swatches) - len(taken_for_ui),
     }
 
 
@@ -88,7 +129,7 @@ async def _scheduling_settings_ctx(db: AsyncSession, tenant_id: UUID) -> dict[st
     }
 
 
-@router.get("/business-hours")
+@router.get("/business-hours", dependencies=[_RequireAppointmentsFeature])
 async def business_hours_page(
     request: Request,
     _user: CurrentUser,
@@ -100,7 +141,7 @@ async def business_hours_page(
     return render(request, full="pages/settings/business_hours.html", ctx=ctx)
 
 
-@router.post("/business-hours")
+@router.post("/business-hours", dependencies=[_RequireAppointmentsFeature])
 async def business_hours_save(
     request: Request,
     user: CurrentUser,
@@ -183,7 +224,7 @@ async def business_hours_save(
     )
 
 
-@router.post("/business-hours/exceptions")
+@router.post("/business-hours/exceptions", dependencies=[_RequireAppointmentsFeature])
 async def schedule_exception_create(
     request: Request,
     user: CurrentUser,
@@ -207,7 +248,9 @@ async def schedule_exception_create(
     )
 
 
-@router.delete("/business-hours/exceptions/{exception_id}")
+@router.delete(
+    "/business-hours/exceptions/{exception_id}", dependencies=[_RequireAppointmentsFeature]
+)
 async def schedule_exception_delete(
     request: Request,
     user: CurrentUser,
@@ -225,7 +268,7 @@ async def schedule_exception_delete(
     return HTMLResponse(content="", status_code=200)
 
 
-@router.get("/professionals")
+@router.get("/professionals", dependencies=[_RequireAppointmentsFeature])
 async def professionals_page(
     request: Request,
     _user: CurrentUser,
@@ -241,7 +284,7 @@ async def professionals_page(
     )
 
 
-@router.get("/professionals/new")
+@router.get("/professionals/new", dependencies=[_RequireAppointmentsFeature])
 async def professional_new_form(
     request: Request,
     tenant: CurrentTenant,
@@ -252,11 +295,11 @@ async def professional_new_form(
         request,
         full="components/scheduling/professional_form.html",
         partial="components/scheduling/professional_form.html",
-        ctx=await _professional_form_ctx(db, tenant.id, professional=None),
+        ctx=await _professional_form_ctx(db, tenant.id, professional_id=None),
     )
 
 
-@router.get("/professionals/{professional_id}/edit")
+@router.get("/professionals/{professional_id}/edit", dependencies=[_RequireAppointmentsFeature])
 async def professional_edit_form(
     request: Request,
     tenant: CurrentTenant,
@@ -264,16 +307,15 @@ async def professional_edit_form(
     professional_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    prof = await professional_service.get_professional(db, tenant.id, professional_id)
     return render(
         request,
         full="components/scheduling/professional_form.html",
         partial="components/scheduling/professional_form.html",
-        ctx=await _professional_form_ctx(db, tenant.id, professional=prof),
+        ctx=await _professional_form_ctx(db, tenant.id, professional_id=professional_id),
     )
 
 
-@router.post("/professionals")
+@router.post("/professionals", dependencies=[_RequireAppointmentsFeature])
 async def professional_create(
     request: Request,
     user: CurrentUser,
@@ -282,34 +324,50 @@ async def professional_create(
     db: AsyncSession = Depends(get_db),
     display_name: str = Form(...),
     color: str = Form("#6366f1"),
-    is_bookable: bool = Form(True),
+    is_bookable: str | None = Form(None),
     user_id: str | None = Form(None),
 ) -> HTMLResponse:
     form = await request.form()
-    specialty_raw = form.getlist("specialty_service_ids")
-    specialty_ids = [UUID(v) for v in specialty_raw if isinstance(v, str) and v]
+    specialty_ids = _parse_specialty_service_ids(form)
     linked_user = UUID(user_id) if user_id else None
-    prof = await professional_service.create_professional(
-        db,
-        tenant.id,
-        ProfessionalCreate(
-            display_name=display_name,
-            color=color,
-            is_bookable=is_bookable,
-            user_id=linked_user,
-            specialty_service_ids=specialty_ids,
-        ),
-        user_id=user.id,
-    )
+    bookable_flag = is_bookable in ("true", "on", "1") if is_bookable is not None else True
+    try:
+        prof = await professional_service.create_professional(
+            db,
+            tenant.id,
+            ProfessionalCreate(
+                display_name=display_name,
+                color=color,
+                is_bookable=bookable_flag,
+                user_id=linked_user,
+                specialty_service_ids=specialty_ids,
+            ),
+            user_id=user.id,
+        )
+    except ValidationError as exc:
+        ctx = await _professional_form_ctx(db, tenant.id, professional_id=None)
+        ctx["hours_error_message"] = public_error_message(
+            exc,
+            fallback="No se pudo crear el profesional.",
+        )
+        return render(
+            request,
+            full="components/scheduling/professional_form.html",
+            partial="components/scheduling/professional_form.html",
+            ctx=ctx,
+        )
+    ctx = await _professional_form_ctx(db, tenant.id, professional_id=prof.id)
+    ctx["just_created"] = True
+    ctx["list_row"] = prof
     return render(
         request,
-        full="components/scheduling/professional_row.html",
-        partial="components/scheduling/professional_row.html",
-        ctx={"professional": prof},
+        full="components/scheduling/professional_create_result.html",
+        partial="components/scheduling/professional_create_result.html",
+        ctx=ctx,
     )
 
 
-@router.post("/professionals/{professional_id}")
+@router.post("/professionals/{professional_id}", dependencies=[_RequireAppointmentsFeature])
 async def professional_update(
     request: Request,
     user: CurrentUser,
@@ -324,8 +382,7 @@ async def professional_update(
     user_id: str | None = Form(None),
 ) -> HTMLResponse:
     form = await request.form()
-    specialty_raw = form.getlist("specialty_service_ids")
-    specialty_ids = [UUID(v) for v in specialty_raw if isinstance(v, str) and v]
+    specialty_ids = _parse_specialty_service_ids(form)
     linked_user = UUID(user_id) if user_id else None
     active_flag = is_active in ("true", "on", "1")
     bookable_flag = is_bookable in ("true", "on", "1")
@@ -376,8 +433,7 @@ async def professional_update(
                     "professionals": await professional_service.list_professionals(db, tenant.id),
                 },
             )
-        orm_prof = await professional_service.get_professional(db, tenant.id, professional_id)
-        ctx = await _professional_form_ctx(db, tenant.id, professional=orm_prof)
+        ctx = await _professional_form_ctx(db, tenant.id, professional_id=professional_id)
         ctx["hours_error_message"] = public_error_message(
             exc,
             fallback="No se pudo guardar el horario del profesional.",
@@ -396,7 +452,7 @@ async def professional_update(
     )
 
 
-@router.get("/professionals/{professional_id}/reassign")
+@router.get("/professionals/{professional_id}/reassign", dependencies=[_RequireAppointmentsFeature])
 async def professional_reassign_form(
     request: Request,
     tenant: CurrentTenant,
@@ -417,7 +473,9 @@ async def professional_reassign_form(
     )
 
 
-@router.post("/professionals/{professional_id}/reassign")
+@router.post(
+    "/professionals/{professional_id}/reassign", dependencies=[_RequireAppointmentsFeature]
+)
 async def professional_reassign_submit(
     request: Request,
     user: CurrentUser,
@@ -455,7 +513,7 @@ async def professional_reassign_submit(
     )
 
 
-@router.get("/services")
+@router.get("/services", dependencies=[_RequireAppointmentsFeature])
 async def services_page(
     request: Request,
     _user: CurrentUser,
@@ -467,7 +525,7 @@ async def services_page(
     return render(request, full="pages/settings/services.html", ctx={"services": services})
 
 
-@router.post("/services")
+@router.post("/services", dependencies=[_RequireAppointmentsFeature])
 async def service_create(
     request: Request,
     user: CurrentUser,
@@ -476,11 +534,16 @@ async def service_create(
     db: AsyncSession = Depends(get_db),
     name: str = Form(...),
     duration_minutes: int = Form(...),
+    notes: str = Form(""),
 ) -> HTMLResponse:
     row = await service_catalog_service.create_service(
         db,
         tenant.id,
-        SchedulingServiceCreate(name=name, duration_minutes=duration_minutes),
+        SchedulingServiceCreate(
+            name=name,
+            duration_minutes=duration_minutes,
+            notes=notes or None,
+        ),
         user_id=user.id,
     )
     return render(
@@ -491,7 +554,24 @@ async def service_create(
     )
 
 
-@router.post("/services/{service_id}")
+@router.get("/services/{service_id}/edit", dependencies=[_RequireAppointmentsFeature])
+async def service_edit_form(
+    request: Request,
+    tenant: CurrentTenant,
+    _: RequireAdmin,
+    service_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    service = await service_catalog_service.get_service(db, tenant.id, service_id)
+    return render(
+        request,
+        full="components/scheduling/service_form.html",
+        partial="components/scheduling/service_form.html",
+        ctx={"service": service},
+    )
+
+
+@router.post("/services/{service_id}", dependencies=[_RequireAppointmentsFeature])
 async def service_update(
     request: Request,
     user: CurrentUser,
@@ -501,6 +581,7 @@ async def service_update(
     db: AsyncSession = Depends(get_db),
     name: str = Form(...),
     duration_minutes: int = Form(...),
+    notes: str = Form(""),
     is_active: str | None = Form(None),
 ) -> HTMLResponse:
     active_flag = is_active in ("true", "on", "1")
@@ -511,6 +592,7 @@ async def service_update(
         SchedulingServiceUpdate(
             name=name,
             duration_minutes=duration_minutes,
+            notes=notes or None,
             is_active=active_flag,
         ),
         user_id=user.id,
@@ -521,6 +603,23 @@ async def service_update(
         partial="components/scheduling/service_row.html",
         ctx={"service": row},
     )
+
+
+@router.delete("/services/{service_id}", dependencies=[_RequireAppointmentsFeature])
+async def service_delete(
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    _: RequireAdmin,
+    service_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    await service_catalog_service.delete_service(
+        db,
+        tenant.id,
+        service_id,
+        user_id=user.id,
+    )
+    return HTMLResponse(content="", status_code=200)
 
 
 @router.get("/members")
@@ -535,19 +634,6 @@ async def members_page(
     return render(request, full="pages/settings/members.html", ctx={"members": members})
 
 
-@router.get("/members/new")
-async def member_new_form(
-    request: Request,
-    _: RequireAdmin,
-) -> HTMLResponse:
-    return render(
-        request,
-        full="components/scheduling/member_form.html",
-        partial="components/scheduling/member_form.html",
-        ctx={"member": None},
-    )
-
-
 @router.get("/members/{membership_id}/edit")
 async def member_edit_form(
     request: Request,
@@ -555,59 +641,16 @@ async def member_edit_form(
     _: RequireAdmin,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> Response:
+) -> HTMLResponse:
     members = await membership_service.list_tenant_members(db, tenant.id)
     member = next((m for m in members if m.membership_id == membership_id), None)
     if member is None:
-        return RedirectResponse("/settings/members", status_code=302)
+        raise NotFoundError("Membership not found")
     return render(
         request,
         full="components/scheduling/member_form.html",
         partial="components/scheduling/member_form.html",
         ctx={"member": member},
-    )
-
-
-@router.post("/members")
-async def member_create(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    _: RequireAdmin,
-    db: AsyncSession = Depends(get_db),
-    email: str = Form(...),
-    name: str = Form(...),
-    role: str = Form("member"),
-    perm_view: bool = Form(True),
-    perm_create: bool = Form(False),
-    perm_edit: bool = Form(False),
-    perm_cancel: bool = Form(False),
-) -> HTMLResponse:
-    from app.schemas.membership import AppointmentPermissions, MembershipPermissions
-
-    row = await membership_service.create_tenant_member(
-        db,
-        tenant.id,
-        TenantMemberCreate(
-            email=email,
-            name=name,
-            role=role,  # type: ignore[arg-type]
-            permissions=MembershipPermissions(
-                appointments=AppointmentPermissions(
-                    view=perm_view,
-                    create=perm_create,
-                    edit=perm_edit,
-                    cancel=perm_cancel,
-                )
-            ),
-        ),
-        actor_user_id=user.id,
-    )
-    return render(
-        request,
-        full="components/scheduling/member_row.html",
-        partial="components/scheduling/member_row.html",
-        ctx={"member": row},
     )
 
 
@@ -619,9 +662,7 @@ async def member_update(
     _: RequireAdmin,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
-    name: str = Form(...),
-    role: str = Form("member"),
-    perm_view: bool = Form(True),
+    perm_view: bool = Form(False),
     perm_create: bool = Form(False),
     perm_edit: bool = Form(False),
     perm_cancel: bool = Form(False),
@@ -633,8 +674,6 @@ async def member_update(
         tenant.id,
         membership_id,
         TenantMemberUpdate(
-            name=name,
-            role=role,  # type: ignore[arg-type]
             permissions=MembershipPermissions(
                 appointments=AppointmentPermissions(
                     view=perm_view,

@@ -7,6 +7,12 @@ from app.config import get_settings
 from app.core.db import session_scope
 from app.core.errors import AuthError
 from app.core.logging import get_logger
+from app.core.webhook_ingress import (
+    PROVIDER_CLERK,
+    WebhookBodyTooLarge,
+    claim_webhook_event,
+    read_request_body_limited,
+)
 from app.services.auth_service import (
     resolve_tenant,
     resolve_user,
@@ -42,7 +48,11 @@ async def clerk_webhook(
     if not secret:
         raise AuthError("Clerk webhook secret not configured")
 
-    payload = await request.body()
+    try:
+        payload = await read_request_body_limited(request, settings.webhook_max_body_bytes)
+    except WebhookBodyTooLarge as e:
+        raise AuthError("Webhook body too large") from e
+
     headers: dict[str, str] = {
         "svix-id": svix_id,
         "svix-timestamp": svix_timestamp,
@@ -53,6 +63,10 @@ async def clerk_webhook(
         evt = cast("dict[str, Any]", wh.verify(payload, headers))
     except WebhookVerificationError as e:
         raise AuthError("Invalid webhook signature") from e
+
+    # Svix-Id es el id estable del delivery; claim despues de verificar firma.
+    if not await claim_webhook_event(provider=PROVIDER_CLERK, event_id=svix_id):
+        return {"received": True}
 
     event_type = evt.get("type")
     data = evt.get("data", {})

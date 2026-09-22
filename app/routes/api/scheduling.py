@@ -6,14 +6,18 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 
-from app.deps import CurrentTenant, RequireAppointmentCreateOrEdit, get_db
+from app.deps import CurrentTenant, RequireAppointmentCreateOrEdit, get_db, require_feature
 from app.schemas.scheduling import FindSlotsRequest, FindSlotsResponse
 from app.services import appointment_slot_service
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/api/v1/scheduling", tags=["scheduling"])
+router = APIRouter(
+    prefix="/api/v1/scheduling",
+    tags=["scheduling"],
+    dependencies=[Depends(require_feature("appointments"))],
+)
 
 
 @router.post(

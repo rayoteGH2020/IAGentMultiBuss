@@ -7,7 +7,11 @@
 {% set panel_list = panel_list|default(none) %}
 {% set panel_filtered_empty = panel_filtered_empty|default(false, true) %}
 
-<div id="invoices-table-container" class="space-y-6">
+<div id="invoices-table-container"
+     class="space-y-6"
+     hx-boost="false"
+     hx-push-url="false"
+     hx-history="false">
 
   {% if upload_notices %}
   <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">

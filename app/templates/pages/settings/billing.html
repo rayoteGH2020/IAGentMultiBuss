@@ -4,8 +4,43 @@
 {% block page_title %}Ajustes{% endblock %}
 
 {% block settings_content %}
-<div class="card max-w-xl">
-  <h3 class="font-semibold">Facturación</h3>
-  <p class="text-sm text-slate-600 mt-2">La gestión de pagos llegará cuando integremos Stripe (paso posterior).</p>
+<div class="card max-w-xl space-y-4">
+  <div>
+    <h3 class="font-semibold">Facturación y uso</h3>
+    <p class="text-sm text-slate-600 mt-2">
+      Plan actual: <span class="font-medium">{{ usage.plan_code }}</span>.
+      Los pagos con tarjeta llegarán con Stripe (paso posterior).
+    </p>
+  </div>
+
+  <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Periodo</dt>
+      <dd class="font-medium mt-1">{{ usage.period.strftime('%Y-%m') }}</dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Coste IA acumulado</dt>
+      <dd class="font-medium mt-1">{{ "%.2f"|format(usage.llm_cost_eur) }} EUR</dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Presupuesto IA del plan</dt>
+      <dd class="font-medium mt-1">
+        {% if usage.llm_budget_eur is none %}
+          Ilimitado
+        {% else %}
+          {{ "%.2f"|format(usage.llm_budget_eur) }} EUR / mes
+        {% endif %}
+      </dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Mensajes RAG (mes)</dt>
+      <dd class="font-medium mt-1">{{ usage.rag_messages_count }}</dd>
+    </div>
+  </dl>
+
+  <p class="text-xs text-slate-500">
+    Los limites diarios de documentos, chat y subidas se aplican segun tu plan comercial.
+    Si necesitas ampliarlos, contacta con soporte.
+  </p>
 </div>
 {% endblock %}

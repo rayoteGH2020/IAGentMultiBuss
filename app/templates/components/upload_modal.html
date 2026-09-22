@@ -83,6 +83,8 @@
         hx-swap="outerHTML"
         hx-indicator="#upload-spinner"
         hx-boost="false"
+        hx-push-url="false"
+        hx-history="false"
         @htmx:config-request="prepareRequest($event)"
         @htmx:after-request="onAfterRequest($event)">
 

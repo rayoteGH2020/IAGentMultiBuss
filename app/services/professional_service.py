@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -17,7 +18,10 @@ from app.models.business_hour import BusinessHour
 from app.models.professional import Professional
 from app.models.professional_specialty import ProfessionalSpecialty
 from app.models.professional_working_hour import ProfessionalWorkingHour
+from app.models.scheduling_service import SchedulingService
 from app.schemas.scheduling import (
+    DEFAULT_PROFESSIONAL_COLOR,
+    PROFESSIONAL_COLOR_PALETTE,
     AppointmentStatus,
     ProfessionalCreate,
     ProfessionalRead,
@@ -25,6 +29,8 @@ from app.schemas.scheduling import (
     ProfessionalWorkingHourRead,
     ProfessionalWorkingHoursUpdate,
     ReassignAppointmentsRequest,
+    resolve_palette_color,
+    sanitize_professional_color,
 )
 from app.services import audit_service, business_hours_service
 
@@ -40,14 +46,167 @@ RESOURCE_PROFESSIONAL = "professional"
 MAX_SPECIALTIES = 3
 
 
+async def list_taken_professional_colors(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    exclude_professional_id: UUID | None = None,
+) -> set[str]:
+    """Colores ya asignados a otros profesionales del tenant (hex normalizado)."""
+    stmt = select(Professional.color).where(Professional.tenant_id == tenant_id)
+    if exclude_professional_id is not None:
+        stmt = stmt.where(Professional.id != exclude_professional_id)
+    result = await db.execute(stmt)
+    taken: set[str] = set()
+    for raw in result.scalars().all():
+        # Solo colores de la paleta; valores basura no inventan ocupaciones.
+        if isinstance(raw, str):
+            normalized = sanitize_professional_color(raw)
+            if normalized in PROFESSIONAL_COLOR_PALETTE:
+                taken.add(normalized)
+    return taken
+
+
+async def allocate_professional_color(
+    db: AsyncSession,
+    tenant_id: UUID,
+    requested: str | None,
+    *,
+    exclude_professional_id: UUID | None = None,
+    allow_fallback: bool = False,
+) -> str:
+    """Resuelve un color de paleta único en el tenant.
+
+    Si ``allow_fallback`` y el solicitado está ocupado, elige el siguiente libre
+    (útil en alta con default implícito). Si no, lanza ValidationError.
+    """
+    taken = await list_taken_professional_colors(
+        db,
+        tenant_id,
+        exclude_professional_id=exclude_professional_id,
+    )
+    candidate = resolve_palette_color(requested)
+    if candidate not in taken:
+        return candidate
+    # Solo reasignar automáticamente el default implícito (p. ej. tests / alta sin color).
+    if allow_fallback and candidate == DEFAULT_PROFESSIONAL_COLOR:
+        for color in PROFESSIONAL_COLOR_PALETTE:
+            if color not in taken:
+                return color
+        raise ValidationError(
+            "No hay colores disponibles en la paleta",
+            details={"code": "color_palette_exhausted"},
+        )
+    raise ValidationError(
+        "Ese color ya está asignado a otro profesional",
+        details={"code": "color_taken", "color": candidate},
+    )
+
+
+def initial_professional_color(taken: set[str]) -> str:
+    """Color inicial para el formulario de alta (default libre o el primero libre)."""
+    if DEFAULT_PROFESSIONAL_COLOR not in taken:
+        return DEFAULT_PROFESSIONAL_COLOR
+    for color in PROFESSIONAL_COLOR_PALETTE:
+        if color not in taken:
+            return color
+    return DEFAULT_PROFESSIONAL_COLOR
+
+
+async def _specialty_maps(
+    db: AsyncSession,
+    tenant_id: UUID,
+    professional_ids: list[UUID],
+) -> tuple[dict[UUID, list[UUID]], dict[UUID, list[str]]]:
+    """Ids y nombres de especialidad por profesional (JOIN explícito a services)."""
+    ids_by_prof: dict[UUID, list[UUID]] = defaultdict(list)
+    names_by_prof: dict[UUID, list[str]] = defaultdict(list)
+    if not professional_ids:
+        return ids_by_prof, names_by_prof
+
+    result = await db.execute(
+        select(
+            ProfessionalSpecialty.professional_id,
+            ProfessionalSpecialty.service_id,
+            SchedulingService.name,
+        )
+        .join(
+            SchedulingService,
+            SchedulingService.id == ProfessionalSpecialty.service_id,
+        )
+        .where(
+            ProfessionalSpecialty.tenant_id == tenant_id,
+            SchedulingService.tenant_id == tenant_id,
+            ProfessionalSpecialty.professional_id.in_(professional_ids),
+        )
+        .order_by(
+            ProfessionalSpecialty.professional_id,
+            ProfessionalSpecialty.sort_order,
+        )
+    )
+    for professional_id, service_id, name in result.all():
+        ids_by_prof[professional_id].append(service_id)
+        names_by_prof[professional_id].append(name)
+    return ids_by_prof, names_by_prof
+
+
+def _to_read(
+    prof: Professional,
+    *,
+    specialty_service_ids: list[UUID] | None = None,
+    specialty_names: list[str] | None = None,
+) -> ProfessionalRead:
+    if specialty_service_ids is None:
+        specialty_rows = sorted(prof.specialties, key=lambda s: s.sort_order)
+        specialty_service_ids = [s.service_id for s in specialty_rows]
+    if specialty_names is None:
+        specialty_names = []
+    return ProfessionalRead(
+        id=prof.id,
+        display_name=prof.display_name,
+        user_id=prof.user_id,
+        color=prof.color,
+        is_active=prof.is_active,
+        is_bookable=prof.is_bookable,
+        sort_order=prof.sort_order,
+        specialty_service_ids=specialty_service_ids,
+        specialty_names=specialty_names,
+    )
+
+
+async def _to_read_async(
+    db: AsyncSession,
+    tenant_id: UUID,
+    prof: Professional,
+) -> ProfessionalRead:
+    ids_map, names_map = await _specialty_maps(db, tenant_id, [prof.id])
+    return _to_read(
+        prof,
+        specialty_service_ids=ids_map.get(prof.id, []),
+        specialty_names=names_map.get(prof.id, []),
+    )
+
+
 async def list_professionals(db: AsyncSession, tenant_id: UUID) -> list[ProfessionalRead]:
     result = await db.execute(
         select(Professional)
         .where(Professional.tenant_id == tenant_id)
-        .options(selectinload(Professional.specialties))
         .order_by(Professional.sort_order, Professional.display_name)
     )
-    return [_to_read(prof) for prof in result.scalars().all()]
+    professionals = list(result.scalars().all())
+    ids_map, names_map = await _specialty_maps(
+        db,
+        tenant_id,
+        [prof.id for prof in professionals],
+    )
+    return [
+        _to_read(
+            prof,
+            specialty_service_ids=ids_map.get(prof.id, []),
+            specialty_names=names_map.get(prof.id, []),
+        )
+        for prof in professionals
+    ]
 
 
 async def get_professional(
@@ -66,17 +225,16 @@ async def get_professional(
     return prof
 
 
-def _to_read(prof: Professional) -> ProfessionalRead:
-    specialty_ids = sorted(prof.specialties, key=lambda s: s.sort_order)
-    return ProfessionalRead(
-        id=prof.id,
-        display_name=prof.display_name,
-        user_id=prof.user_id,
-        color=prof.color,
-        is_active=prof.is_active,
-        is_bookable=prof.is_bookable,
-        sort_order=prof.sort_order,
-        specialty_service_ids=[s.service_id for s in specialty_ids],
+async def get_professional_read(
+    db: AsyncSession,
+    tenant_id: UUID,
+    professional_id: UUID,
+) -> ProfessionalRead:
+    """ORM → DTO con especialidades (ids + nombres) para formularios/listados Jinja."""
+    return await _to_read_async(
+        db,
+        tenant_id,
+        await get_professional(db, tenant_id, professional_id),
     )
 
 
@@ -131,6 +289,11 @@ async def _replace_specialties(
                 sort_order=idx,
             )
         )
+    await db.flush()
+    # Evita colección huérfana en identidad ORM tras DELETE SQL.
+    prof = await db.get(Professional, professional_id)
+    if prof is not None:
+        await db.refresh(prof, attribute_names=["specialties"])
 
 
 async def create_professional(
@@ -141,11 +304,17 @@ async def create_professional(
     user_id: UUID | None = None,
     request_ctx: AuditRequestContext | None = None,
 ) -> ProfessionalRead:
+    color = await allocate_professional_color(
+        db,
+        tenant_id,
+        payload.color,
+        allow_fallback=True,
+    )
     prof = Professional(
         tenant_id=tenant_id,
         display_name=payload.display_name,
         user_id=payload.user_id,
-        color=payload.color,
+        color=color,
         is_active=payload.is_active,
         is_bookable=payload.is_bookable,
         sort_order=payload.sort_order,
@@ -166,7 +335,7 @@ async def create_professional(
         metadata={"display_name": payload.display_name},
         request_ctx=request_ctx,
     )
-    return _to_read(await get_professional(db, tenant_id, prof.id))
+    return await get_professional_read(db, tenant_id, prof.id)
 
 
 async def update_professional(
@@ -188,7 +357,13 @@ async def update_professional(
     if payload.user_id is not None:
         prof.user_id = payload.user_id
     if payload.color is not None:
-        prof.color = payload.color
+        prof.color = await allocate_professional_color(
+            db,
+            tenant_id,
+            payload.color,
+            exclude_professional_id=professional_id,
+            allow_fallback=False,
+        )
     if payload.is_active is not None:
         prof.is_active = payload.is_active
     if payload.is_bookable is not None:
@@ -208,7 +383,7 @@ async def update_professional(
         resource_id=prof.id,
         request_ctx=request_ctx,
     )
-    return _to_read(await get_professional(db, tenant_id, prof.id))
+    return await get_professional_read(db, tenant_id, professional_id)
 
 
 async def _tenant_now(db: AsyncSession, tenant_id: UUID) -> datetime:

@@ -25,15 +25,23 @@ from app.core.errors import (
 from app.core.google_calendar_client import GoogleCalendarClient, build_auth_url
 from app.core.oauth_state import consume_state, generate_state
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, get_db_no_tenant
+from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, get_db_no_tenant, require_feature
 from app.schemas.calendar import CalendarIntegrationStatus
 from app.services import calendar_service, channel_integration_service
 from app.services.audit_service import AuditRequestContext
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/settings/integrations", tags=["integrations"])
-auth_router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(
+    prefix="/settings/integrations",
+    tags=["integrations"],
+    dependencies=[Depends(require_feature("calendar_google"))],
+)
+auth_router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    dependencies=[Depends(require_feature("calendar_google"))],
+)
 
 
 def _google_oauth_configured() -> bool:

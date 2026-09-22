@@ -117,6 +117,12 @@ async def create_tenant_member(
     if membership is not None and membership.is_active:
         raise ValidationError("User is already a member of this tenant")
 
+    if membership is None or not membership.is_active:
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_member_capacity(db, ents, tenant_id)
+
     clerk_role = app_role_to_clerk_role(payload.role)
     clerk_user_id = user.clerk_user_id
     org_id = tenant.clerk_org_id
@@ -185,7 +191,8 @@ async def update_tenant_member(
     *,
     actor_user_id: UUID | None = None,
 ) -> TenantMemberRead:
-    tenant = await _get_tenant_or_raise(db, tenant_id)
+    """Actualiza solo permisos de citas en BD local. No escribe en Clerk."""
+    await _get_tenant_or_raise(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
 
     result = await db.execute(
@@ -202,42 +209,19 @@ async def update_tenant_member(
         raise NotFoundError("Membership not found")
     membership, user = row
 
-    if payload.role is not None and payload.role not in VALID_APP_ROLES:
-        raise ValidationError(f"Invalid role: {payload.role}")
+    membership.permissions = payload.permissions.to_json_dict()
+    await db.flush()
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=actor_user_id,
+        action=ACTION_MEMBER_UPDATED,
+        resource_type=RESOURCE_MEMBERSHIP,
+        resource_id=membership.id,
+        metadata={"permissions": membership.permissions},
+    )
 
-    if payload.name is not None:
-        user.name = payload.name
-    if payload.role is not None:
-        membership.role = payload.role
-    if payload.permissions is not None:
-        membership.permissions = payload.permissions.to_json_dict()
-
-    try:
-        if user.clerk_user_id and tenant.clerk_org_id:
-            clerk_role = app_role_to_clerk_role(membership.role)
-            await clerk_client.update_org_member_role(
-                tenant.clerk_org_id,
-                user.clerk_user_id,
-                clerk_role,
-            )
-            if payload.name is not None:
-                first, last = _split_name(payload.name)
-                await clerk_client.update_user(user.clerk_user_id, first_name=first, last_name=last)
-
-        await db.flush()
-        await audit_service.log_action(
-            db,
-            tenant_id=tenant_id,
-            user_id=actor_user_id,
-            action=ACTION_MEMBER_UPDATED,
-            resource_type=RESOURCE_MEMBERSHIP,
-            resource_id=membership.id,
-            metadata={"role": membership.role},
-        )
-    except Exception:
-        log.error("membership.update_failed", membership_id=str(membership_id))
-        raise
-
+    log.info("membership.updated", membership_id=str(membership_id), tenant_id=str(tenant_id))
     return TenantMemberRead(
         membership_id=membership.id,
         user_id=user.id,
@@ -256,7 +240,12 @@ async def remove_tenant_member(
     *,
     actor_user_id: UUID | None = None,
 ) -> None:
-    tenant = await _get_tenant_or_raise(db, tenant_id)
+    """Da de baja el miembro solo en BD local (soft: ``is_active=false``).
+
+    No llama a Clerk: la membresía en la organización la gestiona el SADM
+    desde el Dashboard / API de Clerk.
+    """
+    await _get_tenant_or_raise(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
 
     result = await db.execute(
@@ -273,22 +262,16 @@ async def remove_tenant_member(
         raise NotFoundError("Membership not found")
     membership, user = row
 
-    try:
-        if user.clerk_user_id and tenant.clerk_org_id:
-            await clerk_client.remove_org_member(tenant.clerk_org_id, user.clerk_user_id)
-        membership.is_active = False
-        await db.flush()
-        await audit_service.log_action(
-            db,
-            tenant_id=tenant_id,
-            user_id=actor_user_id,
-            action=ACTION_MEMBER_REMOVED,
-            resource_type=RESOURCE_MEMBERSHIP,
-            resource_id=membership_id,
-            metadata={"email": user.email},
-        )
-    except Exception:
-        log.error("membership.remove_failed", membership_id=str(membership_id))
-        raise
+    membership.is_active = False
+    await db.flush()
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=actor_user_id,
+        action=ACTION_MEMBER_REMOVED,
+        resource_type=RESOURCE_MEMBERSHIP,
+        resource_id=membership_id,
+        metadata={"email": user.email},
+    )
 
     log.info("membership.removed", membership_id=str(membership_id), tenant_id=str(tenant_id))

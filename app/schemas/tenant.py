@@ -15,4 +15,5 @@ class TenantRead(BaseModel):
     id: UUID
     name: str
     plan: str
+    plan_code: str = "basic"
     clerk_org_id: str | None = None

@@ -60,6 +60,20 @@ def _fake_get_storage() -> _FakeStorage:
     return _FakeStorage()
 
 
+def _stub_redis_on_app(app: object) -> None:
+    """Evita Redis real (cuotas): flaky en Windows/Py3.14 con event loops cerrados."""
+    from app.deps import get_redis_dep
+
+    redis = AsyncMock()
+    redis.incrby = AsyncMock(return_value=1)
+    redis.expire = AsyncMock(return_value=True)
+
+    async def _redis() -> AsyncMock:
+        return redis
+
+    app.dependency_overrides[get_redis_dep] = _redis  # type: ignore[attr-defined]
+
+
 def _csrf_headers(user_id: UUID, tenant_id: UUID, *, bearer: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {bearer}",
@@ -90,7 +104,8 @@ async def _seed_tenant_bundle(
         tenant = Tenant(
             clerk_org_id=org_id,
             name="Upload Org",
-            plan="free",
+            plan="basic",
+            plan_code="basic",
             settings={},
         )
         user = User(
@@ -145,7 +160,8 @@ def _fake_clerk_resolve_builder(
         tenant = Tenant(
             clerk_org_id=org_id,
             name="Upload Org",
-            plan="free",
+            plan="basic",
+            plan_code="basic",
             settings={},
             created_at=now,
             updated_at=now,
@@ -203,6 +219,7 @@ async def test_upload_invoice_creates_row(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
@@ -242,6 +259,7 @@ async def test_upload_invoice_rejects_invalid_type(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
@@ -291,6 +309,7 @@ async def test_upload_rejects_pdf_over_page_limit_without_enqueueing(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
@@ -342,8 +361,10 @@ async def test_upload_two_sequential_htmx_requests(
         # vida ASGI + engine singleton). Así se evita la contaminación de estado
         # asyncpg entre peticiones cuando el event loop es function-scoped.
         for name in ("primera.pdf", "segunda.pdf"):
+            app = create_app()
+            _stub_redis_on_app(app)
             async with AsyncClient(
-                transport=ASGITransport(app=create_app()), base_url="http://test"
+                transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/documents/upload",
@@ -382,6 +403,7 @@ async def test_upload_without_files_field_returns_html_panel(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",

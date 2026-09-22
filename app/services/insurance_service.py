@@ -69,7 +69,7 @@ async def get_insurance(
     stmt = (
         select(Insurance)
         .where(Insurance.tenant_id == tenant_id, Insurance.id == insurance_id)
-        .options(selectinload(Insurance.llm_call))
+        .options(selectinload(Insurance.llm_call), selectinload(Insurance.doc_type))
     )
     result = await db.execute(stmt)
     insurance = result.scalar_one_or_none()
@@ -134,7 +134,46 @@ async def apply_extraction_result(
     data: SeguroPoliza,
     llm_call_id: UUID,
 ) -> Insurance:
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        insurance_extraction_is_usable,
+    )
+
     insurance.llm_call_id = llm_call_id
+    insurance.confidence = Decimal(str(data.confidence)).quantize(Decimal("0.01"))
+    insurance.raw_extraction = data.model_dump(mode="json")
+    insurance.updated_at = datetime.now(tz=UTC)
+
+    if not insurance_extraction_is_usable(data):
+        insurance.status = InsuranceStatus.failed
+        insurance.error_code = DocumentErrorCode.extraction_failed.value
+        insurance.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=insurance.source_filename,
+        )
+        logger.warning(
+            "insurance.extraction_unusable",
+            insurance_id=str(insurance.id),
+            tenant_id=str(insurance.tenant_id),
+            confidence=float(insurance.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=insurance.tenant_id,
+            document_kind="insurance",
+            document_id=insurance.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=insurance.error_message,
+            error_code=insurance.error_code,
+        )
+        await db.flush()
+        return insurance
+
     insurance.aseguradora = data.aseguradora[:300]
     insurance.numero_poliza = data.numero_poliza[:100] if data.numero_poliza else None
     insurance.tomador = data.tomador[:300]
@@ -145,10 +184,7 @@ async def apply_extraction_result(
     insurance.prima = data.prima
     insurance.currency = data.currency[:3]
     insurance.cobertura = data.cobertura
-    insurance.confidence = Decimal(str(data.confidence)).quantize(Decimal("0.01"))
-    insurance.raw_extraction = data.model_dump(mode="json")
     insurance.status = InsuranceStatus.ready
-    insurance.updated_at = datetime.now(tz=UTC)
     insurance.error_message = None
     insurance.error_code = None
     await db.flush()

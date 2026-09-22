@@ -7,11 +7,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
 from app.config import get_settings
-from app.core.csrf import CSRF_HEADER_NAME, validate_csrf_token
+from app.core.csrf import CSRF_HEADER_NAME, csrf_tenant_id_for_request, validate_csrf_token
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError
-from app.core.permissions import is_platform_superadmin
+from app.core.permissions import (
+    home_path_for_role,
+    is_platform_superadmin,
+    role_can_access_path,
+)
 from app.core.security import verify_clerk_jwt
+from app.core.session_cookies import clear_clerk_session_cookie
 from app.services.auth_service import (
     ensure_membership,
     org_id_from_claims,
@@ -39,6 +44,8 @@ PUBLIC_PREFIXES = ("/static/", "/docs", "/redoc", "/openapi.json", "/openapi", "
 SESSION_OPTIONAL_PATHS = frozenset(
     {"/login", "/signup", "/auth/organization", "/onboarding"},
 )
+# Acciones permitidas con JWT válido pero sin organización activa.
+NO_ORG_ACTION_PATHS = frozenset({"/onboarding/notify-superadmin"})
 
 CHANGE_PASSWORD_PATHS = frozenset({"/auth/change-password", "/auth/complete-password-reset"})
 CSRF_PROTECTED_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -64,12 +71,27 @@ def _is_logout_related_path(path: str) -> bool:
     return path == "/logout" or path.startswith("/logout/")
 
 
+def _path_exempt_from_role_guard(path: str) -> bool:
+    """Rutas que no aplican la matriz admin/member (auth, públicos, SADM, etc.)."""
+    if _is_public(path) or _is_logout_related_path(path):
+        return True
+    if path in SESSION_OPTIONAL_PATHS or path in NO_ORG_ACTION_PATHS:
+        return True
+    if path in CHANGE_PASSWORD_PATHS:
+        return True
+    if path.startswith("/sadm") or path.startswith("/admin/"):
+        return True
+    if path.startswith("/metrics"):
+        return True
+    return path.startswith("/api/webhooks")
+
+
 def _is_public(path: str) -> bool:
     return path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES)
 
 
 def _skip_session_resolution(path: str) -> bool:
-    if path in SESSION_OPTIONAL_PATHS:
+    if path in SESSION_OPTIONAL_PATHS or path in NO_ORG_ACTION_PATHS:
         return False
     if _is_logout_related_path(path):
         return True
@@ -77,7 +99,7 @@ def _skip_session_resolution(path: str) -> bool:
 
 
 def _path_allowed_without_active_organization(path: str) -> bool:
-    if path in SESSION_OPTIONAL_PATHS:
+    if path in SESSION_OPTIONAL_PATHS or path in NO_ORG_ACTION_PATHS:
         return True
     if _is_logout_related_path(path):
         return True
@@ -98,6 +120,13 @@ def _htmx_aware_redirect(request: Request, url: str) -> Response:
             content=b"",
         )
     return RedirectResponse(url=url, status_code=302)
+
+
+def _login_redirect_clearing_session(request: Request) -> Response:
+    """Fuerza re-login y borra ``__session`` (p. ej. JWT expirado)."""
+    response = _htmx_aware_redirect(request, "/login")
+    clear_clerk_session_cookie(response, get_settings())
+    return response
 
 
 def _csrf_exempt(path: str) -> bool:
@@ -125,12 +154,18 @@ def _csrf_error_response(request: Request) -> Response:
 def _valid_csrf_request(request: Request) -> bool:
     user = getattr(request.state, "user", None)
     tenant = getattr(request.state, "tenant", None)
-    if user is None or tenant is None:
+    if user is None:
+        return False
+    tenant_for_csrf = csrf_tenant_id_for_request(
+        tenant_id=tenant.id if tenant is not None else None,
+        missing_organization=bool(getattr(request.state, "auth_missing_organization", False)),
+    )
+    if tenant_for_csrf is None:
         return False
     token = request.headers.get(CSRF_HEADER_NAME, "")
     if not token:
         return False
-    return validate_csrf_token(token, user_id=user.id, tenant_id=tenant.id)
+    return validate_csrf_token(token, user_id=user.id, tenant_id=tenant_for_csrf)
 
 
 def _extract_token(request: Request) -> str | None:
@@ -145,6 +180,8 @@ def _extract_token(request: Request) -> str | None:
 
 async def try_resolve_clerk_session(request: Request) -> None:
     """Rellena user/tenant/membership desde JWT, o marca auth_missing_organization."""
+    request.state.auth_token_invalid = False
+    request.state.auth_membership_revoked = False
     token = _extract_token(request)
     if not token:
         log.debug("auth.no_token", path=request.url.path)
@@ -153,14 +190,27 @@ async def try_resolve_clerk_session(request: Request) -> None:
         claims = verify_clerk_jwt(token)
     except AuthError as e:
         log.warning("auth.jwt_invalid", path=request.url.path, error=str(e))
+        request.state.auth_token_invalid = True
         return
 
     clerk_user_id = claims.get("sub")
     clerk_org_id = org_id_from_claims(claims)
     if not isinstance(clerk_user_id, str) or not clerk_user_id:
+        request.state.auth_token_invalid = True
         return
     if not clerk_org_id:
+        # JWT válido sin org: resolver usuario local para onboarding/notify
+        # (email, CSRF) sin activar tenant/RLS.
         request.state.auth_missing_organization = True
+        sm = get_sessionmaker()
+        async with sm() as session:
+            try:
+                user = await resolve_user(session, clerk_user_id)
+                await session.commit()
+                request.state.user = user
+            except Exception:
+                await session.rollback()
+                raise
         return
 
     sm = get_sessionmaker()
@@ -169,6 +219,9 @@ async def try_resolve_clerk_session(request: Request) -> None:
             user = await resolve_user(session, clerk_user_id)
             tenant = await resolve_tenant(session, clerk_org_id)
             await set_tenant_context(session, str(tenant.id))
+            # JWT sincroniza rol solo si la membership sigue activa.
+            # Tras organizationMembership.deleted (is_active=False) un JWT
+            # obsoleto con org_id/admin NO debe recrear privilegios.
             membership = await ensure_membership(
                 session,
                 user.id,
@@ -177,20 +230,41 @@ async def try_resolve_clerk_session(request: Request) -> None:
             )
             if not membership.is_active:
                 await session.commit()
+                request.state.auth_membership_revoked = True
                 log.warning(
                     "auth.membership_revoked",
                     clerk_user_id=clerk_user_id,
                     clerk_org_id=clerk_org_id,
                 )
                 return
+
+            settings = get_settings()
+            try:
+                from app.core.errors import ValidationError
+                from app.services import entitlement_service
+
+                entitlements = await entitlement_service.resolve_entitlements(
+                    session, tenant, settings=settings
+                )
+            except ValidationError:
+                from app.services import entitlement_service
+
+                log.warning(
+                    "auth.entitlements_fail_closed",
+                    tenant_id=str(tenant.id),
+                )
+                entitlements = entitlement_service.fail_closed_entitlements(
+                    entitlement_service.resolve_plan_code_for_tenant(tenant)
+                )
+
             await session.commit()
             request.state.user = user
             request.state.tenant = tenant
             request.state.membership = membership
+            request.state.entitlements = entitlements
 
             # Flag de conveniencia para templates. Mismo criterio que la
             # dependencia current_superadmin: org SADM + rol admin activo.
-            settings = get_settings()
             request.state.is_superadmin = is_platform_superadmin(
                 tenant=tenant,
                 membership=membership,
@@ -216,14 +290,37 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.tenant = None
         request.state.membership = None
         request.state.auth_missing_organization = False
+        request.state.auth_token_invalid = False
+        request.state.auth_membership_revoked = False
         request.state.is_superadmin = False
         request.state.force_password_reset = False
+        request.state.entitlements = None
 
         try:
             if _skip_session_resolution(request.url.path):
                 return await call_next(request)
 
             await try_resolve_clerk_session(request)
+
+            # Cookie/Bearer presente pero JWT inválido/expirado: no dejar la UI
+            # "aparentemente logada" ni devolver CSRF 403 en POST HTMX.
+            if getattr(request.state, "auth_token_invalid", False):
+                log.info(
+                    "auth.session_expired_redirect",
+                    path=request.url.path,
+                    method=request.method,
+                )
+                return _login_redirect_clearing_session(request)
+
+            # Membership local revocada (p. ej. webhook deleted): denegar acceso
+            # aunque el JWT aún lleve org_id/rol antiguos.
+            if getattr(request.state, "auth_membership_revoked", False):
+                log.info(
+                    "auth.membership_revoked_redirect",
+                    path=request.url.path,
+                    method=request.method,
+                )
+                return _login_redirect_clearing_session(request)
 
             if (
                 request.state.auth_missing_organization
@@ -236,17 +333,49 @@ class AuthMiddleware(BaseHTTPMiddleware):
             ) and not _is_force_password_exempt(request.url.path):
                 return _htmx_aware_redirect(request, "/auth/change-password")
 
-            if request.state.user is not None and request.url.path in SESSION_OPTIONAL_PATHS:
-                return _htmx_aware_redirect(request, "/")
+            if (
+                request.state.user is not None
+                and not request.state.auth_missing_organization
+                and request.url.path in SESSION_OPTIONAL_PATHS
+            ):
+                membership = getattr(request.state, "membership", None)
+                role = getattr(membership, "role", None) if membership is not None else "member"
+                return _htmx_aware_redirect(request, home_path_for_role(str(role or "member")))
 
-            if _requires_csrf(request) and not _valid_csrf_request(request):
-                log.warning(
-                    "csrf.invalid",
+            # Matriz de acceso por rol de organización (admin vs member/viewer).
+            membership = getattr(request.state, "membership", None)
+            if (
+                membership is not None
+                and getattr(membership, "is_active", False)
+                and not _path_exempt_from_role_guard(request.url.path)
+                and not role_can_access_path(str(membership.role), request.url.path)
+            ):
+                dest = home_path_for_role(str(membership.role))
+                log.info(
+                    "auth.role_path_denied",
                     path=request.url.path,
-                    method=request.method,
-                    authenticated=request.state.user is not None,
+                    role=membership.role,
+                    redirect=dest,
                 )
-                return _csrf_error_response(request)
+                return _htmx_aware_redirect(request, dest)
+
+            if _requires_csrf(request):
+                # Sin sesión, el fallo no es CSRF: es autenticación.
+                if request.state.user is None:
+                    log.info(
+                        "auth.unauthenticated_mutable_redirect",
+                        path=request.url.path,
+                        method=request.method,
+                    )
+                    return _login_redirect_clearing_session(request)
+                if not _valid_csrf_request(request):
+                    log.warning(
+                        "csrf.invalid",
+                        path=request.url.path,
+                        method=request.method,
+                        authenticated=True,
+                    )
+                    return _csrf_error_response(request)
 
             return await call_next(request)
 

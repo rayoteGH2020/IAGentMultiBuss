@@ -30,6 +30,11 @@ from tenacity import (
 )
 
 from app.config import Settings, get_settings
+from app.core.document_processing_errors import (
+    PROVIDER_OVERLOAD_USER_MESSAGE,
+    DocumentErrorCode,
+    is_provider_overload_error,
+)
 from app.core.errors import ExternalServiceError, LLMCompleteError, ValidationError
 from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
@@ -82,24 +87,27 @@ _RETRYABLE_MARKERS: tuple[str, ...] = (
 # Indicadores de sobrecarga del proveedor (tras agotar reintentos).
 # Cuando el error técnico coincide, se expone al usuario un mensaje amigable
 # en lugar del mensaje crudo del SDK; el error raw sigue guardándose en BD.
-_PROVIDER_OVERLOAD_MARKERS: tuple[str, ...] = (
-    "503",
-    "high demand",
-    "overloaded",
-    "service unavailable",
-)
-_PROVIDER_OVERLOAD_USER_MSG = (
-    "El servidor de IA tiene muchas solicitudes y ha rechazado la tuya, "
-    "prueba de nuevo un poco más tarde"
-)
+# Clasificación canónica: DocumentErrorCode.provider_overload.
 
 
 def _user_facing_llm_error(raw_error: str) -> str:
     """Devuelve mensaje amigable si el error es sobrecarga del proveedor, si no el raw."""
-    low = raw_error.lower()
-    if any(m in low for m in _PROVIDER_OVERLOAD_MARKERS):
-        return _PROVIDER_OVERLOAD_USER_MSG
+    if is_provider_overload_error(raw_error):
+        return PROVIDER_OVERLOAD_USER_MESSAGE
     return raw_error
+
+
+def _llm_error_document_code(raw_error: str | None) -> DocumentErrorCode | None:
+    if raw_error and is_provider_overload_error(raw_error):
+        return DocumentErrorCode.provider_overload
+    return None
+
+
+def _langfuse_safe_status(raw_error: str | None) -> str | None:
+    """Texto seguro para Langfuse (sin contenido de documento ni nombre de fichero)."""
+    if raw_error and is_provider_overload_error(raw_error):
+        return PROVIDER_OVERLOAD_USER_MESSAGE
+    return None
 
 
 def _is_retryable_provider_error(exc: BaseException) -> bool:
@@ -456,6 +464,11 @@ class LLMClient:
         llm_call: LLMCall | None = None
 
         try:
+            from app.services import entitlement_service, plan_quota_service
+
+            ents = await entitlement_service.resolve_tenant(db, tenant_id)
+            await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
+
             anthropic_key_missing = provider == "anthropic" and not _anthropic_api_key_configured(
                 self._settings
             )
@@ -536,6 +549,15 @@ class LLMClient:
             db.add(llm_call)
             await db.flush()
 
+            if status == "ok" and cost > 0:
+                from app.services import plan_quota_service
+
+                await plan_quota_service.record_llm_cost(
+                    db,
+                    tenant_id=tenant_id,
+                    cost_eur=cost,
+                )
+
             # update() + end() + flush(): secuencia Langfuse para cerrar el span
             # con los datos de resultado y enviarlo al servidor. flush() fuerza
             # el envío inmediato; sin él los datos podrían perderse si el proceso
@@ -549,7 +571,11 @@ class LLMClient:
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=trace_status_message(error_type=error_type, error=error),
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=_langfuse_safe_status(error),
+                ),
             )
             obs.end()
             self._langfuse.flush()
@@ -559,6 +585,7 @@ class LLMClient:
             raise LLMCompleteError(
                 _user_facing_llm_error(error) if error else "LLM call failed",
                 llm_call_id=llm_call.id,
+                document_error_code=_llm_error_document_code(error),
             )
 
         assert result is not None
@@ -662,6 +689,11 @@ class LLMClient:
         transcript = ""
         llm_call: LLMCall | None = None
 
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
+
         try:
             audio_part = genai.types.Part.from_bytes(data=audio, mime_type=mime_type)
             # Any: generate_content tiene overloads complejos en el SDK de Google;
@@ -705,13 +737,26 @@ class LLMClient:
             db.add(llm_call)
             await db.flush()
 
+            if status == "ok" and cost > 0:
+                from app.services import plan_quota_service
+
+                await plan_quota_service.record_llm_cost(
+                    db,
+                    tenant_id=tenant_id,
+                    cost_eur=cost,
+                )
+
             obs.update(
                 output={"transcript_chars": len(transcript)},
                 metadata={"latency_ms": latency_ms, "status": status},
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=trace_status_message(error_type=error_type, error=error),
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=_langfuse_safe_status(error),
+                ),
             )
             obs.end()
             self._langfuse.flush()
@@ -721,6 +766,7 @@ class LLMClient:
             raise LLMCompleteError(
                 _user_facing_llm_error(error) if error else "Transcription failed",
                 llm_call_id=llm_call.id,
+                document_error_code=_llm_error_document_code(error),
             )
 
         return transcript
@@ -750,6 +796,11 @@ class LLMClient:
         """
         if not texts:
             return []
+
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
 
         # Inicialización lazy: solo se crea el cliente Voyage cuando se necesita.
         if self._voyage_embedder is None:
@@ -840,6 +891,13 @@ class LLMClient:
                 )
                 await db.flush()
 
+                if status == "ok" and cost > 0:
+                    await plan_quota_service.record_llm_cost(
+                        db,
+                        tenant_id=tenant_id,
+                        cost_eur=cost,
+                    )
+
                 obs.update(
                     output={
                         "embeddings_count": len(batch_result.embeddings) if batch_result else 0
@@ -848,7 +906,11 @@ class LLMClient:
                     usage_details={"input": tokens_in, "output": 0},
                     cost_details={"total": float(cost)},
                     level=None if status == "ok" else "ERROR",
-                    status_message=trace_status_message(error_type=error_type, error=error),
+                    status_message=trace_status_message(
+                        error_type=error_type,
+                        error=error,
+                        safe_message=_langfuse_safe_status(error),
+                    ),
                 )
                 obs.end()
                 self._langfuse.flush()

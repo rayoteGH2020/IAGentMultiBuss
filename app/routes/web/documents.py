@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ValidationError
+from app.core.errors import RateLimitError, ValidationError
 from app.core.templating import render
 from app.core.uploads import (
     MAX_FILE_SIZE,
@@ -15,7 +15,7 @@ from app.core.uploads import (
     read_upload_limited,
     validate_invoice_upload,
 )
-from app.deps import CurrentTenant, CurrentUser, get_db
+from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_feature
 from app.schemas.document_panel import PanelListParams
 from app.services import (
     contract_service,
@@ -23,7 +23,9 @@ from app.services import (
     document_delete_service,
     document_panel_service,
     document_processing_service,
+    document_type_confirm_service,
     document_upload_service,
+    entitlement_service,
     insurance_service,
     invoice_service,
     ticket_service,
@@ -33,7 +35,11 @@ from app.services.audit_service import AuditRequestContext
 logger = structlog.get_logger(__name__)
 
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/documents",
+    tags=["documents"],
+    dependencies=[Depends(require_feature("documents"))],
+)
 
 
 async def _documents_panel_ctx(
@@ -45,55 +51,14 @@ async def _documents_panel_ctx(
     upload_notices: list[dict[str, str]] | None = None,
     just_uploaded_ids: list[str] | None = None,
 ) -> dict[str, object]:
-    invoices = await invoice_service.list_invoices(db, tenant_id, limit=50)
-
-    tickets = await ticket_service.list_tickets(db, tenant_id, limit=50)
-
-    contracts = await contract_service.list_contracts(db, tenant_id, limit=50)
-
-    insurances = await insurance_service.list_insurances(db, tenant_id, limit=50)
-
-    doc_types = await doc_type_service.list_active_doc_types(db)
-
-    params = list_params or PanelListParams()
-
-    active_codes = {dt.code for dt in doc_types}
-
-    if params.doc_type_code is not None and params.doc_type_code not in active_codes:
-        params = PanelListParams(
-            doc_type_code=None,
-            sort=params.sort,
-            dir=params.dir,
-        )
-
-    merged = document_panel_service.merge_panel_rows(
-        invoices,
-        tickets,
-        contracts=contracts,
-        insurances=insurances,
-        doc_types=doc_types,
+    return await document_panel_service.build_invoices_panel_ctx(
+        db,
+        tenant_id,
+        list_params=list_params,
+        upload_errors=upload_errors,
+        upload_notices=upload_notices,
+        just_uploaded_ids=just_uploaded_ids,
     )
-
-    documents = document_panel_service.apply_list_params(merged, params)
-
-    just_uploaded_documents, other_documents = document_panel_service.partition_just_uploaded(
-        documents,
-        just_uploaded_ids or [],
-    )
-
-    total_count = len(merged)
-
-    return {
-        "documents": documents,
-        "just_uploaded_documents": just_uploaded_documents,
-        "other_documents": other_documents,
-        "doc_types": doc_types,
-        "panel_list": params,
-        "panel_filtered_empty": total_count > 0 and len(documents) == 0,
-        "upload_errors": upload_errors or [],
-        "upload_notices": upload_notices or [],
-        "just_uploaded_ids": just_uploaded_ids or [],
-    }
 
 
 @router.get("")
@@ -153,6 +118,7 @@ async def upload_documents(
     request: Request,
     _user: CurrentUser,
     tenant: CurrentTenant,
+    redis: RedisDep,
     doc_type_codes: Annotated[list[str] | str | None, Form()] = None,
     files: Annotated[list[UploadFile] | None, File(description="Document files")] = None,
     db: AsyncSession = Depends(get_db),
@@ -218,6 +184,7 @@ async def upload_documents(
 
     created_document_ids: list[str] = []
     errors: list[dict[str, str]] = []
+    ents = await entitlement_service.resolve_entitlements(db, tenant)
 
     # Ingest secuencial (misma sesión DB); el paralelismo de extracción es ARQ.
     for upload, user_doc_type in zip(named_files, per_file_types, strict=True):
@@ -233,8 +200,14 @@ async def upload_documents(
                 file_bytes=data,
                 mime_type=mime,
                 doc_type=user_doc_type,
+                redis=redis,
+                ents=ents,
             )
             created_document_ids.append(str(result.record_id))
+
+        except RateLimitError as exc:
+            errors.append({"filename": display_name, "error": exc.message})
+            logger.warning("upload.rate_limited", filename=display_name, tenant_id=str(tenant.id))
 
         except UploadValidationError as exc:
             errors.append({"filename": display_name, "error": str(exc)})
@@ -299,6 +272,38 @@ async def _document_row_response(
             "document": document,
             "just_uploaded_ids": [],
         },
+    )
+
+
+@router.post("/{kind}/{document_id}/confirm-type")
+async def document_confirm_type(
+    request: Request,
+    kind: str,
+    document_id: UUID,
+    _user: CurrentUser,
+    tenant: CurrentTenant,
+    choice: Annotated[str, Form()],
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    if kind not in ("invoice", "ticket"):
+        raise ValidationError("Solo facturas y tickets requieren confirmación de tipo.")
+    if choice not in ("keep", "suggested"):
+        raise ValidationError("Elección de tipo no válida.")
+
+    result = await document_type_confirm_service.confirm_document_type(
+        db,
+        tenant_id=tenant.id,
+        kind=kind,  # type: ignore[arg-type]
+        document_id=document_id,
+        choice=choice,  # type: ignore[arg-type]
+    )
+    await db.commit()
+    return await _document_row_response(
+        request,
+        db,
+        tenant.id,
+        kind=result.kind,
+        document_id=result.document_id,
     )
 
 

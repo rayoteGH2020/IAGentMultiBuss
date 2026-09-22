@@ -199,29 +199,49 @@ async def enqueue_channel_message(
     customer_identifier: str,
     message_text: str,
     integration_id: str,
+    provider_event_id: str | None = None,
 ) -> str:
     """Encola el job de procesado de un mensaje de canal externo (WhatsApp/Telegram).
 
     Los argumentos son str porque ARQ serializa a JSON (UUID → str en el webhook).
-    No usa _job_id determinista: cada mensaje del cliente genera un job independiente.
+    Con ``provider_event_id`` (message id WA / update id TG) se usa ``_job_id``
+    determinista para que ARQ no duplique el mismo evento en cola.
     """
+    from app.core.webhook_ingress import channel_job_id
+
     pool = await get_arq_pool()
-    job = await pool.enqueue_job(
-        "process_channel_message",
-        tenant_id,
-        channel,
-        customer_identifier,
-        message_text,
-        integration_id,
-    )
+    deterministic_id: str | None = None
+    if provider_event_id and provider_event_id.strip():
+        deterministic_id = channel_job_id(channel, provider_event_id)
+
+    if deterministic_id is not None:
+        job = await pool.enqueue_job(
+            "process_channel_message",
+            tenant_id,
+            channel,
+            customer_identifier,
+            message_text,
+            integration_id,
+            _job_id=deterministic_id,
+        )
+    else:
+        job = await pool.enqueue_job(
+            "process_channel_message",
+            tenant_id,
+            channel,
+            customer_identifier,
+            message_text,
+            integration_id,
+        )
     if job is None:
         logger.warning(
             "arq.enqueue_channel_duplicate",
             tenant_id=tenant_id,
             channel=channel,
             customer_identifier=customer_identifier,
+            job_id=deterministic_id,
         )
-        return "unknown"
+        return deterministic_id or "unknown"
     return str(job.job_id)
 
 
@@ -230,6 +250,20 @@ async def _purge_arq_job(job_id: str) -> None:
     pool = await get_arq_pool()
     await pool.delete(job_key_prefix + job_id, result_key_prefix + job_id)
     await pool.zrem(default_queue_name, job_id)
+
+
+async def purge_document_processing_job(document_kind: str, document_id: UUID) -> None:
+    """Borra el job ARQ de extracción de un documento (si existe)."""
+    prefixes = {
+        "invoice": "invoice",
+        "ticket": "ticket",
+        "contract": "contract",
+        "insurance": "insurance",
+    }
+    prefix = prefixes.get(document_kind)
+    if prefix is None:
+        return
+    await _purge_arq_job(f"{prefix}:{document_id}")
 
 
 async def enqueue_knowledge_indexing(

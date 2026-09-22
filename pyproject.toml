@@ -67,6 +67,7 @@ dev = [
     "types-boto3>=1.35.0",
     "moto[s3]>=5.0.0",
     "pytest-timeout>=2.4.0",
+    "detect-secrets>=1.5.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -123,8 +124,11 @@ ignore = [
 "app/models/professional_working_hour.py" = ["TCH003"]
 "app/models/schedule_exception.py" = ["TCH003"]
 "app/models/scheduling_service.py" = ["TCH003"]
+"app/models/plan.py" = ["TCH003"]
 "app/services/channel_integration_service.py" = ["TCH"]
 "app/services/document_delete_service.py" = ["TCH"]
+"app/services/entitlement_service.py" = ["TCH"]
+"app/services/plan_service.py" = ["TCH"]
 "app/routes/web/admin_channel_integrations.py" = ["TCH"]
 "app/routes/web/appointments.py" = ["TCH"]
 "app/routes/web/settings_scheduling.py" = ["TCH"]

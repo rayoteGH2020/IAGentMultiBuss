@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from app.config import get_settings
 from app.core.datetime_display import resolve_display_timezone
@@ -46,6 +46,25 @@ class _CacheHit:
     cache_id: str  # UUID as string for UPDATE
     answer_text: str
     confidence: float
+
+
+async def invalidate_response_cache_for_tenant(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+) -> int:
+    """Invalida el caché semántico de canal del tenant (reindex/delete knowledge)."""
+    result = await db.execute(
+        delete(ChannelResponseCache).where(ChannelResponseCache.tenant_id == tenant_id),
+    )
+    deleted = int(getattr(result, "rowcount", 0) or 0)
+    if deleted:
+        logger.info(
+            "channel.cache.invalidated",
+            tenant_id=str(tenant_id),
+            deleted=deleted,
+        )
+    return deleted
 
 
 async def _lookup_cache(

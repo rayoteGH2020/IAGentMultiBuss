@@ -22,6 +22,25 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _CIF_NIF_PATTERN = re.compile(r"^[A-Z0-9]{2,15}$")
 
+# Primer token numérico dentro de una cadena. Defensa en profundidad: cuando
+# una celda de tabla envuelve a varias líneas (p. ej. "Cantidad" alineada
+# visualmente con la segunda línea de la celda "Concepto"), el LLM a veces
+# devuelve el número con texto o unidad pegados ("289 kWh") pese a que el
+# prompt pide solo el número. Se normaliza aquí para que la extracción no
+# falle por esto.
+_NUMERIC_TOKEN = re.compile(r"-?\d+(?:[.,]\d+)?")
+
+
+def _coerce_llm_decimal(v: object) -> object:
+    """Normaliza un valor numérico devuelto por el LLM a `Decimal`."""
+    if isinstance(v, int | float):
+        return Decimal(str(v))
+    if isinstance(v, str):
+        match = _NUMERIC_TOKEN.search(v)
+        if match:
+            return Decimal(match.group().replace(",", "."))
+    return v
+
 
 class DesgloseIVA(BaseModel):
     """Un tramo de IVA (base, tipo y cuota) dentro de una factura."""
@@ -39,9 +58,7 @@ class DesgloseIVA(BaseModel):
     @field_validator("base", "percent", "amount", mode="before")
     @classmethod
     def _coerce_decimal(cls, v: object) -> object:
-        if isinstance(v, int | float):
-            return Decimal(str(v))
-        return v
+        return _coerce_llm_decimal(v)
 
 
 class LineaFactura(BaseModel):
@@ -55,9 +72,7 @@ class LineaFactura(BaseModel):
     @field_validator("cantidad", "precio_unitario", "total", mode="before")
     @classmethod
     def _coerce_decimal(cls, v: object) -> object:
-        if isinstance(v, int | float):
-            return Decimal(str(v))
-        return v
+        return _coerce_llm_decimal(v)
 
 
 class Factura(BaseModel):
@@ -148,9 +163,7 @@ class Factura(BaseModel):
     )
     @classmethod
     def _coerce_decimal(cls, v: object) -> object:
-        if isinstance(v, int | float):
-            return Decimal(str(v))
-        return v
+        return _coerce_llm_decimal(v)
 
     @model_validator(mode="after")
     def _normalize_vat_and_check_totals(self) -> Factura:

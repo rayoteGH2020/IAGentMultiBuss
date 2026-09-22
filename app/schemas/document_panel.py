@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from app.core.document_processing_errors import is_retryable
+from app.services.document_processing_service import is_processing_stale
 
 if TYPE_CHECKING:
     from app.models import Contract, Insurance, Invoice, LLMCall, Ticket
@@ -79,15 +80,48 @@ class PanelDocumentRow:
     doc_type_code: str
     doc_type_label: str
     error_code: str | None = None
+    vat_tranche_count: int = 0
+    suggested_doc_type: str | None = None
     invoice: Invoice | None = None
     ticket: Ticket | None = None
     contract: Contract | None = None
     insurance: Insurance | None = None
 
     @property
+    def awaits_type_confirmation(self) -> bool:
+        return self.error_code == "type_confirmation_required"
+
+    @property
+    def suggested_doc_type_label(self) -> str:
+        labels = {
+            "factura": "Factura",
+            "ticket": "Ticket",
+            "contrato": "Contrato",
+            "seguro": "Seguro",
+        }
+        if self.suggested_doc_type is None:
+            return "tipo sugerido"
+        return labels.get(self.suggested_doc_type, self.suggested_doc_type)
+
+    @property
+    def iva_percent_label(self) -> str:
+        """Etiqueta de IVA en listado: porcentaje único o 'Múltiple'."""
+        if self.vat_tranche_count > 1:
+            return "Múltiple"
+        if self.iva_percent is not None:
+            return f"{self.iva_percent:.2f} %"
+        return "—"
+
+    @property
     def can_retry(self) -> bool:
-        """False en rechazos por límites: el mismo fichero volvería a fallar."""
-        return is_retryable(self.error_code)
+        """Reintento en failed (si el código lo permite) o processing/pending stale."""
+        if self.awaits_type_confirmation:
+            return False
+        if self.status == "failed":
+            return is_retryable(self.error_code)
+        if self.status in ("pending", "processing"):
+            return is_processing_stale(self.updated_at)
+        return False
 
     @property
     def llm_call(self) -> LLMCall | None:

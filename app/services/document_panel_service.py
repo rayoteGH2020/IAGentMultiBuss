@@ -6,6 +6,8 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from sqlalchemy import inspect as sa_inspect
+
 from app.models import DocTypeCode
 from app.schemas.document_panel import (
     PANEL_DEFAULT_DIR,
@@ -16,8 +18,92 @@ from app.schemas.document_panel import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.models import Contract, DocType, Insurance, Invoice, Ticket
+
+_BUSY_DOCUMENT_STATUSES = frozenset({"pending", "processing"})
+
+
+def is_document_status_busy(status: str) -> bool:
+    """True mientras el poll HTMX debe seguir pidiendo solo la fila."""
+    return status in _BUSY_DOCUMENT_STATUSES
+
+
+async def build_invoices_panel_ctx(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    list_params: PanelListParams | None = None,
+    upload_errors: list[dict[str, str]] | None = None,
+    upload_notices: list[dict[str, str]] | None = None,
+    just_uploaded_ids: list[str] | None = None,
+) -> dict[str, object]:
+    """Contexto Jinja del panel ``#invoices-table-container`` (listado / post-upload / poll)."""
+    from app.services import (
+        contract_service,
+        doc_type_service,
+        insurance_service,
+        invoice_service,
+        ticket_service,
+    )
+
+    invoices = await invoice_service.list_invoices(db, tenant_id, limit=50)
+    tickets = await ticket_service.list_tickets(db, tenant_id, limit=50)
+    contracts = await contract_service.list_contracts(db, tenant_id, limit=50)
+    insurances = await insurance_service.list_insurances(db, tenant_id, limit=50)
+    doc_types = await doc_type_service.list_active_doc_types(db)
+
+    params = list_params or PanelListParams()
+    active_codes = {dt.code for dt in doc_types}
+    if params.doc_type_code is not None and params.doc_type_code not in active_codes:
+        params = PanelListParams(
+            doc_type_code=None,
+            sort=params.sort,
+            dir=params.dir,
+        )
+
+    merged = merge_panel_rows(
+        invoices,
+        tickets,
+        contracts=contracts,
+        insurances=insurances,
+        doc_types=doc_types,
+    )
+    documents = apply_list_params(merged, params)
+    just_uploaded_documents, other_documents = partition_just_uploaded(
+        documents,
+        just_uploaded_ids or [],
+    )
+    total_count = len(merged)
+    return {
+        "documents": documents,
+        "just_uploaded_documents": just_uploaded_documents,
+        "other_documents": other_documents,
+        "doc_types": doc_types,
+        "panel_list": params,
+        "panel_filtered_empty": total_count > 0 and len(documents) == 0,
+        "upload_errors": upload_errors or [],
+        "upload_notices": upload_notices or [],
+        "just_uploaded_ids": just_uploaded_ids or [],
+    }
+
+
+def _loaded_doc_type_code(entity: object, *, fallback: str) -> str:
+    """Lee ``doc_type.code`` solo si la relación ya está eager-loaded.
+
+    Acceder a la relación sin cargar dispara lazy IO y en AsyncSession
+    provoca ``greenlet_spawn has not been called``.
+    """
+    state = sa_inspect(entity)
+    if state is None or "doc_type" in state.unloaded:
+        return fallback
+    doc_type = getattr(entity, "doc_type", None)
+    if doc_type is not None:
+        return str(doc_type.code)
+    return fallback
 
 
 def row_from_invoice(
@@ -27,7 +113,11 @@ def row_from_invoice(
     doc_type_label: str = "Factura",
 ) -> PanelDocumentRow:
     """Mapea una factura a la vista de panel compartida."""
+    from app.services.document_type_confirm_service import parse_type_confirm_meta
+
     code = doc_type_code or _doc_type_code_from_invoice(invoice)
+    confirm = parse_type_confirm_meta(invoice.raw_extraction)
+    vat_count = len(invoice.vat_breakdown) if invoice.vat_breakdown else 0
     return PanelDocumentRow(
         kind="invoice",
         id=invoice.id,
@@ -46,6 +136,8 @@ def row_from_invoice(
         error_code=invoice.error_code,
         doc_type_code=code,
         doc_type_label=doc_type_label,
+        vat_tranche_count=vat_count,
+        suggested_doc_type=confirm.suggested.value if confirm else None,
         invoice=invoice,
     )
 
@@ -57,7 +149,10 @@ def row_from_ticket(
     doc_type_label: str = "Ticket",
 ) -> PanelDocumentRow:
     """Mapea un ticket a las mismas columnas que una factura en el panel."""
+    from app.services.document_type_confirm_service import parse_type_confirm_meta
+
     code = doc_type_code or _doc_type_code_from_ticket(ticket)
+    confirm = parse_type_confirm_meta(ticket.raw_extraction)
     return PanelDocumentRow(
         kind="ticket",
         id=ticket.id,
@@ -76,6 +171,7 @@ def row_from_ticket(
         error_code=ticket.error_code,
         doc_type_code=code,
         doc_type_label=doc_type_label,
+        suggested_doc_type=confirm.suggested.value if confirm else None,
         ticket=ticket,
     )
 
@@ -141,31 +237,19 @@ def row_from_insurance(
 
 
 def _doc_type_code_from_invoice(invoice: Invoice) -> str:
-    doc_type = getattr(invoice, "doc_type", None)
-    if doc_type is not None:
-        return str(doc_type.code)
-    return DocTypeCode.factura.value
+    return _loaded_doc_type_code(invoice, fallback=DocTypeCode.factura.value)
 
 
 def _doc_type_code_from_ticket(ticket: Ticket) -> str:
-    doc_type = getattr(ticket, "doc_type", None)
-    if doc_type is not None:
-        return str(doc_type.code)
-    return DocTypeCode.ticket.value
+    return _loaded_doc_type_code(ticket, fallback=DocTypeCode.ticket.value)
 
 
 def _doc_type_code_from_contract(contract: Contract) -> str:
-    doc_type = getattr(contract, "doc_type", None)
-    if doc_type is not None:
-        return str(doc_type.code)
-    return DocTypeCode.contrato.value
+    return _loaded_doc_type_code(contract, fallback=DocTypeCode.contrato.value)
 
 
 def _doc_type_code_from_insurance(insurance: Insurance) -> str:
-    doc_type = getattr(insurance, "doc_type", None)
-    if doc_type is not None:
-        return str(doc_type.code)
-    return DocTypeCode.seguro.value
+    return _loaded_doc_type_code(insurance, fallback=DocTypeCode.seguro.value)
 
 
 def _doc_type_labels(doc_types: Sequence[DocType]) -> dict[str, str]:

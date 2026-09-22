@@ -23,21 +23,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.errors import RateLimitError, ValidationError
 from app.core.faq_serializer import FaqPair
-from app.core.rate_limiter import check_knowledge_upload_rate
 from app.core.templating import render
 from app.core.uploads import UploadValidationError, read_upload_limited
-from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db
+from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_feature
 from app.jobs.queue import enqueue_knowledge_indexing
 from app.schemas.knowledge import (
     KnowledgeDocumentFilters,
     KnowledgeDocumentKind,
     KnowledgeDocumentStatus,
 )
-from app.services import knowledge_document_service
+from app.services import entitlement_service, knowledge_document_service, plan_quota_service
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+router = APIRouter(
+    prefix="/knowledge",
+    tags=["knowledge"],
+    dependencies=[Depends(require_feature("knowledge"))],
+)
 
 # Número máximo de ficheros por subida: igual que el límite de /documents/upload.
 _MAX_FILES_PER_UPLOAD = 20
@@ -169,23 +172,24 @@ async def upload_knowledge(
         ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
         return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
-    # --- Rate limit diario por tenant ---
-    settings = get_settings()
+    # --- Rate limit diario por tenant (plan comercial) ---
+    ents = await entitlement_service.resolve_entitlements(db, tenant)
     try:
-        await check_knowledge_upload_rate(
+        await plan_quota_service.ensure_knowledge_upload(
             redis,
-            tenant_id=tenant.id,
-            max_per_day=settings.knowledge_max_uploads_per_day,
+            ents,
+            tenant.id,
             n_files=len(named_files),
         )
     except RateLimitError as exc:
-        batch_errors = [{"filename": "—", "error": str(exc)}]
+        batch_errors = [{"filename": "—", "error": exc.message}]
         ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
         return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
     # --- Procesado por fichero ---
     file_errors: list[dict[str, str]] = []
     created = 0
+    settings = get_settings()
 
     for upload in named_files:
         display_name = upload.filename or "file"

@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from app.core.entitlement_codes import (
+    FEATURE_CODES,
+    LIMIT_CHANNEL_MESSAGES_PER_HOUR,
+    PLAN_CODE_TOTAL,
+)
 from app.jobs import channel_jobs
 from app.models.channel_integration import ChannelIntegrationStatus
 from app.schemas.channel import ChannelResponse
+from app.schemas.entitlements import Entitlements
 from app.services.audit_service import (
     ACTION_CHANNEL_ESCALATED,
     ACTION_CHANNEL_MESSAGE_RECEIVED,
@@ -27,6 +34,8 @@ def _fake_tenant() -> MagicMock:
     tenant = MagicMock()
     tenant.id = TENANT_ID
     tenant.name = "Clínica Demo"
+    tenant.plan = "total"
+    tenant.plan_code = "total"
     return tenant
 
 
@@ -36,6 +45,15 @@ def _fake_integration(*, threshold: float = 0.6) -> MagicMock:
     integ.confidence_threshold = threshold
     integ.phone_number_id = "123456789"
     return integ
+
+
+def _ents() -> Entitlements:
+    return Entitlements(
+        plan_code=PLAN_CODE_TOTAL,
+        features=frozenset(FEATURE_CODES),
+        limits={LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("60")},
+        fail_closed=False,
+    )
 
 
 def _session_factory(db: AsyncMock) -> Any:
@@ -77,7 +95,18 @@ async def test_process_channel_message_sends_rag_on_high_confidence(mock_db: Asy
             return_value="token-wa",
         ),
         patch("app.jobs.channel_jobs._get_admin_email", AsyncMock(return_value=None)),
-        patch("app.jobs.channel_jobs._check_rate_limit", AsyncMock(return_value=True)),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.ensure_feature",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.resolve_tenant",
+            AsyncMock(return_value=_ents()),
+        ),
+        patch(
+            "app.jobs.channel_jobs.plan_quota_service.ensure_channel_message_allowed",
+            AsyncMock(return_value=True),
+        ),
         patch(
             "app.jobs.channel_jobs.channel_chat_service.answer_for_channel",
             AsyncMock(return_value=response),
@@ -125,7 +154,18 @@ async def test_process_channel_message_escalates_on_low_confidence(mock_db: Asyn
             return_value="token-tg",
         ),
         patch("app.jobs.channel_jobs._get_admin_email", AsyncMock(return_value=None)),
-        patch("app.jobs.channel_jobs._check_rate_limit", AsyncMock(return_value=True)),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.ensure_feature",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.resolve_tenant",
+            AsyncMock(return_value=_ents()),
+        ),
+        patch(
+            "app.jobs.channel_jobs.plan_quota_service.ensure_channel_message_allowed",
+            AsyncMock(return_value=True),
+        ),
         patch(
             "app.jobs.channel_jobs.channel_chat_service.answer_for_channel",
             AsyncMock(return_value=response),
@@ -174,7 +214,18 @@ async def test_process_channel_message_rate_limit_sends_limit_message(mock_db: A
             return_value="token-wa",
         ),
         patch("app.jobs.channel_jobs._get_admin_email", AsyncMock(return_value=None)),
-        patch("app.jobs.channel_jobs._check_rate_limit", AsyncMock(return_value=False)),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.ensure_feature",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.jobs.channel_jobs.entitlement_service.resolve_tenant",
+            AsyncMock(return_value=_ents()),
+        ),
+        patch(
+            "app.jobs.channel_jobs.plan_quota_service.ensure_channel_message_allowed",
+            AsyncMock(return_value=False),
+        ),
         patch("app.jobs.channel_jobs.channel_chat_service.answer_for_channel", mock_answer),
         patch("app.jobs.channel_jobs._safe_send", mock_send),
     ):

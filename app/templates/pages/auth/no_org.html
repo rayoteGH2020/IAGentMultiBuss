@@ -1,30 +1,83 @@
 {% extends "layouts/auth.html" %}
-{% block auth_card_class %}w-full max-w-2xl card p-6{% endblock %}
+{% block auth_card_class %}w-full max-w-lg card p-6{% endblock %}
 
-{% block title %}Crea una organización{% endblock %}
+{% block title %}Sin organización{% endblock %}
 {% block content %}
-<h2 class="text-lg font-semibold mb-3 text-center">Necesitas crear una organización</h2>
-<p class="text-sm text-slate-600 mb-4 text-center">
-  Tu cuenta de Mi SaaS funciona por organización (la pyme o negocio que vas a gestionar).
-  Crea una para continuar.
+<div id="no-org-content" class="hidden">
+  <h2 class="text-lg font-semibold mb-4 text-center text-slate-900">
+    Tu usuario no está asociado a una organización
+  </h2>
+  <div class="mb-6">
+    {% include "components/no_org_notify_prompt.html" %}
+  </div>
+  <div class="flex flex-col items-center">
+    <a
+      id="no-org-logout-btn"
+      href="/logout"
+      class="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40"
+      data-busy="0">
+      Cerrar sesión
+    </a>
+  </div>
+</div>
+<p id="no-org-resolving" class="text-center text-sm text-slate-600" role="status">
+  Comprobando organización…
 </p>
-<div id="clerk-create-org"></div>
-{% include "components/clerk_browser_script.html" %}
 <script>
-  window.addEventListener("load", async () => {
-    const C = window.Clerk;
-    if (!C) return;
-    await C.load({
-      signInUrl: "/login",
-      signUpUrl: "/signup",
-      afterSignInUrl: "/",
-      afterSignUpUrl: "/",
-      afterSignOutUrl: "/login",
-    });
-    const el = document.getElementById("clerk-create-org");
-    if (el) {
-      C.mountCreateOrganization(el, { afterCreateOrganizationUrl: "/" });
+  (function () {
+    var logout = document.getElementById("no-org-logout-btn");
+    if (logout && logout.dataset.bound !== "1") {
+      logout.dataset.bound = "1";
+      logout.addEventListener("click", function (event) {
+        if (logout.dataset.busy === "1") {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+      window.setNoOrgLogoutBusy = function (busy) {
+        logout.dataset.busy = busy ? "1" : "0";
+        logout.classList.toggle("pointer-events-none", !!busy);
+        logout.classList.toggle("opacity-40", !!busy);
+        logout.classList.toggle("cursor-not-allowed", !!busy);
+        logout.setAttribute("aria-disabled", busy ? "true" : "false");
+      };
     }
+  })();
+</script>
+{% include "components/clerk_browser_script.html" %}
+<script src="/static/js/clerk-auth.js"></script>
+<script>
+  async function waitForClerk(timeoutMs) {
+    const started = Date.now();
+    while (!window.Clerk) {
+      if (Date.now() - started > timeoutMs) return null;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return window.Clerk;
+  }
+
+  function showNoOrgUi() {
+    var resolving = document.getElementById("no-org-resolving");
+    var content = document.getElementById("no-org-content");
+    if (resolving) resolving.classList.add("hidden");
+    if (content) content.classList.remove("hidden");
+  }
+
+  window.addEventListener("load", async () => {
+    const C = await waitForClerk(8000);
+    if (!C || !window.MiSaaSClerkAuth) {
+      showNoOrgUi();
+      return;
+    }
+    try {
+      await C.load(window.MiSaaSClerkAuth.loadOptions());
+      // Si tiene exactamente una org, setActive y vuelve a /.
+      if (await window.MiSaaSClerkAuth.ensureOrgOrRedirect(C)) return;
+      window.MiSaaSClerkAuth.watchNoOrgRedirect(C);
+    } catch (_err) {
+      /* mostrar aviso */
+    }
+    showNoOrgUi();
   });
 </script>
 {% endblock %}

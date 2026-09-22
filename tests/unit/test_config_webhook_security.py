@@ -12,6 +12,8 @@ def _base_settings(**overrides: object) -> Settings:
         "app_secret_key": "test-secret",  # pragma: allowlist secret
         "database_url": "postgresql+asyncpg://x@localhost/db",  # pragma: allowlist secret
         "redis_url": "redis://localhost:6379/0",
+        # Evita exigir allowlists JWT cuando Infisical inyecta CLERK_JWKS_URL.
+        "clerk_jwks_url": "",
     }
     defaults.update(overrides)
     return Settings(**defaults)  # type: ignore[arg-type]

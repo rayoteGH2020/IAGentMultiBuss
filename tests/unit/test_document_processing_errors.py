@@ -4,6 +4,7 @@ from app.core.document_processing_errors import (
     DocumentErrorCode,
     failure_message,
     format_user_processing_error,
+    is_provider_overload_error,
     is_retryable,
     rejection_message,
 )
@@ -55,9 +56,50 @@ def test_limit_rejections_are_not_retryable() -> None:
 
 def test_extraction_failure_and_unknown_codes_are_retryable() -> None:
     assert is_retryable(DocumentErrorCode.extraction_failed.value)
+    assert is_retryable(DocumentErrorCode.provider_overload.value)
+    assert is_retryable(DocumentErrorCode.processing_interrupted.value)
     assert is_retryable(None)
     # Un código escrito por una versión futura no debe bloquear el reintento.
     assert is_retryable("codigo_desconocido")
+
+
+def test_processing_interrupted_rejection_message_is_user_facing() -> None:
+    message = rejection_message(
+        DocumentErrorCode.processing_interrupted,
+        filename="factura.pdf",
+    )
+    assert "factura.pdf" in message
+    assert "interrumpió" in message
+    assert "administrador del sitio" not in message
+
+
+def test_provider_overload_rejection_message_is_user_facing() -> None:
+    message = rejection_message(
+        DocumentErrorCode.provider_overload,
+        filename="xxxxx.pdf",
+    )
+    assert "xxxxx.pdf" in message
+    assert "muchas solicitudes" in message
+    assert "administrador del sitio" not in message
+    assert is_retryable(DocumentErrorCode.provider_overload.value)
+
+
+def test_failure_message_uses_rejection_for_provider_overload() -> None:
+    message = failure_message(
+        "503 UNAVAILABLE high demand",
+        error_code=DocumentErrorCode.provider_overload,
+        filename="factura.pdf",
+    )
+    assert "muchas solicitudes" in message
+    assert "503" not in message
+    assert "factura.pdf" in message
+
+
+def test_is_provider_overload_error_detects_markers() -> None:
+    assert is_provider_overload_error("503 UNAVAILABLE: high demand")
+    assert is_provider_overload_error("Resource exhausted: rate limit")
+    assert not is_provider_overload_error("validation error for Factura")
+    assert not is_provider_overload_error(None)
 
 
 def test_rejection_message_includes_detail_and_admin_contact() -> None:

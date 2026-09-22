@@ -56,11 +56,11 @@ class TenantMemberCreate(BaseModel):
 
 
 class TenantMemberUpdate(BaseModel):
+    """Solo permisos de app (citas). Identidad/rol viven en Clerk."""
+
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    role: AppRole | None = None
-    permissions: MembershipPermissions | None = None
+    permissions: MembershipPermissions
 
 
 class TenantMemberRead(BaseModel):

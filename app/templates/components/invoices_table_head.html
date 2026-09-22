@@ -14,6 +14,9 @@
       hx-target="#invoices-table-container"
       hx-swap="outerHTML"
       hx-include="#doc-type-filter"
+      hx-boost="false"
+      hx-push-url="false"
+      hx-history="false"
       aria-label="Ordenar por {{ label }}{% if is_active %} ({{ 'ascendente' if panel_list.dir == 'asc' else 'descendente' }}){% endif %}">
       <span class="invoices-sort-label">{{ label }}</span>
       <span class="invoices-sort-indicator" aria-hidden="true">

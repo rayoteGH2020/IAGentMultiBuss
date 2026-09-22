@@ -20,11 +20,24 @@ def pytest_configure(config: pytest.Config) -> None:
         "postgresql+asyncpg://saas_app:saas@localhost:5432/saas",  # pragma: allowlist secret
     )
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+    # TestClient → Host: testserver; AsyncClient base_url=http://test → Host: test.
+    # Infisical puede inyectar SECURITY_ALLOWED_HOSTS sin esos hosts de test.
+    allowed = os.environ.get("SECURITY_ALLOWED_HOSTS", "").strip()
+    for host in ("testserver", "test", "localhost", "127.0.0.1"):
+        if host not in {h.strip() for h in allowed.split(",") if h.strip()}:
+            allowed = f"{allowed},{host}" if allowed else host
+    os.environ["SECURITY_ALLOWED_HOSTS"] = allowed
     # Python 3.14 + Windows + asyncpg: QueuePool.dispose() deja el ProactorEventLoop
     # en estado inválido. NullPool evita la contaminación entre tests function-scoped.
     from app.core.db import use_null_pool_for_tests
 
     use_null_pool_for_tests()
+    try:
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+    except Exception:
+        pass
 
 
 _DEFAULT_RLS_URL = (
@@ -85,8 +98,16 @@ async def tenant_factory(
 ) -> Callable[..., Coroutine[Any, Any, Tenant]]:
     from uuid import uuid4
 
-    async def _make(name: str | None = None) -> Tenant:
-        t = Tenant(name=name or f"T {uuid4().hex[:8]}")
+    async def _make(
+        name: str | None = None,
+        *,
+        plan_code: str = "basic",
+    ) -> Tenant:
+        t = Tenant(
+            name=name or f"T {uuid4().hex[:8]}",
+            plan=plan_code,
+            plan_code=plan_code,
+        )
         db_session.add(t)
         await db_session.flush()
         return t
@@ -189,6 +210,15 @@ async def scheduling_schema_ready(db_session: AsyncSession) -> None:
         )
         if result.scalar_one_or_none() is None:
             pytest.skip("Run Paso30 migration (`uv run alembic upgrade head`).")
+    notes_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'services' "
+            "AND column_name = 'notes'"
+        ),
+    )
+    if notes_col.scalar_one_or_none() is None:
+        pytest.skip("Run p63_services_notes migration (`uv run alembic upgrade head`).")
 
 
 @pytest.fixture

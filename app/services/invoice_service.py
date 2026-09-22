@@ -158,7 +158,11 @@ async def get_invoice(
         # Eager load de líneas en la misma query (JOIN en lugar de N+1):
         # tanto el template de detalle como el endpoint de polling necesitan
         # las líneas para renderizar la fila completa.
-        .options(selectinload(Invoice.lines), selectinload(Invoice.llm_call))
+        .options(
+            selectinload(Invoice.lines),
+            selectinload(Invoice.llm_call),
+            selectinload(Invoice.doc_type),
+        )
     )
     result = await db.execute(stmt)
     # scalar_one_or_none devuelve None si no hay resultado, en lugar de lanzar
@@ -242,6 +246,29 @@ async def create_invoice_from_upload(
     return invoice
 
 
+async def create_invoice_from_existing_storage(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_file_key: str,
+    source_filename: str,
+    source_mime: str,
+    doc_type: DocTypeCode = DocTypeCode.factura,
+) -> Invoice:
+    """Crea stub de factura reutilizando un fichero ya subido a R2."""
+    invoice = await create_invoice_stub(
+        db,
+        tenant_id,
+        source_file_key=source_file_key,
+        source_filename=original_upload_filename(source_filename),
+        source_mime=source_mime,
+        doc_type=doc_type,
+    )
+    invoice.status = InvoiceStatus.processing
+    await db.flush()
+    return invoice
+
+
 async def apply_extraction_result(
     db: AsyncSession,
     *,
@@ -250,7 +277,46 @@ async def apply_extraction_result(
     llm_call_id: UUID,
 ) -> Invoice:
     """Persiste el resultado structured output del extractor LLM sobre `invoice`."""
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        invoice_extraction_is_usable,
+    )
+
     invoice.llm_call_id = llm_call_id
+    invoice.confidence = Decimal(str(factura.confidence)).quantize(Decimal("0.01"))
+    invoice.raw_extraction = factura.model_dump(mode="json")
+    invoice.updated_at = datetime.now(tz=UTC)
+
+    if not invoice_extraction_is_usable(factura):
+        invoice.status = InvoiceStatus.failed
+        invoice.error_code = DocumentErrorCode.extraction_failed.value
+        invoice.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=invoice.source_filename,
+        )
+        logger.warning(
+            "invoice.extraction_unusable",
+            invoice_id=str(invoice.id),
+            tenant_id=str(invoice.tenant_id),
+            confidence=float(invoice.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=invoice.tenant_id,
+            document_kind="invoice",
+            document_id=invoice.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=invoice.error_message,
+            error_code=invoice.error_code,
+        )
+        await db.flush()
+        return invoice
+
     invoice.fecha = factura.fecha
     # Truncados a límites de columna. Los valores vienen del LLM y pueden ser
     # arbitrariamente largos si el modelo extrae texto de contexto adicional.
@@ -266,17 +332,7 @@ async def apply_extraction_result(
     # ISO 4217: los códigos de moneda son siempre 3 caracteres (EUR, USD…).
     # El truncado protege ante respuestas inesperadas del LLM.
     invoice.currency = factura.currency[:3]
-    # El LLM devuelve confidence como float (p. ej. 0.9700000001 por aritmética
-    # de punto flotante). Se convierte a str antes de pasar a Decimal para evitar
-    # que la representación binaria imprecisa del float se propague al Decimal.
-    # quantize("0.01") normaliza a 2 decimales, que es la precisión de la columna.
-    invoice.confidence = Decimal(str(factura.confidence)).quantize(Decimal("0.01"))
-    # raw_extraction guarda el JSON completo de Factura como JSONB: sirve de
-    # fuente de verdad para auditoría, para reintentos futuros sin rellamar al
-    # LLM, y para que el usuario pueda ver exactamente lo que devolvió el modelo.
-    invoice.raw_extraction = factura.model_dump(mode="json")
     invoice.status = InvoiceStatus.ready
-    invoice.updated_at = datetime.now(tz=UTC)
     # Se limpia error_message por si esta función se invoca en un reintento
     # después de un fallo previo (el invoice estaría en estado failed con
     # error_message relleno).

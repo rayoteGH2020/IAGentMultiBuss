@@ -8,33 +8,65 @@
   <section class="card space-y-4">
     <h3 class="font-semibold">Nuevo servicio</h3>
     <form hx-post="/settings/services" hx-target="#services-list" hx-swap="beforeend"
+          hx-on::after-request="if (event.detail.successful) {
+            const n = this.querySelector('[name=name]'); if (n) n.value = '';
+            const o = this.querySelector('[name=notes]'); if (o) o.value = '';
+          }"
           class="flex flex-wrap items-end gap-3">
       <label class="text-sm">
         <span class="text-slate-600">Nombre</span>
-        <input type="text" name="name" required class="mt-1 block rounded-lg border border-slate-300 px-3 py-2">
+        <input type="text" name="name" required autocomplete="off" maxlength="255"
+               class="mt-1 block rounded-lg border border-slate-300 px-3 py-2">
       </label>
       <label class="text-sm">
         <span class="text-slate-600">Duración (min)</span>
         <input type="number" name="duration_minutes" min="15" max="240" value="30" required
                class="mt-1 block rounded-lg border border-slate-300 px-3 py-2 w-24">
       </label>
-      <button type="submit" class="btn-primary cursor-pointer">Añadir</button>
+      <label class="text-sm flex-1 min-w-[12rem]">
+        <span class="text-slate-600">Observaciones</span>
+        <input type="text" name="notes" maxlength="2000" autocomplete="off"
+               placeholder="Opcional"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <button type="submit"
+              id="settings-services-btn-add"
+              data-control="settings.services.add"
+              class="btn-primary cursor-pointer">Añadir</button>
     </form>
   </section>
 
   <div class="card p-0 overflow-hidden">
     <table class="data-table">
       <thead>
-        <tr><th>Nombre</th><th>Duración</th><th>Estado</th><th></th></tr>
+        <tr>
+          <th>Nombre</th>
+          <th>Duración</th>
+          <th>Observaciones</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
       </thead>
       <tbody id="services-list">
         {% for service in services %}
           {% include "components/scheduling/service_row.html" %}
         {% else %}
-        <tr><td colspan="4" class="text-center text-slate-500 py-6 text-sm">Sin servicios.</td></tr>
+        <tr><td colspan="5" class="text-center text-slate-500 py-6 text-sm">Sin servicios.</td></tr>
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<div x-data="{ open: false }"
+     @open-service-modal.window="open = true"
+     @close-service-modal.window="open = false; $refs.panel.innerHTML = ''">
+  <div x-show="open"
+       x-cloak
+       @keydown.escape.window="if (open) open = false"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @click.self="open = false">
+    <div id="service-modal-panel" x-ref="panel"></div>
   </div>
 </div>
 {% endblock %}

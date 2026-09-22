@@ -46,6 +46,7 @@ from app.deps import (
     RequireAppointmentView,
     get_db,
     require_appointment_permission,
+    require_feature,
 )
 from app.schemas.scheduling import (
     AppointmentCancel,
@@ -65,7 +66,11 @@ from app.services import (
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/appointments", tags=["appointments"])
+router = APIRouter(
+    prefix="/appointments",
+    tags=["appointments"],
+    dependencies=[Depends(require_feature("appointments"))],
+)
 
 DEFAULT_APPOINTMENTS_VIEW = "day"
 
