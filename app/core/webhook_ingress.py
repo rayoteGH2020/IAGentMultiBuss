@@ -7,7 +7,7 @@ Orden obligatorio (Paso01 §4 / Seguridad_V2):
 4. Claim Redis ``SET key NX EX ttl`` con el id del proveedor.
 5. Encolar jobs con ``_job_id`` determinista cuando exista id estable.
 
-Proveedores: ``whatsapp``, ``telegram``, ``clerk``. Stripe futuro: ``stripe``.
+Proveedores: ``whatsapp``, ``telegram``, ``clerk``, ``stripe``.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ log = structlog.get_logger(__name__)
 PROVIDER_WHATSAPP: Final = "whatsapp"
 PROVIDER_TELEGRAM: Final = "telegram"
 PROVIDER_CLERK: Final = "clerk"
-PROVIDER_STRIPE: Final = "stripe"  # reserva Paso09
+PROVIDER_STRIPE: Final = "stripe"
 
 
 class WebhookBodyTooLarge(Exception):

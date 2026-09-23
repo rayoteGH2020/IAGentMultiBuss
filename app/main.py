@@ -20,6 +20,7 @@ from app.routes.api import (
     metrics,
     scheduling,
     webhooks,
+    webhooks_stripe,
     webhooks_telegram,
     webhooks_whatsapp,
 )
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(webhooks_whatsapp.router)
     app.include_router(webhooks_telegram.router)
+    app.include_router(webhooks_stripe.router)
 
     # --- Rutas web (devuelven HTML via Jinja2 + patrón página/fragmento HTMX) ---
     app.include_router(auth_routes.router)

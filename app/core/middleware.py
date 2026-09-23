@@ -37,6 +37,7 @@ PUBLIC_PATHS = frozenset(
         "/health/db",
         "/health/redis",
         "/api/webhooks/clerk",
+        "/api/webhooks/stripe",
     }
 )
 PUBLIC_PREFIXES = ("/static/", "/docs", "/redoc", "/openapi.json", "/openapi", "/demo")
@@ -53,6 +54,7 @@ CSRF_EXEMPT_PATHS = frozenset(
     {
         "/api/webhooks/clerk",
         "/api/webhooks/whatsapp",
+        "/api/webhooks/stripe",
     }
 )
 CSRF_EXEMPT_PREFIXES = ("/api/webhooks/telegram/",)

@@ -81,6 +81,16 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `WEBHOOK_MAX_BODY_BYTES` | No | Tope de bytes del body **antes** de parsear JSON (default `262144` = 256 KiB). Aplica a WhatsApp, Telegram y Clerk. |
 | `WEBHOOK_DEDUPE_TTL_SECONDS` | No | TTL de la clave Redis `SET NX` anti-replay (default `86400`). Claves `webhook:dedupe:<provider>:<event_id>`. |
 | `WHATSAPP_APP_SECRET` | En prod | Secreto de la app Meta para validar `X-Hub-Signature-256` en POST `/api/webhooks/whatsapp`. Obligatorio en staging/production antes de guardar integraciones WhatsApp. |
+
+### Billing (Stripe)
+
+| Variable | Obligatoria | Por qué existe |
+|----------|:-----------:|----------------|
+| `STRIPE_SECRET_KEY` | Para checkout/portal | Clave secreta de la cuenta Stripe. Si está vacía, `/settings/billing` no ofrece pago (SADM sigue asignando planes). |
+| `STRIPE_WEBHOOK_SECRET` | Para webhooks | Signing secret del endpoint `POST /api/webhooks/stripe`. Sin él el webhook responde error de auth. |
+| `STRIPE_PUBLISHABLE_KEY` | No | Reservada para UI Stripe.js futura; hoy el checkout es redirect server-side. |
+
+Mapear cada plan cobrable en `plans.stripe_price_id` (Price ID de Stripe). Sin ese mapeo el webhook no puede asignar plan.
 | `WHATSAPP_VERIFY_TOKEN` | En prod | Token arbitrario que Meta devuelve en la verificación GET del webhook. |
 
 ### Límites de procesado documental

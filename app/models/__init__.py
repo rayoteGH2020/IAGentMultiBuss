@@ -51,6 +51,7 @@ from app.models.professional_working_hour import ProfessionalWorkingHour
 from app.models.schedule_exception import ScheduleException
 from app.models.scheduling_service import SchedulingService
 from app.models.tenant import Tenant
+from app.models.tenant_plan_change import TenantPlanChange
 from app.models.ticket import Ticket, TicketStatus
 from app.models.usage_meter import UsageMeter
 from app.models.user import User
@@ -101,6 +102,7 @@ __all__ = [
     "ScheduleException",
     "SchedulingService",
     "Tenant",
+    "TenantPlanChange",
     "Ticket",
     "TicketStatus",
     "TimestampMixin",

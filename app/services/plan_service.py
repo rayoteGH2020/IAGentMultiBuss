@@ -25,12 +25,16 @@ from app.core.entitlement_codes import (
 from app.core.errors import NotFoundError, ValidationError
 from app.models.plan import Plan, PlanEntitlement
 from app.models.tenant import Tenant
+from app.models.tenant_plan_change import TenantPlanChange
 from app.schemas.entitlements import EntitlementsOverride, PlanRead
 from app.services import audit_service
 
 ACTION_PLAN_ASSIGNED = "sadm.plan_assigned"
 ACTION_ENTITLEMENTS_OVERRIDE = "sadm.entitlements_override"
 RESOURCE_TENANT = "tenant"
+
+SOURCE_SADM = "sadm"
+SOURCE_STRIPE = "stripe"
 
 
 async def list_plans(
@@ -138,6 +142,16 @@ async def _require_tenant(db: AsyncSession, tenant_id: UUID) -> Tenant:
     return tenant
 
 
+async def get_plan_by_stripe_price_id(db: AsyncSession, stripe_price_id: str) -> Plan | None:
+    cleaned = stripe_price_id.strip()
+    if not cleaned:
+        return None
+    result = await db.execute(
+        select(Plan).where(Plan.stripe_price_id == cleaned).options(selectinload(Plan.entitlements))
+    )
+    return result.scalar_one_or_none()
+
+
 async def assign_tenant_plan(
     db: AsyncSession,
     *,
@@ -145,31 +159,51 @@ async def assign_tenant_plan(
     plan_code: str,
     actor_user_id: UUID | None,
     reason: str | None = None,
+    source: str = SOURCE_SADM,
+    metadata: dict[str, Any] | None = None,
 ) -> Tenant:
-    """Asigna ``plan_code`` al tenant (SADM). No concede features fuera del catalogo."""
+    """Asigna ``plan_code`` al tenant. Punto unico para SADM y Stripe (Paso09)."""
     code = normalize_plan_code(plan_code)
     if code not in PLAN_CODES:
         raise ValidationError(f"Plan code '{plan_code}' is not valid")
     plan = await require_plan_by_code(db, code)
     tenant = await _require_tenant(db, tenant_id)
     from_code = tenant.plan_code or tenant.plan
-    tenant.plan_code = plan.code
-    tenant.plan = plan.code
-    await db.flush()
+    plan_changed = from_code != plan.code
+    if plan_changed:
+        tenant.plan_code = plan.code
+        tenant.plan = plan.code
+        await db.flush()
     await set_tenant_context(db, str(tenant.id))
-    await audit_service.log_action(
-        db,
-        tenant_id=tenant.id,
-        user_id=actor_user_id,
-        action=ACTION_PLAN_ASSIGNED,
-        resource_type=RESOURCE_TENANT,
-        resource_id=tenant.id,
-        metadata={
-            "from_plan_code": from_code,
-            "to_plan_code": plan.code,
-            "reason": reason,
-        },
-    )
+    if plan_changed:
+        db.add(
+            TenantPlanChange(
+                tenant_id=tenant.id,
+                from_plan_code=from_code,
+                to_plan_code=plan.code,
+                changed_by_user_id=actor_user_id,
+                reason=reason,
+                metadata_={
+                    "source": source,
+                    **(metadata or {}),
+                },
+            )
+        )
+        await audit_service.log_action(
+            db,
+            tenant_id=tenant.id,
+            user_id=actor_user_id,
+            action=ACTION_PLAN_ASSIGNED,
+            resource_type=RESOURCE_TENANT,
+            resource_id=tenant.id,
+            metadata={
+                "from_plan_code": from_code,
+                "to_plan_code": plan.code,
+                "reason": reason,
+                "source": source,
+                **(metadata or {}),
+            },
+        )
     return tenant
 
 

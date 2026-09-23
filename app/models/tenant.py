@@ -38,5 +38,24 @@ class Tenant(Base, IdMixin, TimestampMixin):
         nullable=False,
     )
     monthly_budget_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Billing Stripe (Paso09). IDs del proveedor; el plan interno sigue en plan_code.
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(128),
+        index=True,
+        nullable=True,
+    )
+    # none | active | past_due | canceled
+    billing_status: Mapped[str] = mapped_column(
+        String(32),
+        default="none",
+        server_default=text("'none'"),
+        nullable=False,
+    )
 
     memberships: Mapped[list["Membership"]] = relationship("Membership", back_populates="tenant")

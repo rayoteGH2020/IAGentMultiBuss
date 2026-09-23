@@ -276,6 +276,12 @@ class Settings(BaseSettings):
     # para AES-256.
     encryption_key: SecretStr = SecretStr("")
 
+    # Stripe Billing (Paso09)
+    # Vacío = checkout/portal deshabilitados; webhooks rechazan si falta el secret.
+    stripe_secret_key: SecretStr = SecretStr("")
+    stripe_webhook_secret: SecretStr = SecretStr("")
+    stripe_publishable_key: str = ""
+
     # WhatsApp Business API (Paso 21 E)
     # whatsapp_verify_token: token arbitrario que Meta devuelve en la verificación GET.
     # whatsapp_app_secret: secreto de la app Meta para validar firma HMAC-SHA256.
