@@ -1,7 +1,7 @@
 # Backlog_Priorizado
 
 Fecha actualizacion: 2026-09-23
-Estado: alineado con codigo en `RamaCursor01` (HEAD de planes `p64` + Stripe `p65` en working tree).
+Estado: alineado con codigo en `RamaCursor01` (planes `p64` + Stripe `p65` + drop analytics `p66`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
 
@@ -44,7 +44,7 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 
 | # | Item | Estado |
 | --- | --- | --- |
-| 1 | Analytics SQL read-only | **Pendiente** (Paso08 / F2) |
+| 1 | Analytics SQL read-only | **No implementar** (D011 / Paso08 archivado; no se vende BI) |
 | 2 | Stripe billing | **Hecho** en codigo (Paso09 / F1); operativa Stripe Dashboard: **Ops** |
 | 3 | Resenas/marketing | **Pendiente** (no priorizado) |
 | 4 | MCP/tooling externo | **Pendiente** (no priorizado) |
@@ -64,4 +64,5 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07.
 2. Ops Stripe: Price IDs + webhook + claves Infisical.
 3. Soft-launch Paso10 cuando staging este vivo.
-4. Producto nuevo: Paso08 Analytics si se vende el plan `total` con BI.
+
+No roadmap: Paso08 Analytics / modulo 3 (D011).

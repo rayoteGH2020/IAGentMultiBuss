@@ -166,8 +166,8 @@ Incluye:
 - knowledge upload,
 - embeddings,
 - canales externos,
-- voz,
-- analytics.
+- voz.
+- ~~analytics~~ — **no** (D011: modulo 3 Analytics/BI no se implementa).
 
 ## 9. CSP y frontend
 

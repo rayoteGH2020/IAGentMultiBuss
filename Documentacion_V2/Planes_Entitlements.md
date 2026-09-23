@@ -32,8 +32,9 @@ Implementado:
 Pendiente / ops:
 
 - Rellenar `plans.stripe_price_id` y secretos Stripe en Infisical.
-- Feature `analytics` en plan `total` sin producto Paso08.
 - Revisar soft cap `llm_budget` en `total` para piloto (hoy puede ser `null` en matriz).
+
+**Modulo 3 / Analytics (D011):** NO se implementara. Feature `analytics` retirada del catalogo; no vender BI/SQL sobre BD externa.
 
 ## 3. Planes iniciales
 
@@ -42,7 +43,7 @@ Pendiente / ops:
 | `basic` 	| Basico 	| Documentos ligeros + chat documental basico.   |
 | `medium` 	| Medio 	| Basico + knowledge/RAG + chat sobre knowledge |
 | `high` 	| Alto 		| Medio + citas + canales externos. |
-| `total` 	| Total 	| Todo + analytics + calendario Google + limites altos. |
+| `total` 	| Total 	| Todo el producto activo + calendario Google + limites altos (sin Analytics/BI; D011). |
 
 `free` legacy se migra a `basic`.
 
@@ -59,7 +60,7 @@ Pendiente / ops:
 | `appointments` 		| no 	| no 	 | yes 	 		| yes |
 | `channel_whatsapp`	| no	| no 	 | yes 			| yes |
 | `channel_telegram` 	| no	| no	 | yes 			| yes |
-| `analytics` 			| no 	| no 	 | no 	 		| yes |
+| `analytics` 			| no 	| no 	 | no 	 		| **no** (D011 — no implementar) |
 
 ## 5. Limites iniciales
 
@@ -100,7 +101,8 @@ Recomendaciones:
 
 - En piloto, no dejar `llm_budget_eur_month = null` para `total`: usar un soft cap inicial de 200 EUR y subirlo por override SADM si el cliente lo justifica.
 - Mantener margen bruto objetivo minimo del 70% en `basic`/`medium` y revisar `high`/`total` cliente a cliente.
-- Si un cliente usa muchos canales externos, analytics o documentos largos, pasar a precio custom antes de aumentar limites.
+- Si un cliente usa muchos canales externos o documentos largos, pasar a precio custom antes de aumentar limites.
+  (Analytics/BI sobre BD externa: **no ofrece** — D011.)
 - Registrar precios sin IVA en la documentacion comercial y aplicar IVA segun fiscalidad.
 
 Referencias de coste:

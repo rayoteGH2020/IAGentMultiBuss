@@ -61,7 +61,7 @@ tests/integration/test_plan_catalog.py
 - [x] Seed crea `basic`, `medium`, `high`, `total`.
 - [x] `free` legacy migra a `basic`.
 - [x] `basic` no tiene `knowledge`.
-- [x] `total` tiene `analytics`.
+- [x] `total` **no** tiene `analytics` (D011 — modulo 3 no se implementa).
 - [x] Override puede reducir y ampliar limites conocidos.
 - [x] Override con codigo desconocido falla.
 - [x] Plan inexistente fail-closed.

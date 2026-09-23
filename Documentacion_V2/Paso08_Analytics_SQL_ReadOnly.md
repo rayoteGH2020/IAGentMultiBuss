@@ -1,16 +1,31 @@
 # Paso08 - Analytics SQL read-only
 
-Estado: **pendiente** (producto no implementado; Fase F2). No priorizar hasta gates/cuotas (ya hechos) y venta del plan `total` con BI.
+Estado: **NO IMPLEMENTAR** (D011, 2026-09-23).
 
-Objetivo: implementar el analista conversacional solo cuando la plataforma ya tenga gates, cuotas y guardrails.
+Decision de producto: el modulo 3 (analista SQL / BI sobre BD externa del cliente)
+**no se implementara** ahora ni como roadmap activo. Motivo: no se va a vender esa
+capacidad; mantener el paso como "pendiente" o la feature `analytics` en plan
+`total` prometia un producto inexistente.
 
-## Dependencias
+Consecuencias en codigo (ya aplicadas):
 
-- Paso01 completado.
-- Paso02, Paso03 y Paso04 completados.
-- Paso07 revisado para patrones de chat/tools.
+- Feature `analytics` retirada de `FEATURE_CODES` y del catalogo / plan `total`
+  (`p66_drop_analytics_entitlement_01`).
+- Sin rutas `/analytics`, sin modelos `data_sources` / `analytics_queries`.
+- Restos tipados (`TaskType="sql"`, columna `usage_meter.analytics_queries_count`)
+  quedan comentados como reservados muertos; no reactivar sin Decision_Log nueva.
 
-## Alcance
+Este documento se conserva solo como **historico de diseno**. No abrir tareas ni
+PRs contra este paso.
+
+---
+
+## Diseno original (archivado; no ejecutar)
+
+Objetivo (historico): implementar el analista conversacional solo cuando la
+plataforma ya tenga gates, cuotas y guardrails.
+
+### Alcance previsto (no aplicar)
 
 Modulo 3:
 
@@ -22,7 +37,7 @@ Modulo 3:
 - ejecucion read-only,
 - graficos server-rendered o via Chart.js controlado.
 
-## Fuera de alcance
+### Fuera de alcance (sigue vigente como guardrail si algun dia se reabriera)
 
 - Ejecutar SQL contra la BD principal de la app.
 - Conexiones con permisos de escritura.
@@ -31,70 +46,9 @@ Modulo 3:
 - Acceso cross-tenant.
 - Copiar datasets de cliente a logs o Langfuse.
 
-## Seguridad SQL
+### Checklist (anulada)
 
-Obligatorio:
+- [x] ~~Feature `analytics` requerida~~ → **retirada** (D011).
+- [x] Documentado como no implementar en Decision_Log, backlog y planes.
 
-- Usuario DB externo read-only.
-- Parser SQL.
-- Solo `SELECT`.
-- Denegar `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `COPY`, `CALL`.
-- Denegar funciones peligrosas.
-- Timeout 10s.
-- Max 1000 filas.
-- Parametrizacion donde aplique.
-- Schema cacheado y acotado.
-- Audit log de query hash y metadata, no contenido sensible.
-
-## Modelo esperado
-
-```text
-data_sources
-- id
-- tenant_id
-- name
-- kind
-- connection_config_enc
-- schema_cache
-- status
-- created_at
-- updated_at
-
-analytics_queries
-- id
-- tenant_id
-- user_id
-- question_hash
-- sql_hash
-- result_shape
-- chart_spec
-- llm_call_id
-- created_at
-```
-
-## Tests minimos
-
-- [ ] SQL `SELECT` simple permitido.
-- [ ] SQL con `DROP` denegado.
-- [ ] Multi-statement denegado.
-- [ ] Timeout aplicado.
-- [ ] Max filas aplicado.
-- [ ] Credenciales cifradas.
-- [ ] RLS en tablas propias.
-- [ ] Langfuse metadata-only.
-- [ ] Feature `analytics` requerida.
-
-## Comandos
-
-```powershell
-infisical run -- uv run pytest tests/unit/test_analytics_sql_guardrails.py tests/integration/test_analytics_routes.py -q
-infisical run -- uv run ruff check app tests
-infisical run -- uv run mypy app
-```
-
-## Criterios de aceptacion
-
-- [ ] No existe ruta para analytics sin plan `total` u override.
-- [ ] No se puede ejecutar escritura aunque el LLM lo proponga.
-- [ ] No se filtra contenido a Langfuse.
-- [ ] El usuario recibe tablas/graficos acotados y comprensibles.
+Ver: `Decision_Log.md` D011, `Planes_Entitlements.md`, `Backlog_Priorizado.md`.

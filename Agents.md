@@ -217,7 +217,7 @@ Las queries no necesitan `WHERE tenant_id = ?` explícito (RLS lo aplica), pero 
 
 ### Cifrado de campos sensibles
 
-- Conexiones a BD del cliente (módulo 3): cifradas con `pgcrypto`.
+- Conexiones a BD del cliente (módulo 3 Analytics / BI): **no aplica** — D011: ese módulo no se implementa. `pgcrypto` sigue usándose para tokens OAuth y demás secretos de integración.
 - Tokens OAuth de integraciones: cifrados.
 
 ### Audit log

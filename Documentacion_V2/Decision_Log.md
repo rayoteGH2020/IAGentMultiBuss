@@ -143,14 +143,32 @@ Consecuencia:
 
 ## D010 - Analytics SQL queda para modulo separado
 
-Decision: el analista SQL se implementa despues de planes, cuotas y seguridad.
+Decision (historica, 2026-08-04): el analista SQL se implementa despues de planes, cuotas y seguridad.
 
 Motivo:
 
 - Mayor riesgo: generacion SQL, fuentes externas, credenciales y coste.
 
-Consecuencia:
+Consecuencia (vigente solo como guardrail si se reabriera):
 
 - Solo conexiones read-only.
 - Parser SQL y allowlist de `SELECT`.
 - Nunca ejecutar SQL generado por LLM contra la BD principal con permisos de escritura.
+
+**Superseded by D011** (2026-09-23): el modulo no se implementara.
+
+## D011 - Modulo 3 Analytics SQL / BI no se implementa
+
+Decision (cerrada 2026-09-23): **no implementar** el modulo 3 (Analytics SQL read-only / BI sobre BD externa del cliente). Fuera de alcance de producto; no es backlog activo.
+
+Motivo:
+
+- Decision comercial explicita: no se vendra BI/SQL agent sobre fuentes del cliente.
+- Mantener `analytics` en plan `total` o Paso08 como "pendiente" prometia capacidad inexistente.
+
+Consecuencia:
+
+- Feature `analytics` fuera de `FEATURE_CODES` y del catalogo (migracion `p66`).
+- `Paso08_Analytics_SQL_ReadOnly.md` queda como historico / NO IMPLEMENTAR.
+- No crear tablas `data_sources` / `analytics_queries` ni rutas `/analytics`.
+- Restos (`TaskType="sql"`, `usage_meter.analytics_queries_count`) documentados como muertos; no reactivar sin nueva decision en este log.

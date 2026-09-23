@@ -1,7 +1,7 @@
 # Documentacion_V2
 
 Fecha: 2026-08-04 · Actualizado: 2026-09-23
-Estado: fuente de planificacion V2. Codigo de Pasos 02–06, 09 (Stripe) y gran parte de 00/01/07 cerrado; queda ops (Infisical, QA manual, soft-launch) y Paso08 Analytics.
+Estado: fuente de planificacion V2. Codigo de Pasos 02–06, 09 (Stripe) y gran parte de 00/01/07 cerrado; queda ops (Infisical, QA manual, soft-launch). Paso08 Analytics: **no implementar** (D011).
 
 ## Decision principal
 
@@ -35,7 +35,7 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Paso05_SADM_Consolidacion.md` | Consolidacion de la consola SADM. |
 | `Paso06_Documentos_Producto.md` | Mejora del modulo documental y validaciones de calidad. |
 | `Paso07_Chat_IA_Seguridad.md` | Endurecimiento de chats, tools, RAG y canales externos. |
-| `Paso08_Analytics_SQL_ReadOnly.md` | Analitica conversacional con SQL solo lectura. |
+| `Paso08_Analytics_SQL_ReadOnly.md` | Historico: Analytics SQL — **NO IMPLEMENTAR** (D011). |
 | `Paso09_Billing_Stripe.md` | Billing real con Stripe cuando planes ya existan. |
 | `Paso10_QA_Release_Produccion.md` | QA manual, release y operacion de produccion. |
 | `PasosParaProduccion.md` | Checklist consolidada de go-live (variables, Clerk, infra, QA, rollback). |
@@ -49,7 +49,7 @@ Evidencias 2026-08-04 (base) + cierre codigo 2026-09-23:
 - RLS + middleware Clerk/CSRF/headers + SADM con `/sadm/plans`.
 - Planes/gates/cuotas, documentos, chat/canales y Stripe en codigo.
 - Pendiente ops: Infisical staging/prod, rotacion secretos, QA Paso07, soft-launch Paso10, Price IDs Stripe.
-- Producto pendiente: Paso08 Analytics SQL read-only.
+- Producto descartado: Paso08 Analytics SQL (D011 — no se vende BI sobre BD externa).
 - Documentacion antigua (`Documentacion/`) = historico; guia operativa = esta carpeta.
 
 ## Regla de oro

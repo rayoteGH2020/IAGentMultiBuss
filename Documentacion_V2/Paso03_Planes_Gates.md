@@ -23,7 +23,7 @@ Features iniciales:
 - `appointments`
 - `channel_whatsapp`
 - `channel_telegram`
-- `analytics`
+- ~~`analytics`~~ — **retirada** (D011; no implementar modulo 3 / BI).
 
 ## Cambios esperados
 

@@ -88,7 +88,7 @@ Capas (regla absoluta: `routes/` no importa `models/` directamente):
 
 **API:** health, metrics, scheduling (`/api/v1/scheduling`), webhooks Clerk, WhatsApp, Telegram.
 
-No hay rutas de analytics SQL ni webhooks Stripe todavia.
+No hay rutas de analytics SQL (D011 — no se implementara). Webhooks Stripe: montados (`/api/webhooks/stripe`).
 
 ## 5. Modulos de producto
 
@@ -103,7 +103,7 @@ No hay rutas de analytics SQL ni webhooks Stripe todavia.
 | Citas internas | Implementado | Scheduling multi-profesional, API find-slots, gates `appointments`. |
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
 | Planes/entitlements | Implementado | Catalogo BD, resolve central, gates, cuotas Redis, budget LLM, kill-switch (Pasos 02–04). |
-| Analytics SQL | Pendiente | Feature `analytics` en catalogo `total` sin producto. Paso08. |
+| Analytics SQL | **No implementar** (D011) | Feature retirada del catalogo. Paso08 archivado. Sin rutas ni tablas. |
 | Billing Stripe | Implementado | Checkout + portal + webhook firmado; `assign_tenant_plan`; `tenant_plan_changes`; `billing_status`. Requiere Price IDs e Infisical. |
 
 ## 6. Datos
@@ -131,7 +131,7 @@ No hay rutas de analytics SQL ni webhooks Stripe todavia.
 
 ### 6.3 Deuda de esquema documentada
 
-- Analytics futuro: `data_sources`, `analytics_queries` (Paso08).
+- Analytics (D011): **no** crear `data_sources` / `analytics_queries`. Columna historica `usage_meter.analytics_queries_count` sin uso de producto.
 - Stripe Price IDs: rellenar `plans.stripe_price_id` por entorno (Paso09 codigo listo).
 
 ## 7. Seguridad base
@@ -209,9 +209,9 @@ Prohibido: crear usuarios/orgs/contrasenas desde la app.
 
 Punto unico: `app/llm/client.py`.
 
-Tareas (`TaskType`): `extraction`, `classify`, `chat`, `embedding`, `transcription`, `translate`, `sql` (reservado analytics).
+Tareas (`TaskType`): `extraction`, `classify`, `chat`, `embedding`, `transcription`, `translate`. `sql` tipado pero **muerto** (D011 — sin modulo Analytics).
 
-Defaults (`DEFAULT_MODELS`): extraction/chat Gemini Flash; classify Haiku; sql Sonnet; embedding `voyage-3-lite`; transcription Gemini audio.
+Defaults (`DEFAULT_MODELS`): extraction/chat Gemini Flash; classify Haiku; embedding `voyage-3-lite`; transcription Gemini audio. Entrada `sql` tipada pero sin producto (D011).
 
 Reglas:
 
@@ -219,7 +219,7 @@ Reglas:
 - Structured output (Instructor) cuando aplique.
 - Tools tipadas con Pydantic (`app/llm/tools/`).
 - Sin SQL libre para chat documental.
-- Analytics SQL solo contra fuentes externas read-only (cuando exista Paso08).
+- Sin Analytics SQL sobre BD externa (D011 — no se implementa).
 - Observabilidad: `llm_calls` + Langfuse metadata-only (`app/llm/observability.py`).
 - Coste: `app/llm/pricing.py` + enforcement de budget de plan.
 
@@ -253,7 +253,7 @@ No SPA.
 ## 14. Observabilidad y costes
 
 - `llm_calls`: cada llamada LLM (tokens, coste, latencia, status).
-- `usage_meter`: contadores agregados (incl. feature analytics reservada).
+- `usage_meter`: contadores agregados. `analytics_queries_count` es columna historica sin producto (D011).
 - `processing_charges`: cargos/estimaciones de procesamiento documental.
 - `audit_log`: acciones sensibles.
 - Langfuse: trazas metadata-only; nunca documentos, mensajes ni respuestas crudas.
@@ -287,12 +287,13 @@ Codigo de Pasos 02–07 y 09 (Stripe) esta en el repo. Lo que queda:
 
 1. Ops: residual Paso00/01 (Infisical staging/prod, rotacion credenciales), QA manual Paso07, soft-launch Paso10.
 2. Operativa Stripe: Price IDs + claves Infisical + webhook Dashboard.
-3. Analytics SQL read-only (Paso08) — solo si se vende BI en plan `total`.
-4. Deuda documental menor: mantener este fichero y el backlog alineados tras cada cierre.
+3. Deuda documental menor: mantener este fichero y el backlog alineados tras cada cierre.
+
+**No roadmap:** Analytics SQL / modulo 3 (D011).
 
 ## 18. Decisiones cerradas
 
-Ver `Decision_Log.md` (D001–D010): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, analytics SQL externo read-only, etc.
+Ver `Decision_Log.md` (D001–D011): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
 
 ## 19. Docs V2 a no usar como snapshot de codigo sin revisar
 

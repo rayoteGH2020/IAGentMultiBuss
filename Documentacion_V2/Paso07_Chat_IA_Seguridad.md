@@ -16,14 +16,14 @@ Objetivo: endurecer todas las superficies conversacionales antes de ampliar alca
 - WhatsApp.
 - Telegram.
 - Voz a calendario.
-- Futuro analytics.
+- Futuro analytics. → **Anulado** (D011 — no se implementa).
 
 ## Reglas comunes
 
 - Mensajes con limite de longitud.
 - Rate limit por usuario/tenant/canal.
 - Tools tipadas.
-- Sin SQL libre salvo analytics futuro.
+- Sin SQL libre (incluido analytics externo: D011 no implementado).
 - Citas y grounding.
 - Audit log de mensajes y tool calls.
 - Langfuse metadata-only.

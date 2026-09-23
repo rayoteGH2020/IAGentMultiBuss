@@ -13,9 +13,9 @@ SaaS modular orientado a **pymes y negocios familiares** (gestorías, peluquerí
 ### Módulos
 
 1. **Extracción y conciliación administrativa** — usuario sube PDFs, emails u otros documentos de texto así como fotos o tickets; el sistema extrae datos estructurados (fecha, proveedor, CIF, importes) y los exporta a CSV o ERP.
-   - **1.5 · Consulta documental** — chat conversacional sobre los datos ya extraídos por el módulo 1 (facturas y, en el futuro, otros documentos del propio producto). Permite preguntar en lenguaje natural por proveedor, CIF/NIF, rango de fechas, importes o agregaciones, sin abandonar la app y sin requerir conocimientos SQL. Usa **tool-calling tipado** (no SQL libre): distinto del RAG sobre conocimiento (módulo 2) y del SQL agent sobre BDs externas del cliente (módulo 3).
+   - **1.5 · Consulta documental** — chat conversacional sobre los datos ya extraídos por el módulo 1 (facturas y, en el futuro, otros documentos del propio producto). Permite preguntar en lenguaje natural por proveedor, CIF/NIF, rango de fechas, importes o agregaciones, sin abandonar la app y sin requerir conocimientos SQL. Usa **tool-calling tipado** (no SQL libre): distinto del RAG sobre conocimiento (módulo 2). *(El SQL agent sobre BDs externas — antiguo módulo 3 — **no se implementa**; ver D011 en `Documentacion_V2/Decision_Log.md`.)*
 2. **Agente RAG conversacional** — chatbot por WhatsApp, Telegram o web, alimentado con la base de conocimiento de la pyme.
-3. **Analista de datos conversacional** — chat donde el dueño pregunta en lenguaje natural sobre su propio negocio y recibe respuesta con gráfico.
+3. ~~**Analista de datos conversacional**~~ — **NO IMPLEMENTAR (D011, 2026-09-23).** Motivo: decisión de producto — no se venderá BI/SQL sobre BD externa del cliente. El diseño histórico queda en §6 «Módulo 3» como archivo; no abrir implementación.
 
 ### Principios de producto
 
@@ -213,9 +213,9 @@ Todas las tablas con datos de cliente tienen `tenant_id` (UUID, FK a `tenants`) 
 - `conversations` — conversaciones por canal (web, WhatsApp, Telegram).
 - `messages` — mensajes individuales.
 
-#### Módulo 3 — Analytics
-- `data_sources` — conexiones a BDs del cliente (cifradas con pgcrypto).
-- `analytics_queries` — historial de preguntas con SQL generado.
+#### Módulo 3 — Analytics — **NO IMPLEMENTAR (D011)**
+
+- ~~`data_sources`~~ / ~~`analytics_queries`~~ — diseño histórico; **no crear**. Motivo: no se vende BI/SQL sobre BD externa del cliente.
 
 #### Transversal
 - `llm_calls` — observabilidad de cada llamada a LLM (modelo, tokens, coste, latencia).
@@ -399,28 +399,9 @@ channel_integrations (
 -- UNIQUE parcial en phone_number_id WHERE active + whatsapp + NOT NULL
 -- (evita enrutar webhooks al tenant equivocado; lookup fail-closed si ambigüedad legada)
 
--- Módulo 3: Analytics
-data_sources (
-  id uuid pk,
-  tenant_id uuid fk,
-  type text,                        -- postgres | mysql | csv_upload | shopify
-  name text,
-  connection_encrypted bytea,
-  schema_cache jsonb null,
-  last_synced_at timestamptz null
-)
-
-analytics_queries (
-  id uuid pk,
-  tenant_id uuid fk,
-  user_id uuid fk,
-  question text,
-  sql_generated text,
-  result_summary text,
-  result_data jsonb null,
-  executed_at timestamptz,
-  llm_call_id uuid fk
-)
+-- Módulo 3: Analytics — NO IMPLEMENTAR (D011, 2026-09-23).
+-- Diseño histórico: data_sources / analytics_queries. No crear. Motivo: no se
+-- vende BI/SQL sobre BD externa del cliente.
 
 -- Transversal
 llm_calls (
@@ -536,7 +517,7 @@ class Factura(BaseModel):
 **Diferencia con módulos vecinos:**
 
 - No es **RAG** (módulo 2): no hay chunking ni embeddings sobre texto libre; los datos consultados son tablas estructuradas.
-- No es **SQL agent** (módulo 3): no se genera SQL libre; el LLM solo invoca un conjunto cerrado de **tools tipadas**. Las BD consultadas son las **internas del producto**, no `data_sources` externos del cliente.
+- No es **SQL agent** (antiguo módulo 3, **D011 no implementado**): no se genera SQL libre; el LLM solo invoca un conjunto cerrado de **tools tipadas** sobre tablas internas del producto.
 
 **Flujo de usuario:** `/chat` → composer + sidebar con `chat_threads` del usuario → al enviar mensaje, se ejecuta un loop de tool-calling sobre la capa LLM → cada paso (llamada al modelo y ejecución de tool) se persiste como `chat_message`; la respuesta del modelo se stream con **SSE** (`hx-ext="sse"`).
 
@@ -588,16 +569,13 @@ class Factura(BaseModel):
 
 **Decisiones técnicas:** embeddings por defecto `voyage-3-lite`; modelo de respuesta `claude-sonnet-4-6` (calidad) o `gemini-2.5-flash` (coste / planes inferiores).
 
-### Módulo 3 — Analista conversacional
+### Módulo 3 — Analista conversacional — **NO IMPLEMENTAR (D011, 2026-09-23)**
 
-**Flujo:** alta de `data_source` (BD solo lectura o CSV) → introspección de esquema cacheada → chat en `/analytics` con tool use conceptual: `query_sql`, `get_schema`, generación de salida tabular y **gráfico vía plantilla** (p.ej. Chart.js servido por Jinja).
+Decisión de producto: este módulo **no se implementará** (ni ahora ni como roadmap activo). Motivo: no se venderá BI / SQL agent sobre fuentes externas del cliente. El texto siguiente es **diseño histórico archivado**; no abrir rutas, tablas ni PRs.
 
-**Guardrails obligatorios:**
+~~**Flujo:** alta de `data_source` (BD solo lectura o CSV) → introspección de esquema cacheada → chat en `/analytics` …~~
 
-- Conexión a datos del cliente **siempre read-only**.
-- SQL generado solo **`SELECT`**; validación con parser (p.ej. `sqlparse`) — sin DML/DDL, sin subconsultas que escriban, sin funciones peligrosas.
-- **Timeout 10s** por consulta y **máximo 1000 filas** devueltas.
-- La regla de aplicación «no ejecutar SQL de escritura del LLM» se mantiene; aquí el motor solo consulta.
+~~**Guardrails** (solo si algún día se reabriera con Decision_Log nueva): conexión read-only, solo `SELECT`, timeout, max filas.~~
 
 ---
 
@@ -721,7 +699,7 @@ Con eso se sigue pudiendo evaluar: coste y latencia por modelo/tenant, tasa de e
 - **Salida:** validación con Pydantic / Instructor para respuestas estructuradas.
 - **Prompt injection:** heurísticas en entrada + system prompts defensivos.
 - **PII:** si el flujo lo requiere, **anonimización o bloqueo** antes de enviar texto del cliente a APIs externas (p.ej. **Microsoft Presidio** u otra capa equivalente acordada).
-- **SQL:** el texto SQL generado por el LLM para el analista (módulo 3) solo se ejecuta contra conexiones **read-only** y con las restricciones de la §6; nunca contra la BD principal de la aplicación con permisos de escritura.
+- **SQL:** no hay producto Analytics (D011). Si en el futuro se reabriera, el SQL del LLM solo contra conexiones **read-only** externas; nunca contra la BD principal con permisos de escritura.
 
 ### Decisión: cliente propio, no LangChain
 
@@ -773,8 +751,8 @@ def require_role(*roles: str):
 
 ### Cifrado de campos sensibles
 
-- Conexiones a BD del cliente (módulo 3) cifradas con `pgcrypto`.
-- Tokens de integraciones (WhatsApp Business) cifrados.
+- ~~Conexiones a BD del cliente (módulo 3)~~ — **no aplica** (D011: Analytics no se implementa).
+- Tokens de integraciones (WhatsApp Business, Google Calendar, etc.) cifrados.
 
 ### Headers de seguridad
 
