@@ -36,6 +36,9 @@ class UsageMeter(Base):
         default=0,
         server_default=text("0"),
     )
+    # D011: contador reservado del modulo 3 Analytics SQL / BI. No se implementara
+    # el producto; la columna se conserva para no romper migraciones historicas
+    # (p20) ni lecturas SADM. No incrementar desde codigo de aplicacion.
     analytics_queries_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

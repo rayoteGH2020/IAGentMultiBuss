@@ -38,6 +38,10 @@ FEATURE_CALENDAR_VOICE: Final = "calendar_voice"
 FEATURE_APPOINTMENTS: Final = "appointments"
 FEATURE_CHANNEL_WHATSAPP: Final = "channel_whatsapp"
 FEATURE_CHANNEL_TELEGRAM: Final = "channel_telegram"
+# D011 (2026-09-23): modulo 3 Analytics SQL / BI sobre BD externa del cliente
+# NO se implementara (decision de producto: fuera de alcance, no roadmap).
+# Constante conservada solo para tests de kill-switch y docs historicas; no entra
+# en FEATURE_CODES ni en ningun plan.
 FEATURE_ANALYTICS: Final = "analytics"
 
 FEATURE_CODES: Final[frozenset[str]] = frozenset(
@@ -51,7 +55,7 @@ FEATURE_CODES: Final[frozenset[str]] = frozenset(
         FEATURE_APPOINTMENTS,
         FEATURE_CHANNEL_WHATSAPP,
         FEATURE_CHANNEL_TELEGRAM,
-        FEATURE_ANALYTICS,
+        # FEATURE_ANALYTICS omitido a proposito (D011 — no implementar modulo 3).
     }
 )
 
@@ -96,7 +100,7 @@ FEATURE_UI_LABELS: Final[dict[str, str]] = {
     FEATURE_APPOINTMENTS: "Citas",
     FEATURE_CHANNEL_WHATSAPP: "WhatsApp",
     FEATURE_CHANNEL_TELEGRAM: "Telegram",
-    FEATURE_ANALYTICS: "Analytics",
+    # FEATURE_ANALYTICS: "Analytics",  # D011 — no implementar; sin UI ni gates.
 }
 
 
@@ -126,6 +130,7 @@ PLAN_FEATURES: Final[dict[str, frozenset[str]]] = {
             FEATURE_CHANNEL_TELEGRAM,
         }
     ),
+    # total = todas las features activas (FEATURE_CODES ya excluye analytics / D011).
     PLAN_CODE_TOTAL: frozenset(FEATURE_CODES),
 }
 
@@ -200,7 +205,8 @@ PLAN_META: Final[dict[str, tuple[str, str, int]]] = {
     ),
     PLAN_CODE_TOTAL: (
         "Total",
-        "Todo el producto: analytics, calendario Google y limites altos.",
+        # D011: sin Analytics/BI; total = resto del producto + limites altos.
+        "Todo el producto activo: calendario Google, canales, citas y limites altos.",
         40,
     ),
 }

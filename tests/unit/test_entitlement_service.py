@@ -41,8 +41,9 @@ def test_basic_catalog_has_no_knowledge() -> None:
     assert FEATURE_ANALYTICS not in catalog_features_for(PLAN_CODE_BASIC)
 
 
-def test_total_catalog_has_analytics_and_null_budget() -> None:
-    assert FEATURE_ANALYTICS in catalog_features_for(PLAN_CODE_TOTAL)
+def test_total_catalog_excludes_analytics_d011() -> None:
+    """D011: modulo 3 Analytics no se implementa; total no incluye la feature."""
+    assert FEATURE_ANALYTICS not in catalog_features_for(PLAN_CODE_TOTAL)
     assert catalog_limits_for(PLAN_CODE_TOTAL)[LIMIT_LLM_BUDGET_EUR_MONTH] is None
 
 

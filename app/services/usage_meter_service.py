@@ -66,6 +66,7 @@ async def add_llm_cost_eur(
         period=billing_period,
         invoices_count=0,
         rag_messages_count=0,
+        # D011: columna reservada del modulo 3 Analytics; no incrementar.
         analytics_queries_count=0,
         llm_cost_eur=delta,
     )
@@ -94,6 +95,7 @@ async def increment_rag_messages_count(
         period=billing_period,
         invoices_count=0,
         rag_messages_count=delta,
+        # D011: columna reservada del modulo 3 Analytics; no incrementar.
         analytics_queries_count=0,
         llm_cost_eur=Decimal("0"),
     )

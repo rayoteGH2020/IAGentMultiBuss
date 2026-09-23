@@ -33,6 +33,10 @@ async def plans_catalog_ready(db_session: AsyncSession) -> None:
     )
     if result.scalar_one_or_none() is None:
         pytest.skip("Run migration p64_plans_entitlements_01 (`alembic upgrade head`).")
+    # D011: limpia feature analytics de seeds antiguos (modulo 3 no se implementa).
+    await db_session.execute(
+        text("DELETE FROM plan_entitlements WHERE kind = 'feature' AND code = 'analytics'")
+    )
     # Idempotente por si el entorno de test no aplico el seed SQL.
     await plan_service.seed_plan_catalog(db_session)
 
@@ -48,7 +52,7 @@ async def test_seed_creates_four_plans(
 
 
 @pytest.mark.asyncio
-async def test_basic_has_no_knowledge_total_has_analytics(
+async def test_basic_has_no_knowledge_total_excludes_analytics(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
@@ -59,7 +63,8 @@ async def test_basic_has_no_knowledge_total_has_analytics(
     total_ents = entitlement_service.entitlements_from_rows("total", list(total.entitlements))
 
     assert basic_ents.has(FEATURE_KNOWLEDGE) is False
-    assert total_ents.has(FEATURE_ANALYTICS) is True
+    # D011: analytics retirada del catalogo (modulo 3 no se implementa).
+    assert total_ents.has(FEATURE_ANALYTICS) is False
     assert total_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) is None
     assert basic_ents.limit(LIMIT_DOCUMENTS_PER_DAY) == Decimal("30")
 

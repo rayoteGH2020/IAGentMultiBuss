@@ -139,6 +139,8 @@ class Settings(BaseSettings):
     llm_model_extraction: str | None = None
     llm_model_chat: str | None = None
     llm_model_classify: str | None = None
+    # D011: override historico para task=sql; modulo Analytics no se implementa.
+    # Mantener el setting no activa producto; no anadir runners sql_*.
     llm_model_sql: str | None = None
     llm_model_translate: str | None = None
     # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
@@ -271,9 +273,10 @@ class Settings(BaseSettings):
     )
 
     # Crypto
-    # Clave para cifrar campos sensibles en BD (p. ej. conexiones de clientes
-    # en módulo 3 via pgcrypto). 32 bytes en base64 es el tamaño recomendado
-    # para AES-256.
+    # Clave Fernet/AES para cifrar campos sensibles en BD (tokens OAuth de
+    # integraciones, etc.). D011: el caso "conexiones BD cliente / modulo 3
+    # Analytics" NO se implementara; pgcrypto sigue siendo util para OAuth.
+    # 32 bytes en base64 es el tamaño recomendado para AES-256.
     encryption_key: SecretStr = SecretStr("")
 
     # Stripe Billing (Paso09)

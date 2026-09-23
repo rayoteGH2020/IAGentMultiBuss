@@ -56,11 +56,13 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _MISSING_ANTHROPIC_KEY_PLACEHOLDER = "missing-anthropic-key"
-_ANTHROPIC_TASKS = frozenset({"classify", "sql"})
+_ANTHROPIC_TASKS = frozenset({"classify", "sql"})  # "sql": D011 — sin producto Analytics
 
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
 # "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
+# "sql" permanece en el Literal por compatibilidad tipada; D011 — no hay producto
+# Analytics SQL / BI (modulo 3 no se implementara). No anadir runners que lo usen.
 TaskType = Literal[
     "extraction", "chat", "sql", "classify", "embedding", "transcription", "translate"
 ]
@@ -194,13 +196,15 @@ def _log_transient_retry(
 # por entorno via LLM_MODEL_* en config.py sin tocar código.
 # - extraction / chat: Gemini Flash (GOOGLE_API_KEY); mismo proveedor que extracción.
 # - classify: Haiku es el modelo más económico de Anthropic para tareas simples.
-# - sql: Sonnet (ANTHROPIC_API_KEY) cuando exista módulo analytics.
+# - sql: RESERVADO. D011 — modulo 3 Analytics SQL / BI NO se implementara;
+#   la entrada permanece para no romper TaskType/overrides historicos, pero no
+#   hay rutas ni runners que la usen. No reactivar sin decision de producto.
 DEFAULT_MODELS: dict[str, str] = {
     "extraction": "gemini-2.0-flash",
     "classify": "claude-haiku-4-5-20251001",
     "chat": "gemini-2.5-flash",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
-    "sql": "claude-sonnet-4-6",
+    "sql": "claude-sonnet-4-6",  # D011: muerto a efectos de producto (ver comentario arriba).
     # "embedding" usa Voyage vía embed(); model_override en settings.knowledge_embedding_model.
     "embedding": "voyage-3-lite",
     # "transcription" usa Gemini audio nativo; Anthropic no soporta audio directo.

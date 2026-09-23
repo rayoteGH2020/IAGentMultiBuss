@@ -29,8 +29,10 @@ class LLMCall(Base):
         index=True,
     )
 
-    # task: tipo de operación LLM ("extraction", "chat", "sql", "classify",
-    # "embedding"). String en lugar de Enum para no tener que migrar el tipo
+    # task: tipo de operación LLM ("extraction", "chat", "classify",
+    # "embedding", …). "sql" es valor historico reservado; D011 — modulo 3
+    # Analytics NO se implementara (no escribir nuevas filas con task=sql).
+    # String en lugar de Enum para no tener que migrar el tipo
     # cada vez que se añade un nuevo módulo o tarea al sistema.
     task: Mapped[str] = mapped_column(String(50), nullable=False)
     # model: identificador exacto del modelo usado, p. ej. "gemini-2.5-flash"
