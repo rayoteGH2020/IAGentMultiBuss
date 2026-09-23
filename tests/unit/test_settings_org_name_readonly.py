@@ -26,7 +26,7 @@ def test_settings_has_no_organization_name_endpoint() -> None:
     assert "update_organization_name" not in source
     assert "update_tenant_display_name" not in source
     assert "tenant_service" not in source
-    assert "RequireAdmin" not in source
+    # RequireAdmin is used by Stripe billing checkout/portal; org rename remains gone.
 
 
 def test_tenant_service_module_removed() -> None:

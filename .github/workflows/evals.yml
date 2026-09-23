@@ -58,12 +58,13 @@ jobs:
           POSTGRES_DB: saas
         ports:
           - 5432:5432
+        # Health: 10 reintentos × 5s ≈ 50s (arranque en frío en runners GitHub).
+        # IMPORTANTE: no poner `#` dentro del bloque `options: >-` — YAML lo
+        # trata como texto literal y Docker recibe `invalid reference format`.
         options: >-
           --health-cmd "pg_isready -U saas -d saas"
           --health-interval 5s
           --health-timeout 5s
-          # 10 reintentos × 5 s = hasta 50 s para que Postgres arranque.
-          # El arranque en frío del contenedor puede tardar 20-30 s en GitHub-hosted runners.
           --health-retries 10
       redis:
         image: redis:7
