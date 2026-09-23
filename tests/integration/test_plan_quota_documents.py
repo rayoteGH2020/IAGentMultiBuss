@@ -18,6 +18,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
+class _FakeStorage:
+    """Evita R2 real en CI (R2_ACCOUNT_ID vacio → endpoint invalido)."""
+
+    async def upload_bytes(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> str:
+        _ = data, content_type
+        return key
+
+
 @pytest.fixture
 async def plans_catalog_ready(db_session: AsyncSession) -> None:
     result = await db_session.execute(
@@ -66,6 +79,10 @@ async def test_upload_under_limit_enqueues(
     monkeypatch.setattr(
         "app.services.document_upload_service.asyncio.to_thread",
         AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.services.invoice_service.get_storage",
+        lambda: _FakeStorage(),
     )
 
     result = await document_upload_service.ingest_uploaded_document(
