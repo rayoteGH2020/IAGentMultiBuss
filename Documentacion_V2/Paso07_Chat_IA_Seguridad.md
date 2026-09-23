@@ -1,5 +1,7 @@
 # Paso07 - Chat, RAG, canales e IA segura
 
+Estado: **codigo cerrado / QA manual pendiente** (2026-09-23). Suite automatica verde; falta QA real Clerk/R2/Langfuse/Calendar/WA/TG.
+
 Objetivo: endurecer todas las superficies conversacionales antes de ampliar alcance.
 
 ## Dependencias
@@ -73,12 +75,28 @@ infisical run -- uv run python -m app.evals.runners.knowledge_retrieval
 
 ## QA manual
 
+Automatizado el 2026-09-22 (70 passed, ~39 s), sin LLM real:
+
+```powershell
+infisical run -- uv run pytest tests/unit/test_chat_tools.py tests/unit/test_chat_tool_runner.py tests/unit/test_chat_service.py tests/unit/test_knowledge_tools.py tests/unit/test_chat_tool_security.py tests/unit/test_chat_citations_security.py tests/unit/test_channel_cache_invalidation.py tests/unit/test_voice_event_service.py tests/unit/test_plan_gates.py tests/integration/test_chat_flow.py tests/integration/test_chat_rls_tools.py tests/integration/test_knowledge_chat.py tests/integration/test_chat_web.py tests/integration/test_plan_admin_routes.py tests/integration/test_plan_gates.py -q -m "not real_llm"
+```
+
+Eso cubre tools sin `raw_extraction`, citations, RLS de chat, gates de plan, asignacion SADM de plan y voz con confirmacion. No sustituye un login humano.
+
+Smoke en `http://127.0.0.1:8000` el mismo dia:
+
+- `/login` pinta Clerk ("Sign in to MySaas", development mode).
+- `/chat`, `/documents`, `/sadm` y `/calendar` sin cookie devuelven 401; el navegador acaba en `/login`.
+
+Sigue pendiente con tu sesion:
+
 - [ ] Abrir `/chat`, crear hilo, preguntar por documento.
 - [ ] Ver citations.
-- [ ] Ver Langfuse sin contenido.
+- [ ] Ver Langfuse sin contenido (la instancia local esta levantada: `saas-langfuse-web`).
 - [ ] Enviar WhatsApp real.
 - [ ] Enviar Telegram real.
 - [ ] Crear evento por voz y confirmar en Google Calendar.
+- [ ] SADM: asignar plan en la UI y comprobar que una feature denegada no aparece.
 
 ## Criterios de aceptacion
 

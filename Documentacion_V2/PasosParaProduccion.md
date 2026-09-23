@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
-Fecha: 2026-08-05
-Estado: checklist operativa para poner la app en produccion.
+Fecha: 2026-08-05 · Actualizado: 2026-09-23
+Estado: checklist operativa go-live. Control comercial (`Paso02`–`Paso04`) **cerrado en codigo**; bloqueadores restantes son ops (secretos, Infisical prod, QA, deploy).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso10`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`) y `docs/environment-variables.md`.
 
 Usar este fichero como guia de go-live. El detalle de cada control vive en su `PasoXX_*.md`; aqui solo el orden de trabajo y lo que hay que comprobar.
@@ -20,7 +20,7 @@ Decide el alcance del primer go-live:
 | Alcance | Implicacion |
 | --- | --- |
 | Soft launch / tenants piloto | Puedes aceptar gaps documentados si seguridad P0 critica esta cerrada. |
-| Produccion comercial | Cerrar P0 de seguridad + planes/gates/cuotas (`Paso02`–`Paso04`) antes de vender planes. |
+| Produccion comercial | P0 seguridad ops + planes/gates/cuotas ya en codigo; falta Infisical prod, QA y Stripe operativa. |
 
 Marca cada casilla solo cuando haya evidencia (comando, captura, ticket o fecha).
 
@@ -42,12 +42,17 @@ Segun `Backlog_Priorizado.md` y `Paso01` / `Paso10`: no considerar produccion "c
 
 ### 1.2 Control comercial / coste (`Paso02`–`Paso04`)
 
-Sin catalogo + gates + cuotas, un tenant puede generar coste LLM ilimitado relativo al plan vendido.
+**Codigo cerrado** (2026-09-23): catalogo, gates y cuotas estan en el repo (`p64`). No hace falta excepcion por "salir sin planes".
 
-- [ ] Catalogo de planes en BD (`Paso02`).
-- [ ] Gates por feature en rutas, sidebar, workers y webhooks (`Paso03`).
-- [ ] Cuotas, budgets y circuit breakers (`Paso04`).
-- [ ] Si se sale a prod **sin** esto: documentar excepcion, tenants permitidos y kill-switch manual (parar worker / desactivar claves LLM).
+- [x] Catalogo de planes en BD (`Paso02`).
+- [x] Gates por feature en rutas, sidebar, workers y webhooks (`Paso03`).
+- [x] Cuotas, budgets y circuit breakers (`Paso04`).
+- [x] Kill-switch documentado: `ENTITLEMENTS_DISABLED_FEATURES` + parar worker ARQ / rotar claves LLM.
+
+Ops pendiente (no bloquea el modelo de planes en codigo):
+
+- [ ] Secretos e Infisical `prod`/`staging` (ver §3).
+- [ ] Price IDs Stripe en `plans.stripe_price_id` si cobro self-serve (Paso09).
 
 ### 1.3 Decision Go / No-Go
 
@@ -69,10 +74,10 @@ infisical run --env=prod -- uv run alembic heads
 infisical run --env=prod -- uv run alembic current
 ```
 
-- [ ] No hay secretos reales activos en docs versionados.
+- [x] No hay secretos reales activos en docs versionados (detect-secrets en commit de producto; dumps locales fuera de git).
 - [ ] Credenciales expuestas historicamente invalidadas en Clerk, LLM, R2, Postgres, Redis, Langfuse, WA/TG, etc.
-- [ ] `Documentacion/` tratada como historico o fuera del flujo operativo.
-- [ ] HEAD de migraciones conocido y documentado.
+- [x] `Documentacion/` eliminada del repo (`eae1c00`); guia vigente = `Documentacion_V2/`.
+- [x] HEAD de migraciones conocido: codigo planes `p64_plans_entitlements_01`; Stripe `p65_stripe_billing_01` (aplicar en cada entorno).
 
 ---
 
@@ -265,12 +270,13 @@ Detalle: `Paso10_QA_Release_Produccion.md`. Preferible completar en staging iden
 - [ ] Voz → evento (si feature activa)
 - [ ] WhatsApp / Telegram con firma real (sin unsigned)
 
-### 7.5 Planes (cuando `Paso02`–`Paso04` esten cerrados)
+### 7.5 Planes (codigo `Paso02`–`Paso04` cerrado; verificar en staging/prod)
 
 - [ ] Sidebar segun plan
 - [ ] URL directa a feature denegada
 - [ ] Cuota bloquea antes de coste LLM
-- [ ] SADM puede asignar/cambiar plan
+- [ ] SADM puede asignar/cambiar plan (`/sadm/plans`)
+- [ ] Billing Stripe checkout/portal (si self-serve; Price IDs + Infisical)
 
 ---
 

@@ -1,5 +1,7 @@
 # Paso00 - Auditoria base y saneamiento documental
 
+Estado: **parcial** (2026-09-23). Evidencia de repo/migraciones/tests en docs; rotacion de secretos en proveedores e Infisical staging/prod = **Ops**.
+
 Objetivo: dejar claro el estado real del repo antes de implementar mas producto.
 
 ## Alcance
@@ -57,35 +59,26 @@ uv run pytest tests/unit/test_routes_layering.py tests/unit/test_superadmin_perm
 
 ## Evidencia 2026-09-22
 
-Guia vigente: `Documentacion_V2/` (`AGENTS.md` V2, `Arquitectura_V2.md`, `Decision_Log.md` D002). `Documentacion/` antigua no es backlog.
-
-`Documentacion/`: versionada en git (`Documentacion/Leeme.txt`, `Documentacion/README.md`). En disco ya no existe (`git status` = `D`). El borrado **no esta commiteado**. Ultimo commit que las toco: `bf42c08`. Contenido en HEAD: nombres de comandos/variables, sin claves de alta entropia.
+Guia vigente: `Documentacion_V2/`. `Documentacion/` antigua se elimino del repo en `eae1c00`.
 
 Secretos (sin copiar valores):
 
 - `git grep` de patrones `sk_live_`, `sk_test_`, `AKIA`, `ghp_`, `xox`, JWT: sin coincidencias en el arbol versionado.
-- `Documentacion_V2`: solo nombres de variable (`CLERK_SECRET_KEY`, etc.), no valores.
-- `uv run detect-secrets scan --baseline .secrets.baseline` (excluye `.venv`, `uv.lock`, dumps locales): exit 0, sin hallazgos nuevos.
+- `Documentacion_V2`: solo nombres de variable, no valores.
+- `detect-secrets` contra `.secrets.baseline` en el commit `7bc1aea`: exit 0.
 
-Migraciones (2026-09-22, Infisical + Postgres local):
-
-- `docker compose -f docker/docker-compose.yml up -d postgres redis` (contenedores `saas-postgres`, `saas-redis`).
-- `alembic heads` = `alembic current` = `p64_plans_entitlements_01`.
+Migraciones: `alembic current` = `p64_plans_entitlements_01` (head), Postgres local.
 
 Guardrails con Infisical: **24 passed** (`test_routes_layering`, `test_superadmin_permissions`, `test_llm_observability`).
 
-Lint/tipos (ejecutados, no limpios):
-
-- `ruff check app tests`: 13 errores (imports, SIM117, noqa). 8 auto-fixables. No bloquean seguridad.
-- `mypy app`: 14 errores en 5 ficheros (`document_processing_service`, `channel_chat_service`, `document_type_confirm_service`, `document_panel_service`, `config.py`).
+Lint/tipos: los 13 de ruff y 14 de mypy de la manana se corrigieron antes del commit `7bc1aea` (el hook de pre-commit los exige).
 
 ### Gaps reales (quien los cierra)
 
 | Gap | Quien |
 | --- | --- |
 | Confirmar en proveedores que credenciales historicas de docs viejos estan rotadas (no basta con borrar texto) | Tu (Clerk, LLM, R2, Postgres, Redis, Langfuse, WA/TG) |
-| Commit del borrado de `Documentacion/` cuando cierres el working tree | Tu (git) |
-| Ruff 13 + mypy 14 | Deuda de codigo; no es P0 de este paso |
+| Infisical `staging` y `prod` vacios | Tu |
 
 ## No hacer
 

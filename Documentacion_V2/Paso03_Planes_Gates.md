@@ -1,5 +1,7 @@
 # Paso03 - Gates por feature
 
+Estado: **cerrado en codigo** (2026-09-23). No reabrir salvo nueva feature de plan.
+
 Objetivo: aplicar los entitlements a rutas, sidebar, workers y webhooks.
 
 ## Dependencias

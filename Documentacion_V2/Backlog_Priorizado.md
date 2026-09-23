@@ -1,42 +1,53 @@
 # Backlog_Priorizado
 
-Fecha: 2026-08-04
+Fecha actualizacion: 2026-09-23
+Estado: alineado con codigo en `RamaCursor01` (HEAD de planes `p64` + Stripe `p65` en working tree).
+
+Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
 
 ## P0 - Seguridad y control de coste
 
-1. Rotar y sanear secretos detectados en documentacion historica.
-2. Verificar sync de roles/memberships desde Clerk.
-3. Anadir dedupe anti-replay a webhooks externos.
-4. Cerrar limite de body de webhooks.
-5. Cerrar OCR de imagenes knowledge con `media_limits`.
-6. Implementar catalogo de planes.
-7. Implementar gates por plan.
-8. Implementar cuotas y budgets por plan.
+| # | Item | Estado |
+| --- | --- | --- |
+| 1 | Rotar y sanear secretos de documentacion historica | **Ops** (repo saneado; rotacion en proveedores pendiente) |
+| 2 | Sync roles/memberships Clerk | **Hecho** (+ QA retry real en Dashboard: ops) |
+| 3 | Dedupe anti-replay webhooks | **Hecho** (Clerk/WA/TG/Stripe) |
+| 4 | Limite de body webhooks | **Hecho** |
+| 5 | OCR knowledge + `media_limits` | **Hecho** |
+| 6 | Catalogo de planes | **Hecho** (Paso02, `p64`) |
+| 7 | Gates por plan | **Hecho** (Paso03) |
+| 8 | Cuotas y budgets por plan | **Hecho** (Paso04) |
 
 ## P1 - Plataforma y producto base
 
-1. Consolidar SADM segun alcance V2.
-2. Asignar planes desde SADM.
-3. Mejorar `/settings/billing` como vista de plan/uso.
-4. Cerrar UX de documentos procesando/rechazados.
-5. Verificacion de tipo documental antes de extraccion cara.
-6. UI de multi-IVA clara: si hay varios tramos, mostrar "Multiple" o desglose.
-7. QA real de Clerk, R2, Langfuse, Google Calendar, WhatsApp y Telegram.
+| # | Item | Estado |
+| --- | --- | --- |
+| 1 | Consolidar SADM V2 | **Hecho** (Paso05) |
+| 2 | Asignar planes desde SADM | **Hecho** (`/sadm/plans`) |
+| 3 | `/settings/billing` plan/uso + Stripe | **Hecho** en codigo (Paso09); Price IDs + Infisical: **Ops** |
+| 4 | UX documentos procesando/rechazados | **Hecho** (Paso06) |
+| 5 | Verificacion de tipo antes de extraccion | **Hecho** (Paso06) |
+| 6 | UI multi-IVA | **Hecho** (Paso06) |
+| 7 | QA real Clerk/R2/Langfuse/Calendar/WA/TG | **Ops** (Paso07 QA manual) |
 
 ## P2 - IA y canales
 
-1. Reforzar chat documental y citations.
-2. QA y evals de RAG.
-3. Cache semantica de canales con invalidacion clara.
-4. Alertas de coste por turnos de chat/tools.
-5. Mejoras de prompts de contratos y seguros.
+| # | Item | Estado |
+| --- | --- | --- |
+| 1 | Chat documental y citations | **Hecho** (Paso07 codigo) |
+| 2 | QA y evals de RAG | **Hecho** en suite; regresion continua |
+| 3 | Cache semantica canales + invalidacion | **Hecho** |
+| 4 | Alertas de coste por turnos chat/tools | Parcial (`usage_meter` / SADM); alertas push no |
+| 5 | Prompts contratos/seguros | **Hecho** base (Paso06) |
 
 ## P3 - Nuevos modulos
 
-1. Analytics SQL read-only.
-2. Stripe billing.
-3. Reseñas/marketing si se decide como feature nueva.
-4. MCP/tooling externo si aporta a operaciones.
+| # | Item | Estado |
+| --- | --- | --- |
+| 1 | Analytics SQL read-only | **Pendiente** (Paso08 / F2) |
+| 2 | Stripe billing | **Hecho** en codigo (Paso09 / F1); operativa Stripe Dashboard: **Ops** |
+| 3 | Resenas/marketing | **Pendiente** (no priorizado) |
+| 4 | MCP/tooling externo | **Pendiente** (no priorizado) |
 
 ## No implementar ahora
 
@@ -47,3 +58,10 @@ Fecha: 2026-08-04
 - GraphQL.
 - React/Vue/Svelte.
 - LangChain/LlamaIndex como base.
+
+## Orden recomendado restante
+
+1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07.
+2. Ops Stripe: Price IDs + webhook + claves Infisical.
+3. Soft-launch Paso10 cuando staging este vivo.
+4. Producto nuevo: Paso08 Analytics si se vende el plan `total` con BI.

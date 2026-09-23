@@ -1,5 +1,7 @@
 # Paso08 - Analytics SQL read-only
 
+Estado: **pendiente** (producto no implementado; Fase F2). No priorizar hasta gates/cuotas (ya hechos) y venta del plan `total` con BI.
+
 Objetivo: implementar el analista conversacional solo cuando la plataforma ya tenga gates, cuotas y guardrails.
 
 ## Dependencias

@@ -1,5 +1,7 @@
 # Paso06 - Documentos: calidad, UX y coste
 
+Estado: **cerrado en codigo** (2026-09-23). No reabrir salvo regresion de producto.
+
 Objetivo: hacer el modulo documental fiable para uso real.
 
 ## Dependencias

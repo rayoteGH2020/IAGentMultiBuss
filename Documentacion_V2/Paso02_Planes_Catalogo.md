@@ -1,5 +1,7 @@
 # Paso02 - Catalogo de planes y resolucion de entitlements
 
+Estado: **cerrado en codigo** (2026-09-23). No reabrir salvo cambio de matriz comercial.
+
 Objetivo: crear la base de planes sin bloquear todavia UI ni workers.
 
 ## Dependencias

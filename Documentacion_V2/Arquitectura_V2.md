@@ -104,7 +104,7 @@ No hay rutas de analytics SQL ni webhooks Stripe todavia.
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
 | Planes/entitlements | Implementado | Catalogo BD, resolve central, gates, cuotas Redis, budget LLM, kill-switch (Pasos 02–04). |
 | Analytics SQL | Pendiente | Feature `analytics` en catalogo `total` sin producto. Paso08. |
-| Billing Stripe | Pendiente | `stripe_price_id` nullable; `/settings/billing` informativo (plan/uso). Paso09. |
+| Billing Stripe | Implementado | Checkout + portal + webhook firmado; `assign_tenant_plan`; `tenant_plan_changes`; `billing_status`. Requiere Price IDs e Infisical. |
 
 ## 6. Datos
 
@@ -126,13 +126,13 @@ No hay rutas de analytics SQL ni webhooks Stripe todavia.
 - Canales: `channel_integrations`, `conversations`, `channel_messages`, `channel_response_cache`.
 - Calendario/citas: `calendar_integrations`, `appointments`, `professionals`, `professional_specialties`, `professional_working_hours`, `business_hours`, `scheduling_services`, `schedule_exceptions`.
 - Observabilidad/coste: `llm_calls`, `audit_log`, `usage_meter`.
-- Planes: `plans`, `plan_entitlements`.
+- Planes: `plans`, `plan_entitlements`, `tenant_plan_changes`.
+- Tenants billing: `stripe_customer_id`, `stripe_subscription_id`, `billing_status`.
 
 ### 6.3 Deuda de esquema documentada
 
-- `tenant_plan_changes` (historial de asignaciones): disenado en docs, **no** migrado; hoy audit log + `tenants.settings.entitlements_override`.
 - Analytics futuro: `data_sources`, `analytics_queries` (Paso08).
-- Stripe: mapeo `price_id` → `plan_code` cuando exista billing real (Paso09).
+- Stripe Price IDs: rellenar `plans.stripe_price_id` por entorno (Paso09 codigo listo).
 
 ## 7. Seguridad base
 
@@ -188,7 +188,7 @@ Gates obligatorios en:
 
 Planes seed: `basic`, `medium`, `high`, `total`. Alias legacy `free` → `basic`.
 
-SADM: `/sadm/plans` asigna `plan_code` y overrides; ver `SADM_V2.md` (algunas secciones del md pueden estar desfasadas respecto a `/sadm/plans` ya vivo).
+SADM: `/sadm/plans` asigna `plan_code` y overrides; ver `SADM_V2.md`.
 
 ## 10. SADM
 
@@ -283,13 +283,12 @@ Checklist go-live: `PasosParaProduccion.md`.
 
 ## 17. Orden estrategico restante
 
-Codigo de Pasos 02–07 (planes, SADM, documentos, chat/canales) esta en el repo. Lo que queda:
+Codigo de Pasos 02–07 y 09 (Stripe) esta en el repo. Lo que queda:
 
-1. Cerrar residual de seguridad/QA operativo (Paso00/01 checklist, Paso07 QA manual, Paso10).
-2. Analytics SQL read-only (Paso08) — solo con guardrails y tras gates/cuotas ya existentes.
-3. Billing Stripe (Paso09) — mapea `price_id` → `plan_code`; no redefine capacidades (D006).
-4. Historial `tenant_plan_changes` si se necesita auditoria comercial formal.
-5. Soft launch / produccion comercial segun `PasosParaProduccion.md`.
+1. Ops: residual Paso00/01 (Infisical staging/prod, rotacion credenciales), QA manual Paso07, soft-launch Paso10.
+2. Operativa Stripe: Price IDs + claves Infisical + webhook Dashboard.
+3. Analytics SQL read-only (Paso08) — solo si se vende BI en plan `total`.
+4. Deuda documental menor: mantener este fichero y el backlog alineados tras cada cierre.
 
 ## 18. Decisiones cerradas
 
@@ -299,9 +298,8 @@ Ver `Decision_Log.md` (D001–D010): continuidad del repo, gobernanza Documentac
 
 Estos ficheros pueden seguir siendo utiles como diseno, pero **algunas secciones estan desfasadas** respecto al HEAD actual:
 
-- `Backlog_Priorizado.md` (P0 planes/gates/cuotas ya implementados en codigo).
-- `Planes_Entitlements.md` si aun dice "falta catalogo".
-- `SADM_V2.md` si marca `/sadm/plans` como futuro.
-- `README.md` de esta carpeta (snapshot 2026-08-04).
+- `Planes_Entitlements.md` / `SADM_V2.md`: si cambias matriz comercial, actualiza codigo + estos docs juntos.
+- `PasosParaProduccion.md`: el estado de checkboxes ops puede ir detras del codigo; prioriza Infisical y QA.
+- Preferir `Backlog_Priorizado.md` y cabeceras `Estado:` de cada `PasoXX.md` como fuente de "hecho vs pendiente".
 
 Ante duda: este `Arquitectura_V2.md` + codigo + paso activo.

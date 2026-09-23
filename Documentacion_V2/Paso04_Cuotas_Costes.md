@@ -1,5 +1,7 @@
 # Paso04 - Cuotas, limites y budgets por plan
 
+Estado: **cerrado en codigo** (2026-09-23). No reabrir salvo cambio de limites comerciales.
+
 Objetivo: cerrar el riesgo de coste no controlado mediante limites por plan.
 
 ## Dependencias

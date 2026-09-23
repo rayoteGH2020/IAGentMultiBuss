@@ -1,7 +1,7 @@
 # Documentacion_V2
 
-Fecha: 2026-08-04
-Estado: fuente de planificacion V2 para continuar el repositorio actual, no para reescribirlo desde cero.
+Fecha: 2026-08-04 · Actualizado: 2026-09-23
+Estado: fuente de planificacion V2. Codigo de Pasos 02–06, 09 (Stripe) y gran parte de 00/01/07 cerrado; queda ops (Infisical, QA manual, soft-launch) y Paso08 Analytics.
 
 ## Decision principal
 
@@ -24,9 +24,9 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Arquitectura_V2.md` | Arquitectura vigente, estado real y arquitectura objetivo. |
 | `Decision_Log.md` | Decisiones que no deben reabrirse sin motivo explicito. |
 | `Seguridad_V2.md` | Modelo de seguridad, riesgos residuales y checklist obligatoria. |
-| `Planes_Entitlements.md` | Diseno de planes, features, limites y overrides por tenant. |
-| `SADM_V2.md` | Consola SuperAdmin: alcance permitido, prohibiciones y controles. |
-| `Backlog_Priorizado.md` | Orden recomendado de trabajo. |
+| `Planes_Entitlements.md` | Matriz de planes (implementada en codigo). |
+| `SADM_V2.md` | Consola SuperAdmin (planes incluidos). |
+| `Backlog_Priorizado.md` | Orden de trabajo; marca Hecho / Ops / Pendiente. |
 | `Paso00_Auditoria_Base.md` | Auditoria de base antes de seguir construyendo. |
 | `Paso01_Seguridad_Residual.md` | Cierre de riesgos P0/P1 de seguridad. |
 | `Paso02_Planes_Catalogo.md` | Catalogo de planes y resolucion de entitlements. |
@@ -42,14 +42,15 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 
 ## Estado del repositorio observado
 
-Evidencias revisadas el 2026-08-04:
+Evidencias 2026-08-04 (base) + cierre codigo 2026-09-23:
 
-- Existe implementacion real en `app/`, `migrations/`, `tests/`, `.github/workflows/`.
-- Hay capa LLM propia, observabilidad, prompts versionados y tests.
-- Hay RLS en migraciones con `FORCE ROW LEVEL SECURITY` para tablas tenant.
-- Hay middleware de Clerk, CSRF, security headers y guardas SADM.
-- Hay consola SADM parcialmente implementada.
-- Hay documentacion antigua con decisiones historicas contradictorias.
+- Implementacion real en `app/`, `migrations/` (head planes `p64`, Stripe `p65`), `tests/`, CI.
+- Capas LLM, observabilidad metadata-only, prompts versionados.
+- RLS + middleware Clerk/CSRF/headers + SADM con `/sadm/plans`.
+- Planes/gates/cuotas, documentos, chat/canales y Stripe en codigo.
+- Pendiente ops: Infisical staging/prod, rotacion secretos, QA Paso07, soft-launch Paso10, Price IDs Stripe.
+- Producto pendiente: Paso08 Analytics SQL read-only.
+- Documentacion antigua (`Documentacion/`) = historico; guia operativa = esta carpeta.
 
 ## Regla de oro
 

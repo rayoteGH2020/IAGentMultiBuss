@@ -1,7 +1,7 @@
 # SADM_V2
 
-Fecha: 2026-08-04
-Estado: alcance vigente de la consola SuperAdmin.
+Fecha: 2026-08-04 · Actualizado: 2026-09-23
+Estado: alcance vigente; planes y consolidacion **implementados** (Paso05).
 
 ## 1. Objetivo
 
@@ -44,18 +44,18 @@ Decision cerrada (Opcion B / `Decision_Log` D005):
 - Usuarios y organizaciones se gestionan **unicamente** desde Clerk Dashboard.
 - Webhook/login sincronizan BD; SADM solo lista orgs/miembros en read-only.
 - No hay UI/API SADM (ni otras pantallas de plataforma) para crear orgs, invitar usuarios o resetear credenciales.
-- Codigo residual de provision: retirarlo de la UI o eliminarlo en `Paso05`; no conservar atajos de desarrollo en produccion.
+- Codigo residual de provision: retirado; identidades solo Clerk (D005 / Paso05 cerrado).
 
 ## 5. Funciones permitidas
 
-P0/P1:
+Implementado:
 
 - `/sadm`: dashboard.
 - `/sadm/organizations`: listado read-only y miembros.
 - `/sadm/usage`: consumo por tenant.
 - `/sadm/documents`: revision de rechazados y procesado excepcional.
-- `/sadm/chat-traces`: trazas de chat con acceso restringido.
-- `/sadm/plans`: futuro catalogo y asignacion de planes.
+- `/sadm/chat-traces` / chat-usage: trazas y uso de chat.
+- `/sadm/plans`: catalogo, asignacion de plan y overrides (Paso02–04 + Paso05).
 
 ## 6. Funciones prohibidas por defecto
 

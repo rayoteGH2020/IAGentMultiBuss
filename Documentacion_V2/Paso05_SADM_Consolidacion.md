@@ -1,5 +1,7 @@
 # Paso05 - Consolidacion SADM
 
+Estado: **cerrado en codigo** (2026-09-23). Identidades solo Clerk (D005).
+
 Objetivo: cerrar el alcance real de la consola SADM y eliminar ambiguedades historicas.
 
 ## Dependencias

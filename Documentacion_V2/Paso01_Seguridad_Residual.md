@@ -1,5 +1,7 @@
 # Paso01 - Seguridad residual P0/P1
 
+Estado: **parcial** (2026-09-23). Controles en codigo + tests; cierre total exige Infisical prod y validaciones manuales (Clerk JWT allowlists, webhooks Dashboard).
+
 Objetivo: cerrar riesgos residuales que afectan directamente a aislamiento de tenants, control de coste, integridad de webhooks, tratamiento de archivos y observabilidad LLM.
 
 Este paso no pretende rehacer la arquitectura. Su funcion es convertir los riesgos ya detectados en controles concretos, verificables y con tests. Debe ejecutarse antes de avanzar en funcionalidades nuevas que dependan de auth, integraciones, uploads o uso intensivo de LLMs.
@@ -390,11 +392,11 @@ Busca estos eventos (structlog / logging):
 #### 8. Checklist rapida antes de staging/prod
 
 - [x] `/health/redis` OK en el host que sirve webhooks.
-- [ ] `WEBHOOK_ALLOW_UNSIGNED=false`.
-- [ ] Clerk: retry de delivery = no-op (seccion 3).
-- [ ] Si WA activo: un mensaje + replay OK (seccion 4).
-- [ ] Si TG activo: un mensaje + replay OK (seccion 5).
-- [ ] No hay secretos de webhook en el repo; solo Infisical.
+- [x] `WEBHOOK_ALLOW_UNSIGNED=false` en `dev` (2026-09-22). Staging/prod siguen vacios: ver evidencia al final.
+- [ ] Clerk: retry de delivery = no-op en un endpoint real (seccion 3). Cubierto en test, no en el dashboard de Clerk.
+- [ ] Si WA activo: un mensaje + replay OK contra Meta (seccion 4). Cubierto en test de integracion.
+- [ ] Si TG activo: un mensaje + replay OK contra el bot (seccion 5). Cubierto en test de integracion.
+- [x] No hay secretos de webhook en el repo; solo Infisical.
 
 ### 5. OCR de imagenes knowledge
 
@@ -524,16 +526,17 @@ Si no tienes reindex a mano, puedes saltar este paso: la subida (paso 3) + tests
 
 #### 5. Checklist rapida antes de staging/prod
 
-- [ ] `DOCUMENT_MAX_IMAGE_*` y `KNOWLEDGE_MAX_FILE_SIZE_BYTES` revisados en Infisical del entorno destino (no valores de prueba bajos).
-- [ ] Subida knowledge de imagen OK de humo en ese entorno.
-- [ ] No hay secretos ni dumps de imagen en logs de error.
+- [x] En `dev` (2026-09-22) los limites son los defaults de produccion, no los de prueba: edge `20000`, pixeles `40000000`, bytes `15728640`.
+- [ ] Los mismos limites revisados en Infisical de staging/prod (esos entornos no tienen secretos todavia).
+- [ ] Subida knowledge de imagen OK de humo en staging/prod.
+- [x] No hay secretos ni dumps de imagen en el repo. Logs de error de un entorno desplegado: pendiente de ese despliegue.
 
 ## Tareas P1
 
-- [ ] Revisar CSP y documentar camino para eliminar `unsafe-inline`/`unsafe-eval`.
-- [ ] Confirmar que `LANGFUSE_CAPTURE_CONTENT` falla fuera de development.
-- [ ] Revisar errores publicos para que no filtren payloads.
-- [ ] Asegurar audit log en acciones sobre datos de cliente.
+- [x] Revisar CSP y documentar camino para eliminar `unsafe-inline`/`unsafe-eval` (seccion 6). Retirarlos sigue pendiente: Alpine 3 los necesita.
+- [x] Confirmar que `LANGFUSE_CAPTURE_CONTENT` falla fuera de development (validator + test).
+- [x] Revisar errores publicos para que no filtren payloads (handler generico; seccion 8).
+- [x] Asegurar audit log en acciones sobre datos de cliente. Subida de documentos de negocio: `document.upload` en `ingest_uploaded_document` (sin binario). 2026-09-22.
 
 ### 6. CSP
 
@@ -548,11 +551,29 @@ La Content Security Policy reduce impacto de XSS, pero `unsafe-inline` y `unsafe
 - Mantener lista explicita de origenes permitidos.
 - Documentar excepciones temporales con motivo y fecha objetivo de eliminacion.
 
+**Estado (2026-09-22)**
+
+CSP en `app/core/security_headers.py`:
+
+- `default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, `form-action 'self'`.
+- Sin `*` como origen de scripts. `img-src` si permite `https:` (imagenes externas).
+- `script-src` incluye `'unsafe-inline'` y `'unsafe-eval'`.
+- `style-src` incluye `'unsafe-inline'`.
+
+Camino para quitarlos, sin hacerlo en este paso:
+
+1. Sustituir Alpine estandar por `@alpinejs/csp` y reescribir expresiones que usan `new Function` (arrow functions, asignaciones anidadas, `window.*`).
+2. Sacar scripts inline de las plantillas a `app/static/js/` y, si queda alguno, usar nonce por respuesta.
+3. Estilos inline: nonce o clases Tailwind; no ampliar `style-src`.
+4. Probar login Clerk, sidebar, documentos, chat y settings antes de quitar las dos directivas.
+
+Hasta ese cambio, `unsafe-eval` es una excepcion consciente por Alpine 3, no un olvido.
+
 **Validacion**
 
 - Comprobar que las vistas principales cargan con la CSP endurecida.
 - Revisar consola del navegador en flujos HTMX principales.
-- Confirmar que no se abren origenes amplios como `*`.
+- Confirmar que no se abren origenes amplios como `*` en `script-src`.
 
 ### 7. Langfuse sin contenido de cliente
 
@@ -616,14 +637,49 @@ infisical run -- uv run pytest tests/integration/test_auth_clerk.py tests/integr
 
 Anadir tests nuevos para replay/body limit si no existen.
 
+## Evidencia Fase C (2026-09-22)
+
+Comando (91 passed, ~64 s):
+
+```powershell
+infisical run -- uv run pytest tests/unit/test_config_webhook_security.py tests/unit/test_security_http.py tests/unit/test_llm_observability.py tests/unit/test_clerk_jwt_audience.py tests/unit/test_webhook_ingress.py tests/unit/test_knowledge_image_media_limits.py tests/unit/test_media_limits.py tests/unit/test_superadmin_permissions.py tests/integration/test_whatsapp_webhook.py tests/integration/test_telegram_webhook.py tests/integration/test_clerk_membership_sync.py -q -m "not real_llm"
+```
+
+Sonda de flags (sin imprimir secretos): `infisical run --env=<slug> -- uv run python` sobre `get_settings()`.
+
+| Entorno Infisical | Resultado |
+|-------------------|-----------|
+| `dev` | 43 secretos. `APP_ENV=development`. `WEBHOOK_ALLOW_UNSIGNED=false`. `LANGFUSE_CAPTURE_CONTENT=false`. JWKS presente. `CLERK_JWT_AZP_ALLOWLIST=http://localhost:8000`. Limites de imagen en defaults. Claves Clerk, LLM, R2, Langfuse y cifrado presentes. Postgres y Redis en localhost. |
+| `staging` | El slug existe y tiene **0 secretos**. La app no arranca ahi. |
+| `prod` | El slug existe y tiene **0 secretos**. |
+| `production` | El slug **no existe** (404 de Infisical). |
+
+`dev` no es un entorno de salida. Antes de usarlo como pre-produccion hay dos desajustes:
+
+- `APP_BASE_URL` apunta al tunel ngrok, pero `CLERK_JWT_AZP_ALLOWLIST` es `http://localhost:8000`. Un JWT emitido para el tunel no pasa la allowlist.
+- `SECURITY_ALLOWED_HOSTS` es `localhost`, `127.0.0.1` y dos IPs LAN. `create_app()` anade tambien el host de `APP_BASE_URL`, asi que el tunel ngrok entra mientras esa URL siga configurada. Si cambias `APP_BASE_URL` sin actualizar la lista, el host nuevo queda fuera.
+
+**Para cerrar staging (lo haces tu en Infisical, no copiando `dev`):**
+
+1. Crear o rellenar el entorno `staging` con secretos propios (Clerk, LLM, R2, Postgres, Redis, `ENCRYPTION_KEY`, Langfuse). No reutilizar los de `dev`.
+2. `APP_ENV=staging`, `APP_BASE_URL` del host real, `SECURITY_HTTPS_REDIRECT=true`, `SECURITY_HSTS_ENABLED=true`.
+3. `SECURITY_ALLOWED_HOSTS` solo con ese host.
+4. `WEBHOOK_ALLOW_UNSIGNED=false` (si se pone `true`, Settings no arranca).
+5. `LANGFUSE_CAPTURE_CONTENT=false` (igual: Settings no arranca si es `true`).
+6. `CLERK_JWKS_URL` de la instancia de staging y `CLERK_JWT_AZP_ALLOWLIST` (o audience) con el `azp` de un JWT de ese entorno. Sin una de las dos listas, Settings no arranca.
+7. Limites de imagen en defaults (`20000` / `40000000` / `15728640`), no los de la prueba manual.
+8. Repetir la sonda: `infisical run --env=staging -- uv run python` y comprobar la tabla de arriba.
+9. Retry real de un delivery Clerk y, si el canal esta activo, un replay de WhatsApp o Telegram.
+
 ## Criterios de aceptacion
 
-- [x] Webhooks firmados, limitados y deduplicados.
+- [x] Webhooks firmados, limitados y deduplicados (tests de replay Clerk, WhatsApp y Telegram).
 - [x] Roles Clerk sincronizados con BD.
-- [ ] SADM sigue restringido por org + rol admin + allowlist opcional.
-- [ ] OCR knowledge no puede causar decompression bomb.
-- [ ] Langfuse sigue sin contenido de cliente.
-- [ ] No hay secretos reales en repo.
+- [x] SADM sigue restringido por org + rol admin + allowlist opcional (`test_superadmin_permissions`).
+- [x] OCR knowledge no puede causar decompression bomb (tests + limites de `dev` en defaults).
+- [x] Langfuse sin contenido de cliente en codigo: capture desactivado y rechazado fuera de development.
+- [x] No hay secretos reales en repo (detect-secrets en el commit `7bc1aea`).
+- [ ] Infisical `staging` y `prod` rellenados con secretos distintos de `dev`.
 
 ## Orden recomendado de ejecucion
 

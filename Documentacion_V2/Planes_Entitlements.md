@@ -1,7 +1,7 @@
 # Planes_Entitlements
 
-Fecha: 2026-08-04
-Estado: diseno objetivo P0.
+Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-23
+Estado: **implementado en codigo** (Pasos 02–04 + SADM plans + Stripe Paso09). Matriz canonica de features/limites; seed en `app/core/entitlement_codes.py` y migracion `p64`.
 
 ## 1. Objetivo
 
@@ -10,29 +10,30 @@ Convertir la aplicacion modular en un producto gobernado por planes:
 - activar/desactivar modulos,
 - limitar volumen y coste,
 - mostrar solo lo contratado,
-- permitir upgrades futuros,
+- permitir upgrades (SADM y Stripe),
 - evitar `if tenant.plan == ...` dispersos.
 
-## 2. Estado actual
+## 2. Estado actual (2026-09-23)
 
-Existe base parcial:
+Implementado:
 
-- `tenants.plan`.
-- `tenants.settings`.
-- `monthly_budget_eur`.
-- `usage_meter` parcial.
-- rate limits globales/ad hoc.
-- `/settings/billing` placeholder.
+- Catalogo `plans` + `plan_entitlements` (`basic|medium|high|total`).
+- `tenants.plan_code` (+ `plan` legacy alineado en writes).
+- Resolucion unica: `entitlement_service`.
+- Gates: `require_feature` (rutas, sidebar, workers, webhooks).
+- Cuotas Redis + budget LLM (`plan_quota_service`).
+- Override SADM: `tenants.settings.entitlements_override`.
+- Kill-switch: `ENTITLEMENTS_DISABLED_FEATURES`.
+- UI `/sadm/plans` (assign + override).
+- Historial `tenant_plan_changes` (RLS) + audit log.
+- Stripe: checkout/portal/webhook → `assign_tenant_plan` via `stripe_price_id`.
+- `/settings/billing`: plan, uso, `billing_status`, acciones Stripe si hay claves.
 
-Falta:
+Pendiente / ops:
 
-- catalogo `plans`,
-- `plan_entitlements`,
-- resolucion unica,
-- gates por feature,
-- limites por plan,
-- UI SADM para asignar plan,
-- circuit breaker de coste.
+- Rellenar `plans.stripe_price_id` y secretos Stripe en Infisical.
+- Feature `analytics` en plan `total` sin producto Paso08.
+- Revisar soft cap `llm_budget` en `total` para piloto (hoy puede ser `null` en matriz).
 
 ## 3. Planes iniciales
 
