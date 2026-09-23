@@ -11,9 +11,16 @@ from app.services import document_upload_service
 from app.services.document_classification import TypeVerificationResult
 
 
+def _db_session() -> AsyncMock:
+    """``Session.add`` es síncrono; un AsyncMock lo dejaría como corrutina."""
+    db = AsyncMock()
+    db.add = MagicMock()
+    return db
+
+
 @pytest.mark.asyncio
 async def test_ingest_contrato_routes_to_contract_pipeline() -> None:
-    db = AsyncMock()
+    db = _db_session()
     tenant_id = uuid4()
     contract = MagicMock()
     contract.id = uuid4()
@@ -54,7 +61,7 @@ async def test_ingest_contrato_routes_to_contract_pipeline() -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_seguro_routes_to_insurance_pipeline() -> None:
-    db = AsyncMock()
+    db = _db_session()
     tenant_id = uuid4()
     insurance = MagicMock()
     insurance.id = uuid4()
@@ -95,7 +102,7 @@ async def test_ingest_seguro_routes_to_insurance_pipeline() -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_factura_mismatch_does_not_enqueue() -> None:
-    db = AsyncMock()
+    db = _db_session()
     tenant_id = uuid4()
     invoice = MagicMock()
     invoice.id = uuid4()
@@ -148,7 +155,7 @@ async def test_ingest_factura_mismatch_does_not_enqueue() -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_factura_match_enqueues() -> None:
-    db = AsyncMock()
+    db = _db_session()
     tenant_id = uuid4()
     invoice = MagicMock()
     invoice.id = uuid4()
@@ -189,3 +196,50 @@ async def test_ingest_factura_match_enqueues() -> None:
 
     assert result.awaiting_type_confirmation is False
     enqueue_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_writes_upload_audit_without_file_bytes() -> None:
+    db = _db_session()
+    tenant_id = uuid4()
+    user_id = uuid4()
+    contract = MagicMock()
+    contract.id = uuid4()
+    file_bytes = b"%PDF-secret-bytes"
+
+    with (
+        patch(
+            "app.services.document_upload_service.asyncio.to_thread",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.document_upload_service.contract_service.create_contract_from_upload",
+            new=AsyncMock(return_value=contract),
+        ),
+        patch(
+            "app.services.document_upload_service.enqueue_contract_processing",
+            new=AsyncMock(),
+        ),
+        patch(
+            "app.services.document_upload_service.audit_service.log_action",
+            new=AsyncMock(),
+        ) as audit_mock,
+    ):
+        await document_upload_service.ingest_uploaded_document(
+            db,
+            tenant_id=tenant_id,
+            filename="contrato.pdf",
+            file_bytes=file_bytes,
+            mime_type="application/pdf",
+            doc_type=DocTypeCode.contrato,
+            user_id=user_id,
+        )
+
+    audit_mock.assert_awaited_once()
+    kwargs = audit_mock.await_args.kwargs
+    assert kwargs["action"] == document_upload_service.ACTION_DOCUMENT_UPLOAD
+    assert kwargs["resource_id"] == contract.id
+    assert kwargs["user_id"] == user_id
+    assert kwargs["metadata"]["size_bytes"] == len(file_bytes)
+    assert kwargs["metadata"]["filename"] == "contrato.pdf"
+    assert file_bytes not in kwargs["metadata"].values()

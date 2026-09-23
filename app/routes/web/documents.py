@@ -202,6 +202,8 @@ async def upload_documents(
                 doc_type=user_doc_type,
                 redis=redis,
                 ents=ents,
+                user_id=_user.id,
+                request_ctx=_audit_request_context(request),
             )
             created_document_ids.append(str(result.record_id))
 

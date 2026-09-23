@@ -18,6 +18,7 @@ from app.jobs.queue import (
 )
 from app.models import Contract, DocTypeCode, Insurance, Invoice, Ticket
 from app.services import (
+    audit_service,
     contract_service,
     document_classification,
     document_type_confirm_service,
@@ -32,6 +33,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.schemas.entitlements import Entitlements
+    from app.services.audit_service import AuditRequestContext
+
+ACTION_DOCUMENT_UPLOAD = "document.upload"
+RESOURCE_DOCUMENT = "document"
 
 logger = structlog.get_logger(__name__)
 
@@ -67,6 +72,51 @@ class DocumentIngestResult:
 
 
 async def ingest_uploaded_document(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filename: str,
+    file_bytes: bytes,
+    mime_type: str,
+    doc_type: DocTypeCode,
+    redis: object | None = None,
+    ents: Entitlements | None = None,
+    user_id: UUID | None = None,
+    request_ctx: AuditRequestContext | None = None,
+) -> DocumentIngestResult:
+    """Sube el documento y deja constancia en audit_log, sin el binario."""
+    result = await _ingest_uploaded_document(
+        db,
+        tenant_id=tenant_id,
+        filename=filename,
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        doc_type=doc_type,
+        redis=redis,
+        ents=ents,
+    )
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_DOCUMENT_UPLOAD,
+        resource_type=RESOURCE_DOCUMENT,
+        resource_id=result.record_id,
+        metadata={
+            "document_kind": result.kind,
+            "doc_type": result.doc_type.value,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size_bytes": len(file_bytes),
+            "rejected": result.rejected,
+            "awaiting_type_confirmation": result.awaiting_type_confirmation,
+        },
+        request_ctx=request_ctx,
+    )
+    return result
+
+
+async def _ingest_uploaded_document(
     db: AsyncSession,
     *,
     tenant_id: UUID,
