@@ -11,14 +11,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from tests.db_target import resolve_test_urls
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Valores mínimos para importar `app` en tests sin Infisical."""
     os.environ.setdefault("APP_SECRET_KEY", "test-app-secret-not-for-production")
-    os.environ.setdefault(
-        "DATABASE_URL",
-        "postgresql+asyncpg://saas_app:saas@localhost:5432/saas",  # pragma: allowlist secret
-    )
+    # Siempre saas_test (aunque Infisical inyecte la BD de la app): los tests
+    # de integración dejan tenants/usuarios/documentos que no se limpian.
+    # Crear/migrar: `infisical run -- bash scripts/test_db_setup.sh`.
+    database_url, rls_database_url = resolve_test_urls(os.environ)
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["RLS_TEST_DATABASE_URL"] = rls_database_url
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
     # TestClient → Host: testserver; AsyncClient base_url=http://test → Host: test.
     # Infisical puede inyectar SECURITY_ALLOWED_HOSTS sin esos hosts de test.
@@ -38,11 +42,6 @@ def pytest_configure(config: pytest.Config) -> None:
         get_settings.cache_clear()
     except Exception:
         pass
-
-
-_DEFAULT_RLS_URL = (
-    "postgresql+asyncpg://saas_app:saas@localhost:5432/saas"  # pragma: allowlist secret
-)
 
 
 @pytest.fixture
@@ -71,7 +70,9 @@ async def invoices_migration_applied(rls_database_url: str) -> None:
 
 @pytest.fixture
 def rls_database_url() -> str:
-    return os.environ.get("RLS_TEST_DATABASE_URL", _DEFAULT_RLS_URL)
+    # pytest_configure ya la fijó a saas_test; resolve de nuevo por si un test
+    # la ha borrado del entorno.
+    return resolve_test_urls(os.environ)[1]
 
 
 @pytest.fixture

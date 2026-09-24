@@ -47,11 +47,12 @@ jobs:
         env:
           POSTGRES_USER: saas
           POSTGRES_PASSWORD: saas  # pragma: allowlist secret
-          POSTGRES_DB: saas
+          # Misma BD de tests que en local (tests/db_target.py).
+          POSTGRES_DB: saas_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U saas -d saas"
+          --health-cmd "pg_isready -U saas -d saas_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -69,9 +70,9 @@ jobs:
       APP_ENV: development
       APP_SECRET_KEY: ci-not-secret  # pragma: allowlist secret
       # Superusuario para migraciones Alembic (crea rol saas_app en p06).
-      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas  # pragma: allowlist secret
+      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas_test  # pragma: allowlist secret
       # Conexión RLS usada por fixtures de tests (rol NOBYPASSRLS).
-      RLS_TEST_DATABASE_URL: postgresql+asyncpg://saas_app:saas@localhost:5432/saas  # pragma: allowlist secret
+      RLS_TEST_DATABASE_URL: postgresql+asyncpg://saas_app:saas@localhost:5432/saas_test  # pragma: allowlist secret
       REDIS_URL: redis://localhost:6379/0
       # Clave Fernet válida para tests que arrancan create_app() sin monkeypatch.
       ENCRYPTION_KEY: yL-BW6k7vhMHYSMEpWR5tNDqt6z6K2I0cVIMG0plLuE=  # pragma: allowlist secret
@@ -94,7 +95,7 @@ jobs:
       - name: Enable pgvector extension
         env:
           PGPASSWORD: saas  # pragma: allowlist secret
-        run: psql -h localhost -U saas -d saas -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        run: psql -h localhost -U saas -d saas_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Apply DB migrations
         run: uv run alembic upgrade head

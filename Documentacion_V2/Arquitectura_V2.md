@@ -262,6 +262,7 @@ No SPA.
 
 - Unit: `tests/unit/`.
 - Integration: `tests/integration/` (Postgres real; marker `integration`; excluir `real_llm` en CI local tipico).
+- BD de tests: **siempre `saas_test`** (`tests/db_target.py` reescribe `DATABASE_URL` y `RLS_TEST_DATABASE_URL` en `tests/conftest.py`). La app usa `saas`. Crear/migrar tras cada migracion nueva: `infisical run -- bash scripts/test_db_setup.sh`.
 - E2E: Playwright.
 - Evals: `app/evals/` (extraccion, chat documental, knowledge).
 - Politica: todo cambio de codigo crea/actualiza tests y se ejecuta antes de dar por cerrado.
