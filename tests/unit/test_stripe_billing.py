@@ -116,7 +116,7 @@ async def test_checkout_completed_assigns_plan(monkeypatch: pytest.MonkeyPatch) 
                     "customer": "cus_1",
                     "subscription": "sub_1",
                     "client_reference_id": str(tenant_id),
-                    "metadata": {"tenant_id": str(tenant_id), "plan_code": "medium"},
+                    "metadata": {"tenant_id": str(tenant_id), "plan_code": "advanced"},
                 }
             },
         },
@@ -126,7 +126,7 @@ async def test_checkout_completed_assigns_plan(monkeypatch: pytest.MonkeyPatch) 
     assert tenant.stripe_customer_id == "cus_1"
     assert tenant.stripe_subscription_id == "sub_1"
     assign.assert_awaited_once()
-    assert assign.await_args.kwargs["plan_code"] == "medium"
+    assert assign.await_args.kwargs["plan_code"] == "advanced"
     assert assign.await_args.kwargs["source"] == plan_service.SOURCE_STRIPE
 
 
@@ -169,7 +169,7 @@ async def test_payment_failed_marks_past_due(monkeypatch: pytest.MonkeyPatch) ->
     tenant = MagicMock()
     tenant.id = uuid4()
     tenant.billing_status = "active"
-    tenant.plan_code = "high"
+    tenant.plan_code = "advanced"
 
     monkeypatch.setattr(
         stripe_billing_service,

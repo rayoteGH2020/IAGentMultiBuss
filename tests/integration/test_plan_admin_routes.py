@@ -50,12 +50,12 @@ async def test_assign_tenant_plan_writes_audit(
     updated = await plan_service.assign_tenant_plan(
         db_session,
         tenant_id=tenant.id,
-        plan_code="medium",
+        plan_code="advanced",
         actor_user_id=actor,
         reason="upgrade test",
     )
-    assert updated.plan_code == "medium"
-    assert updated.plan == "medium"
+    assert updated.plan_code == "advanced"
+    assert updated.plan == "advanced"
 
     rows = (
         (
@@ -70,7 +70,7 @@ async def test_assign_tenant_plan_writes_audit(
         .all()
     )
     assert len(rows) == 1
-    assert rows[0].metadata_["to_plan_code"] == "medium"
+    assert rows[0].metadata_["to_plan_code"] == "advanced"
     assert rows[0].metadata_["from_plan_code"] == "basic"
 
 

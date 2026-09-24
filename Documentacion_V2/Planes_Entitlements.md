@@ -1,228 +1,99 @@
 # Planes_Entitlements
 
-Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-23
-Estado: **implementado en codigo** (Pasos 02–04 + SADM plans + Stripe Paso09). Matriz canonica de features/limites; seed en `app/core/entitlement_codes.py` y migracion `p64`.
+Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-23 (D012)
+Estado: **implementado en codigo** — catalogo comercial `basic` | `advanced` | `premium`
+(Pasos 02–04 + SADM + Stripe). Seed: `app/core/entitlement_codes.py`; migracion `p67`.
 
 ## 1. Objetivo
 
 Convertir la aplicacion modular en un producto gobernado por planes:
 
 - activar/desactivar modulos,
-- limitar volumen y coste,
+- limitar volumen y coste con **limites duros**,
 - mostrar solo lo contratado,
 - permitir upgrades (SADM y Stripe),
 - evitar `if tenant.plan == ...` dispersos.
 
-## 2. Estado actual (2026-09-23)
+## 2. Estado actual (2026-09-23) — D012
 
-Implementado:
+Tres ofertas publicadas:
 
-- Catalogo `plans` + `plan_entitlements` (`basic|medium|high|total`).
-- `tenants.plan_code` (+ `plan` legacy alineado en writes).
-- Resolucion unica: `entitlement_service`.
-- Gates: `require_feature` (rutas, sidebar, workers, webhooks).
-- Cuotas Redis + budget LLM (`plan_quota_service`).
-- Override SADM: `tenants.settings.entitlements_override`.
-- Kill-switch: `ENTITLEMENTS_DISABLED_FEATURES`.
-- UI `/sadm/plans` (assign + override).
-- Historial `tenant_plan_changes` (RLS) + audit log.
-- Stripe: checkout/portal/webhook → `assign_tenant_plan` via `stripe_price_id`.
-- `/settings/billing`: plan, uso, `billing_status`, acciones Stripe si hay claves.
+| Code | Nombre UI | Posicionamiento |
+| --- | --- | --- |
+| `basic` | Basico | Documentos + chat documental + knowledge/RAG + chat knowledge. |
+| `advanced` | Avanzado | Basico + citas internas (BBDD saas) + WhatsApp/Telegram (chat knowledge). |
+| `premium` | Premium | Mismas capacidades que Avanzado; **limites superiores** (duros). |
+
+Regla comercial de limites:
+
+- Los tres planes tienen **techos duros** (no `null` / no ilimitado self-serve).
+- Si el uso supera **Avanzado** → upgrade a **Premium**.
+- Si el uso supera **Premium** → contrato custom / override SADM (no oferta self-serve).
+
+Fuera de catalogo publicado (codigo conservado, no evolucionar ni publicitar):
+
+- `calendar_google`, `calendar_voice` (D012).
+- `analytics` (D011 — no implementar).
+
+Alias legacy: `free`/`medium` → `basic`; `high` → `advanced`; `total` → `premium`.
 
 Pendiente / ops:
 
-- Rellenar `plans.stripe_price_id` y secretos Stripe en Infisical.
-- Revisar soft cap `llm_budget` en `total` para piloto (hoy puede ser `null` en matriz).
+- Rellenar `plans.stripe_price_id` (basic/advanced/premium) + secretos Stripe Infisical.
 
-**Modulo 3 / Analytics (D011):** NO se implementara. Feature `analytics` retirada del catalogo; no vender BI/SQL sobre BD externa.
+## 3. Features
 
-## 3. Planes iniciales
+| Feature code | Basico | Avanzado | Premium |
+| --- | :---: | :---: | :---: |
+| `documents` | yes | yes | yes |
+| `documents_chat` | yes | yes | yes |
+| `knowledge` | yes | yes | yes |
+| `knowledge_chat` | yes | yes | yes |
+| `appointments` | no | yes | yes |
+| `channel_whatsapp` | no | yes | yes |
+| `channel_telegram` | no | yes | yes |
+| `calendar_google` | no* | no* | no* |
+| `calendar_voice` | no* | no* | no* |
+| `analytics` | no | no | no |
 
-| Code 		| Nombre UI | Posicionamiento |
-| --- 		| --- 		| --- |
-| `basic` 	| Basico 	| Documentos ligeros + chat documental basico.   |
-| `medium` 	| Medio 	| Basico + knowledge/RAG + chat sobre knowledge |
-| `high` 	| Alto 		| Medio + citas + canales externos. |
-| `total` 	| Total 	| Todo el producto activo + calendario Google + limites altos (sin Analytics/BI; D011). |
+\* Disponible solo via override SADM si hace falta un piloto interno; no marketing.
 
-`free` legacy se migra a `basic`.
+## 4. Limites duros (propuesta D012)
 
-## 4. Features
+| Limit code | Unidad | Basico | Avanzado | Premium |
+| --- | --- | ---: | ---: | ---: |
+| `documents_per_day` | ficheros | 50 | 200 | 800 |
+| `document_retries_per_day` | reintentos | 20 | 80 | 300 |
+| `knowledge_uploads_per_day` | ficheros | 25 | 60 | 200 |
+| `knowledge_docs_max` | docs activos | 100 | 400 | 1500 |
+| `chat_messages_per_day` | mensajes | 100 | 250 | 600 |
+| `channel_messages_per_hour` | mensajes/cliente | 0 | 80 | 200 |
+| `voice_notes_per_hour` | notas | 0 | 0 | 0 |
+| `members_max` | seats | 5 | 15 | 40 |
+| `llm_budget_eur_month` | EUR | 30 | 100 | 250 |
+| `channel_external_slots` | integraciones | 0 | 2 | 2 |
 
-| Feature code 			| basic | medium | high	 		| total |
-| --- 					| --- 	| --- 	 | --- 	 		| --- 	|
-| `documents` 			| yes 	| yes 	 | yes	 		| yes |
-| `documents_chat` 		| yes 	| yes 	 | yes	 		| yes |
-| `knowledge` 			| no 	| yes 	 | yes	 		| yes |
-| `knowledge_chat` 		| no 	| yes 	 | yes	 		| yes |
-| `calendar_google` 	| no	| no 	 | no			| yes |
-| `calendar_voice` 		| no	| no 	 | no	 		| yes |
-| `appointments` 		| no 	| no 	 | yes 	 		| yes |
-| `channel_whatsapp`	| no	| no 	 | yes 			| yes |
-| `channel_telegram` 	| no	| no	 | yes 			| yes |
-| `analytics` 			| no 	| no 	 | no 	 		| **no** (D011 — no implementar) |
+## 5. Precios orientativos (sin IVA)
 
-## 5. Limites iniciales
+Hipotesis inicial; revisar con `llm_calls` / SADM tras 2–4 semanas.
 
-| Limit code 					| Unidad 			| basic 	| medium 	| high 	| total |
-| --- 							| --- 				| ---: 		| ---: 		| ---: 	| ---: |
-| `documents_per_day` 			| ficheros 			| 30 		| 100 		| 300 	| 1000 |
-| `document_retries_per_day` 	| reintentos 		| 10 		| 30 		| 100 	| 500 |
-| `knowledge_uploads_per_day` 	| ficheros 			| 0 		| 20 		| 50 	| 200 |
-| `knowledge_docs_max` 			| docs activos 		| 0 		| 50 		| 200	| 1000 |
-| `chat_messages_per_day` 		| mensajes 			| 40 		| 80 		| 150	| 400 |
-| `channel_messages_per_hour` 	| mensajes/cliente  | 0 		| 0 		| 60 	| 120 |
-| `voice_notes_per_hour` 		| notas 			| 0 		| 0 		| 0		| 60 |
-| `members_max` 				| seats 			| 3 		| 10 		| 25 	| 100 |
-| `llm_budget_eur_month` 		| EUR 				| 5 		| 25 		| 80 	| null |
-| `channel_external_slots` 		| integraciones 	| 0 		| 0 		| 2 	| 2 |
+| Plan | Precio piloto sugerido | Objetivo | Techo LLM |
+| --- | ---: | ---: | ---: |
+| Basico | 59–79 EUR/mes | 79–99 EUR/mes | 30 EUR |
+| Avanzado | 149–179 EUR/mes | 179–199 EUR/mes | 100 EUR |
+| Premium | 249–299 EUR/mes | 299–349 EUR/mes | 250 EUR |
 
-`null` significa ilimitado solo si el plan u override lo declara explicitamente.
+Anual: ~2 meses de descuento. Setup WA/TG: 99–299 EUR opcional.
 
-### 5.1 Coste neto estimado y precio orientativo
+## 6. Implementacion
 
-Estos importes son una hipotesis inicial para pricing. Deben revisarse tras 2-4
-semanas de uso real con `llm_calls`, `usage_meter` y metricas SADM.
+- Resolucion: `entitlement_service` + gates `require_feature`.
+- Cuotas Redis + budget: `plan_quota_service` (duro: bloquea al techo).
+- SADM `/sadm/plans`: assign + override.
+- Stripe: `price_id` → `plan_code` via `assign_tenant_plan`.
+- Historial: `tenant_plan_changes`.
 
-Definicion de coste neto estimado:
+## 7. Decisiones
 
-- Incluye coste variable esperado de LLM, embeddings, storage/R2 marginal, Redis/colas y margen de infraestructura compartida.
-- No incluye IVA, IRPF/sociedades, soporte humano intensivo, comisiones Stripe, coste comercial ni horas de desarrollo.
-- No asume que todos los limites se consumen al 100%; si un tenant consume el techo completo de forma sostenida, deben aplicarse cuotas, budget mensual u override comercial.
-
-| Plan 		| Coste neto estimado/mes 	| Techo LLM recomendado 				| Precio inicial sugerido al cliente 	| Precio objetivo cuando haya datos |
-| --- 		| ---: 						| ---: 									| ---: 									| ---: |
-| `basic` 	| 2-5 EUR 					| 5 EUR 								| 29 EUR/mes 							| 39 EUR/mes |
-| `medium` 	| 8-18 EUR 					| 25 EUR 								| 69 EUR/mes 							| 89-99 EUR/mes |
-| `high` 	| 25-60 EUR 				| 80 EUR 								| 149 EUR/mes 							| 179-199 EUR/mes |
-| `total` 	| 80-180 EUR 				| 200 EUR inicial, no `null` en piloto 	| desde 299 EUR/mes 					| 399-499 EUR/mes o custom |
-
-Recomendaciones:
-
-- En piloto, no dejar `llm_budget_eur_month = null` para `total`: usar un soft cap inicial de 200 EUR y subirlo por override SADM si el cliente lo justifica.
-- Mantener margen bruto objetivo minimo del 70% en `basic`/`medium` y revisar `high`/`total` cliente a cliente.
-- Si un cliente usa muchos canales externos o documentos largos, pasar a precio custom antes de aumentar limites.
-  (Analytics/BI sobre BD externa: **no ofrece** — D011.)
-- Registrar precios sin IVA en la documentacion comercial y aplicar IVA segun fiscalidad.
-
-Referencias de coste:
-
-- El codigo fuente usa `app/llm/pricing.py` como tabla operativa en EUR por millon de tokens.
-- Revisar tarifas oficiales de Anthropic, Google Gemini y Voyage antes de cerrar precios publicos.
-
-## 6. Modelo de datos objetivo
-
-```text
-plans
-- id
-- code unique
-- name
-- description
-- sort_order
-- is_active
-- is_public
-- stripe_price_id nullable
-- created_at
-- updated_at
-
-plan_entitlements
-- id
-- plan_id
-- kind: feature | limit
-- code
-- enabled nullable
-- limit_value nullable
-- unique(plan_id, kind, code)
-
-tenant_plan_changes
-- id
-- tenant_id
-- from_plan_code
-- to_plan_code
-- changed_by_user_id
-- reason
-- metadata
-- created_at
-```
-
-`plans` y `plan_entitlements` son catalogo global sin RLS tenant. `tenant_plan_changes` lleva RLS.
-
-## 7. Codigo objetivo
-
-```text
-app/core/entitlement_codes.py
-app/models/plan.py
-app/schemas/entitlements.py
-app/services/entitlement_service.py
-app/services/plan_service.py
-app/deps.py
-app/core/rate_limiter.py
-app/routes/web/admin/plans.py
-app/templates/pages/sadm/plans/*
-```
-
-DTO:
-
-```python
-class Entitlements(BaseModel):
-    plan_code: str
-    features: frozenset[str]
-    limits: dict[str, Decimal | None]
-
-    def has(self, feature: str) -> bool: ...
-    def limit(self, code: str) -> Decimal | None: ...
-```
-
-## 8. Resolucion
-
-Prioridad:
-
-1. Kill-switch global de `Settings`.
-2. Override `tenants.settings["entitlements_override"]`.
-3. Catalogo del plan.
-4. Fail-closed.
-
-No resolver multiples veces por request: cachear en `request.state.entitlements`.
-
-## 9. Enforcement
-
-Cada feature se aplica en:
-
-- rutas web/API,
-- sidebar,
-- services,
-- workers,
-- webhooks,
-- templates,
-- QA manual.
-
-Ejemplo:
-
-```python
-RequireKnowledge = Annotated[Entitlements, Depends(require_feature("knowledge"))]
-```
-
-Workers:
-
-```python
-ents = await entitlement_service.resolve_tenant(db, tenant_id)
-if not ents.has("documents"):
-    mark_failed_without_llm(...)
-    return
-```
-
-Webhooks:
-
-- si firma valida pero feature no incluida: `200` + log + no job.
-
-## 10. Tests minimos
-
-- Merge plan + override.
-- Plan inexistente fail-closed.
-- Feature off -> 403 o pagina plan required.
-- Feature on -> 200.
-- Sidebar oculta modulos.
-- Worker no llama LLM si feature off.
-- Webhook no encola si feature off.
-- Limite `null` se interpreta como unlimited.
-- SADM cambia plan y audit log queda registrado.
+- D011: Analytics no se implementa.
+- D012: catalogo Basico / Avanzado / Premium; calendar fuera de oferta; limites duros escalonados.

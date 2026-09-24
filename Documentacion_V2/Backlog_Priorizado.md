@@ -1,7 +1,7 @@
 # Backlog_Priorizado
 
 Fecha actualizacion: 2026-09-23
-Estado: alineado con codigo en `RamaCursor01` (planes `p64` + Stripe `p65` + drop analytics `p66`).
+Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67` + Stripe `p65`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
 
@@ -14,7 +14,7 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 | 3 | Dedupe anti-replay webhooks | **Hecho** (Clerk/WA/TG/Stripe) |
 | 4 | Limite de body webhooks | **Hecho** |
 | 5 | OCR knowledge + `media_limits` | **Hecho** |
-| 6 | Catalogo de planes | **Hecho** (Paso02, `p64`) |
+| 6 | Catalogo de planes | **Hecho** (D012: `basic`/`advanced`/`premium`, `p67`) |
 | 7 | Gates por plan | **Hecho** (Paso03) |
 | 8 | Cuotas y budgets por plan | **Hecho** (Paso04) |
 

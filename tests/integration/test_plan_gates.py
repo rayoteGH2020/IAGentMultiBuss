@@ -29,7 +29,7 @@ async def plans_catalog_ready(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_basic_entitlements_deny_knowledge(
+async def test_basic_entitlements_allow_knowledge_deny_appointments(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
@@ -44,19 +44,19 @@ async def test_basic_entitlements_deny_knowledge(
 
     ents = await entitlement_service.resolve_entitlements(db_session, tenant)
     assert ents.has("documents") is True
-    assert ents.has("knowledge") is False
+    assert ents.has("knowledge") is True
     assert ents.has("appointments") is False
 
 
 @pytest.mark.asyncio
-async def test_medium_entitlements_allow_knowledge(
+async def test_advanced_entitlements_allow_appointments(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
     tenant = Tenant(
-        name=f"Medium gate {uuid4().hex[:8]}",
-        plan="medium",
-        plan_code="medium",
+        name=f"Advanced gate {uuid4().hex[:8]}",
+        plan="advanced",
+        plan_code="advanced",
         settings={},
     )
     db_session.add(tenant)
@@ -64,11 +64,12 @@ async def test_medium_entitlements_allow_knowledge(
 
     ents = await entitlement_service.resolve_entitlements(db_session, tenant)
     assert ents.has("knowledge") is True
-    assert ents.has("appointments") is False
+    assert ents.has("appointments") is True
+    assert ents.has("channel_whatsapp") is True
 
 
 @pytest.mark.asyncio
-async def test_override_can_enable_knowledge_on_basic(
+async def test_override_can_enable_appointments_on_basic(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
@@ -76,13 +77,13 @@ async def test_override_can_enable_knowledge_on_basic(
         name=f"Override gate {uuid4().hex[:8]}",
         plan="basic",
         plan_code="basic",
-        settings={OVERRIDE_SETTINGS_KEY: {"features": {"knowledge": True}}},
+        settings={OVERRIDE_SETTINGS_KEY: {"features": {"appointments": True}}},
     )
     db_session.add(tenant)
     await db_session.flush()
 
     ents = await entitlement_service.resolve_entitlements(db_session, tenant)
-    assert ents.has("knowledge") is True
+    assert ents.has("appointments") is True
 
 
 @pytest.mark.asyncio

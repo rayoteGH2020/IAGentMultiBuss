@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 @pytest.mark.asyncio
 async def test_list_all_tenants_returns_multiple(db_session) -> None:
     t1 = Tenant(name=f"A {uuid4().hex[:6]}", plan_code="basic", plan="basic")
-    t2 = Tenant(name=f"B {uuid4().hex[:6]}", plan_code="medium", plan="medium")
+    t2 = Tenant(name=f"B {uuid4().hex[:6]}", plan_code="basic", plan="basic")
     db_session.add_all([t1, t2])
     await db_session.flush()
 

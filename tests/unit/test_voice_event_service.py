@@ -178,7 +178,7 @@ async def test_rate_limit_blocks_after_threshold(monkeypatch: pytest.MonkeyPatch
             "app.services.entitlement_service.resolve_tenant",
             AsyncMock(
                 return_value=Entitlements(
-                    plan_code="total",
+                    plan_code="premium",
                     features=frozenset({"calendar_voice"}),
                     limits={"voice_notes_per_hour": Decimal("5")},
                     fail_closed=False,
@@ -223,7 +223,7 @@ async def test_draft_assembles_voiceeventdraft() -> None:
             "app.services.entitlement_service.resolve_tenant",
             AsyncMock(
                 return_value=Entitlements(
-                    plan_code="total",
+                    plan_code="premium",
                     features=frozenset({"calendar_voice"}),
                     limits={"voice_notes_per_hour": Decimal("60")},
                     fail_closed=False,
@@ -292,7 +292,7 @@ async def test_draft_logs_audit_voice_transcribed() -> None:
             "app.services.entitlement_service.resolve_tenant",
             AsyncMock(
                 return_value=Entitlements(
-                    plan_code="total",
+                    plan_code="premium",
                     features=frozenset({"calendar_voice"}),
                     limits={"voice_notes_per_hour": Decimal("60")},
                     fail_closed=False,

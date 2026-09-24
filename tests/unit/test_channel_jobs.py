@@ -12,7 +12,7 @@ import pytest
 from app.core.entitlement_codes import (
     FEATURE_CODES,
     LIMIT_CHANNEL_MESSAGES_PER_HOUR,
-    PLAN_CODE_TOTAL,
+    PLAN_CODE_PREMIUM,
 )
 from app.jobs import channel_jobs
 from app.models.channel_integration import ChannelIntegrationStatus
@@ -34,8 +34,8 @@ def _fake_tenant() -> MagicMock:
     tenant = MagicMock()
     tenant.id = TENANT_ID
     tenant.name = "Clínica Demo"
-    tenant.plan = "total"
-    tenant.plan_code = "total"
+    tenant.plan = "premium"
+    tenant.plan_code = "premium"
     return tenant
 
 
@@ -49,7 +49,7 @@ def _fake_integration(*, threshold: float = 0.6) -> MagicMock:
 
 def _ents() -> Entitlements:
     return Entitlements(
-        plan_code=PLAN_CODE_TOTAL,
+        plan_code=PLAN_CODE_PREMIUM,
         features=frozenset(FEATURE_CODES),
         limits={LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("60")},
         fail_closed=False,

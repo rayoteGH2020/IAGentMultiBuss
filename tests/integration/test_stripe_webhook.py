@@ -52,7 +52,7 @@ async def test_assign_plan_writes_history_row(
     await plan_service.assign_tenant_plan(
         db_session,
         tenant_id=tenant.id,
-        plan_code="medium",
+        plan_code="advanced",
         actor_user_id=None,
         reason="test",
         source=plan_service.SOURCE_STRIPE,
@@ -71,7 +71,7 @@ async def test_assign_plan_writes_history_row(
     )
     assert len(rows) == 1
     assert rows[0].from_plan_code == "basic"
-    assert rows[0].to_plan_code == "medium"
+    assert rows[0].to_plan_code == "advanced"
     assert rows[0].metadata_ is not None
     assert rows[0].metadata_["source"] == "stripe"
 
@@ -79,7 +79,7 @@ async def test_assign_plan_writes_history_row(
     await plan_service.assign_tenant_plan(
         db_session,
         tenant_id=tenant.id,
-        plan_code="medium",
+        plan_code="advanced",
         actor_user_id=None,
         reason="noop",
         source=plan_service.SOURCE_STRIPE,

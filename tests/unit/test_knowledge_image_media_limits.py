@@ -218,7 +218,7 @@ async def test_create_from_upload_rejects_oversized_image_before_r2(
                 "app.services.entitlement_service.resolve_tenant",
                 AsyncMock(
                     return_value=Entitlements(
-                        plan_code="medium",
+                        plan_code="basic",
                         features=frozenset({"knowledge"}),
                         limits={"knowledge_docs_max": Decimal("50")},
                         fail_closed=False,

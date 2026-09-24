@@ -109,7 +109,7 @@ async def test_create_faq_and_index_full_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """create_from_faq → job → status=ready, chunk_count > 0, faq_content persistido."""
-    tenant: Tenant = await tenant_factory(plan_code="medium")
+    tenant: Tenant = await tenant_factory(plan_code="basic")
     await set_tenant_context(db_session, str(tenant.id))
 
     fake_storage = _FakeStorage()
@@ -187,7 +187,7 @@ async def test_get_faq_pairs_roundtrip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Los pares Q/A se recuperan fielmente tras create_from_faq."""
-    tenant: Tenant = await tenant_factory(plan_code="medium")
+    tenant: Tenant = await tenant_factory(plan_code="basic")
     await set_tenant_context(db_session, str(tenant.id))
 
     fake_storage = _FakeStorage()

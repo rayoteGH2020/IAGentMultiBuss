@@ -3,6 +3,13 @@
 Fuente de verdad de nombres: Documentacion_V2/Planes_Entitlements.md.
 La resolucion de capacidades vive en app.services.entitlement_service;
 no usar `if tenant.plan == ...` en rutas ni workers.
+
+Catalogo comercial (D012, 2026-09-23): ``basic`` | ``advanced`` | ``premium``.
+Limites duros en los tres: al superar Avanzado → upgrade a Premium; al superar
+Premium → solo override SADM / contrato custom (no self-serve).
+
+Calendar Google y voz-calendario siguen en FEATURE_CODES (codigo existente) pero
+NO entran en ningun plan publicado (D012 — no evolucionar ni publicitar).
 """
 
 from __future__ import annotations
@@ -11,22 +18,25 @@ from decimal import Decimal
 from typing import Final
 
 PLAN_CODE_BASIC: Final = "basic"
-PLAN_CODE_MEDIUM: Final = "medium"
-PLAN_CODE_HIGH: Final = "high"
-PLAN_CODE_TOTAL: Final = "total"
+PLAN_CODE_ADVANCED: Final = "advanced"
+PLAN_CODE_PREMIUM: Final = "premium"
 
 PLAN_CODES: Final[frozenset[str]] = frozenset(
     {
         PLAN_CODE_BASIC,
-        PLAN_CODE_MEDIUM,
-        PLAN_CODE_HIGH,
-        PLAN_CODE_TOTAL,
+        PLAN_CODE_ADVANCED,
+        PLAN_CODE_PREMIUM,
     }
 )
 
-# Alias legacy -> codigo canonico del catalogo.
+# Alias legacy / UI → codigo canonico del catalogo.
 LEGACY_PLAN_ALIASES: Final[dict[str, str]] = {
     "free": PLAN_CODE_BASIC,
+    "basico": PLAN_CODE_BASIC,
+    "medium": PLAN_CODE_BASIC,
+    "high": PLAN_CODE_ADVANCED,
+    "avanzado": PLAN_CODE_ADVANCED,
+    "total": PLAN_CODE_PREMIUM,
 }
 
 FEATURE_DOCUMENTS: Final = "documents"
@@ -38,10 +48,7 @@ FEATURE_CALENDAR_VOICE: Final = "calendar_voice"
 FEATURE_APPOINTMENTS: Final = "appointments"
 FEATURE_CHANNEL_WHATSAPP: Final = "channel_whatsapp"
 FEATURE_CHANNEL_TELEGRAM: Final = "channel_telegram"
-# D011 (2026-09-23): modulo 3 Analytics SQL / BI sobre BD externa del cliente
-# NO se implementara (decision de producto: fuera de alcance, no roadmap).
-# Constante conservada solo para tests de kill-switch y docs historicas; no entra
-# en FEATURE_CODES ni en ningun plan.
+# D011: Analytics SQL / BI — no implementar; constante solo para kill-switch/docs.
 FEATURE_ANALYTICS: Final = "analytics"
 
 FEATURE_CODES: Final[frozenset[str]] = frozenset(
@@ -55,7 +62,24 @@ FEATURE_CODES: Final[frozenset[str]] = frozenset(
         FEATURE_APPOINTMENTS,
         FEATURE_CHANNEL_WHATSAPP,
         FEATURE_CHANNEL_TELEGRAM,
-        # FEATURE_ANALYTICS omitido a proposito (D011 — no implementar modulo 3).
+        # FEATURE_ANALYTICS omitido (D011).
+    }
+)
+
+# Features vendibles en planes publicos (sin calendar_* — D012).
+_BASE_PRODUCT: Final[frozenset[str]] = frozenset(
+    {
+        FEATURE_DOCUMENTS,
+        FEATURE_DOCUMENTS_CHAT,
+        FEATURE_KNOWLEDGE,
+        FEATURE_KNOWLEDGE_CHAT,
+    }
+)
+_ADVANCED_PRODUCT: Final[frozenset[str]] = _BASE_PRODUCT | frozenset(
+    {
+        FEATURE_APPOINTMENTS,
+        FEATURE_CHANNEL_WHATSAPP,
+        FEATURE_CHANNEL_TELEGRAM,
     }
 )
 
@@ -100,7 +124,6 @@ FEATURE_UI_LABELS: Final[dict[str, str]] = {
     FEATURE_APPOINTMENTS: "Citas",
     FEATURE_CHANNEL_WHATSAPP: "WhatsApp",
     FEATURE_CHANNEL_TELEGRAM: "Telegram",
-    # FEATURE_ANALYTICS: "Analytics",  # D011 — no implementar; sin UI ni gates.
 }
 
 
@@ -108,106 +131,68 @@ def feature_ui_label(code: str) -> str:
     return FEATURE_UI_LABELS.get(code, code)
 
 
-# Matriz inicial (Planes_Entitlements.md §4-§5). Solo features habilitadas.
+# Matriz comercial (Planes_Entitlements.md). calendar_* ausente a proposito (D012).
 PLAN_FEATURES: Final[dict[str, frozenset[str]]] = {
-    PLAN_CODE_BASIC: frozenset({FEATURE_DOCUMENTS, FEATURE_DOCUMENTS_CHAT}),
-    PLAN_CODE_MEDIUM: frozenset(
-        {
-            FEATURE_DOCUMENTS,
-            FEATURE_DOCUMENTS_CHAT,
-            FEATURE_KNOWLEDGE,
-            FEATURE_KNOWLEDGE_CHAT,
-        }
-    ),
-    PLAN_CODE_HIGH: frozenset(
-        {
-            FEATURE_DOCUMENTS,
-            FEATURE_DOCUMENTS_CHAT,
-            FEATURE_KNOWLEDGE,
-            FEATURE_KNOWLEDGE_CHAT,
-            FEATURE_APPOINTMENTS,
-            FEATURE_CHANNEL_WHATSAPP,
-            FEATURE_CHANNEL_TELEGRAM,
-        }
-    ),
-    # total = todas las features activas (FEATURE_CODES ya excluye analytics / D011).
-    PLAN_CODE_TOTAL: frozenset(FEATURE_CODES),
+    PLAN_CODE_BASIC: _BASE_PRODUCT,
+    PLAN_CODE_ADVANCED: _ADVANCED_PRODUCT,
+    PLAN_CODE_PREMIUM: _ADVANCED_PRODUCT,
 }
 
+# Limites duros (no null). Superar Avanzado → Premium; superar Premium → SADM/custom.
 PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
     PLAN_CODE_BASIC: {
-        LIMIT_DOCUMENTS_PER_DAY: Decimal("30"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("10"),
-        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("0"),
-        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("0"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("40"),
+        LIMIT_DOCUMENTS_PER_DAY: Decimal("50"),
+        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("20"),
+        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("25"),
+        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("100"),
+        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("100"),
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("0"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
-        LIMIT_MEMBERS_MAX: Decimal("3"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("5"),
+        LIMIT_MEMBERS_MAX: Decimal("5"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("30"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("0"),
     },
-    PLAN_CODE_MEDIUM: {
-        LIMIT_DOCUMENTS_PER_DAY: Decimal("100"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("30"),
-        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("20"),
-        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("50"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("80"),
-        LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("0"),
+    PLAN_CODE_ADVANCED: {
+        LIMIT_DOCUMENTS_PER_DAY: Decimal("200"),
+        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("80"),
+        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("60"),
+        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("400"),
+        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("250"),
+        LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("80"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
-        LIMIT_MEMBERS_MAX: Decimal("10"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("25"),
-        LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("0"),
-    },
-    PLAN_CODE_HIGH: {
-        LIMIT_DOCUMENTS_PER_DAY: Decimal("300"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("100"),
-        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("50"),
-        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("200"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("150"),
-        LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("60"),
-        LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
-        LIMIT_MEMBERS_MAX: Decimal("25"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("80"),
+        LIMIT_MEMBERS_MAX: Decimal("15"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("100"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
     },
-    PLAN_CODE_TOTAL: {
-        LIMIT_DOCUMENTS_PER_DAY: Decimal("1000"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("500"),
+    PLAN_CODE_PREMIUM: {
+        LIMIT_DOCUMENTS_PER_DAY: Decimal("800"),
+        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("300"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("200"),
-        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("1000"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("400"),
-        LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("120"),
-        LIMIT_VOICE_NOTES_PER_HOUR: Decimal("60"),
-        LIMIT_MEMBERS_MAX: Decimal("100"),
-        # null declarado = unlimited (piloto puede overridear a soft-cap).
-        LIMIT_LLM_BUDGET_EUR_MONTH: None,
+        LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("1500"),
+        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("600"),
+        LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("200"),
+        LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
+        LIMIT_MEMBERS_MAX: Decimal("40"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("250"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
     },
 }
 
 PLAN_META: Final[dict[str, tuple[str, str, int]]] = {
-    # code -> (name, description, sort_order)
     PLAN_CODE_BASIC: (
         "Basico",
-        "Documentos ligeros y chat documental basico.",
+        "Documentos, chat documental, knowledge/RAG y chat sobre knowledge.",
         10,
     ),
-    PLAN_CODE_MEDIUM: (
-        "Medio",
-        "Basico + knowledge/RAG y chat sobre knowledge.",
+    PLAN_CODE_ADVANCED: (
+        "Avanzado",
+        "Basico + citas internas (BBDD saas) + WhatsApp/Telegram (chat knowledge).",
         20,
     ),
-    PLAN_CODE_HIGH: (
-        "Alto",
-        "Medio + citas y canales externos.",
+    PLAN_CODE_PREMIUM: (
+        "Premium",
+        "Mismas capacidades que Avanzado con limites superiores (duros).",
         30,
-    ),
-    PLAN_CODE_TOTAL: (
-        "Total",
-        # D011: sin Analytics/BI; total = resto del producto + limites altos.
-        "Todo el producto activo: calendario Google, canales, citas y limites altos.",
-        40,
     ),
 }
 
@@ -216,7 +201,7 @@ def normalize_plan_code(raw: str | None) -> str:
     """Normaliza alias legacy; conserva codigos desconocidos para fail-closed.
 
     - ``None`` / vacio -> ``basic`` (default de alta).
-    - ``free`` -> ``basic``.
+    - ``free`` / ``medium`` -> ``basic``; ``high`` -> ``advanced``; ``total`` -> ``premium``.
     - Cualquier otro string se deja (lower); si no existe en catalogo,
       ``resolve_entitlements`` responde fail-closed.
     """

@@ -42,31 +42,41 @@ async def plans_catalog_ready(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_creates_four_plans(
+async def test_seed_creates_three_commercial_plans(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
-    plans = await plan_service.list_plans(db_session, active_only=False)
+    plans = await plan_service.list_plans(db_session, active_only=True)
     codes = {plan.code for plan in plans}
     assert codes >= PLAN_CODES
+    assert "medium" not in {p.code for p in plans if p.is_active}
 
 
 @pytest.mark.asyncio
-async def test_basic_has_no_knowledge_total_excludes_analytics(
+async def test_basic_has_knowledge_premium_excludes_calendar(
     db_session: AsyncSession,
     plans_catalog_ready: None,
 ) -> None:
+    from app.core.entitlement_codes import FEATURE_APPOINTMENTS, FEATURE_CALENDAR_GOOGLE
+
     basic = await plan_service.require_plan_by_code(db_session, "basic")
-    total = await plan_service.require_plan_by_code(db_session, "total")
+    premium = await plan_service.require_plan_by_code(db_session, "premium")
+    advanced = await plan_service.require_plan_by_code(db_session, "advanced")
 
     basic_ents = entitlement_service.entitlements_from_rows("basic", list(basic.entitlements))
-    total_ents = entitlement_service.entitlements_from_rows("total", list(total.entitlements))
+    premium_ents = entitlement_service.entitlements_from_rows("premium", list(premium.entitlements))
+    advanced_ents = entitlement_service.entitlements_from_rows(
+        "advanced", list(advanced.entitlements)
+    )
 
-    assert basic_ents.has(FEATURE_KNOWLEDGE) is False
-    # D011: analytics retirada del catalogo (modulo 3 no se implementa).
-    assert total_ents.has(FEATURE_ANALYTICS) is False
-    assert total_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) is None
-    assert basic_ents.limit(LIMIT_DOCUMENTS_PER_DAY) == Decimal("30")
+    assert basic_ents.has(FEATURE_KNOWLEDGE) is True
+    assert basic_ents.has(FEATURE_APPOINTMENTS) is False
+    assert premium_ents.has(FEATURE_APPOINTMENTS) is True
+    assert premium_ents.has(FEATURE_CALENDAR_GOOGLE) is False
+    assert premium_ents.has(FEATURE_ANALYTICS) is False
+    assert advanced_ents.has(FEATURE_APPOINTMENTS) is True
+    assert basic_ents.limit(LIMIT_DOCUMENTS_PER_DAY) == Decimal("50")
+    assert premium_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) == Decimal("250")
 
 
 @pytest.mark.asyncio

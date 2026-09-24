@@ -52,8 +52,8 @@ def api_client(monkeypatch: pytest.MonkeyPatch) -> object:
             tenant = Tenant(
                 clerk_org_id=f"org_{uuid4().hex[:12]}",
                 name="Test Org",
-                plan="high",
-                plan_code="high",
+                plan="advanced",
+                plan_code="advanced",
                 settings={},
                 created_at=now,
                 updated_at=now,

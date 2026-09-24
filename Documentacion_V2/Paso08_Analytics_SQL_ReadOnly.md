@@ -10,7 +10,7 @@ capacidad; mantener el paso como "pendiente" o la feature `analytics` en plan
 Consecuencias en codigo (ya aplicadas):
 
 - Feature `analytics` retirada de `FEATURE_CODES` y del catalogo / plan `total`
-  (`p66_drop_analytics_entitlement_01`).
+  (`p66_drop_analytics_ent_01`).
 - Sin rutas `/analytics`, sin modelos `data_sources` / `analytics_queries`.
 - Restos tipados (`TaskType="sql"`, columna `usage_meter.analytics_queries_count`)
   quedan comentados como reservados muertos; no reactivar sin Decision_Log nueva.

@@ -194,7 +194,7 @@ async def test_complete_sends_no_document_content(monkeypatch: pytest.MonkeyPatc
         "app.services.entitlement_service.resolve_tenant",
         AsyncMock(
             return_value=Entitlements(
-                plan_code="total",
+                plan_code="premium",
                 features=frozenset(),
                 limits={"llm_budget_eur_month": None},
                 fail_closed=False,
@@ -241,7 +241,7 @@ async def test_complete_error_sends_exception_type_only(monkeypatch: pytest.Monk
         "app.services.entitlement_service.resolve_tenant",
         AsyncMock(
             return_value=Entitlements(
-                plan_code="total",
+                plan_code="premium",
                 features=frozenset(),
                 limits={"llm_budget_eur_month": None},
                 fail_closed=False,
@@ -295,7 +295,7 @@ async def test_complete_provider_overload_sends_safe_status_to_langfuse(
         "app.services.entitlement_service.resolve_tenant",
         AsyncMock(
             return_value=Entitlements(
-                plan_code="total",
+                plan_code="premium",
                 features=frozenset(),
                 limits={"llm_budget_eur_month": None},
                 fail_closed=False,

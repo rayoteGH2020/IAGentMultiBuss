@@ -84,8 +84,8 @@ async def _seed_target_tenant(rls_database_url: str) -> tuple[UUID, UUID]:
         tenant = Tenant(
             clerk_org_id=f"org_target_{suffix}",
             name=f"Target Tenant {suffix}",
-            plan="high",
-            plan_code="high",
+            plan="advanced",
+            plan_code="advanced",
             settings={},
         )
         user = User(

@@ -102,7 +102,7 @@ No hay rutas de analytics SQL (D011 — no se implementara). Webhooks Stripe: mo
 | Calendario Google/voz | Implementado | OAuth cifrado, voz → evento. Gates `calendar_*`. QA manual pendiente. |
 | Citas internas | Implementado | Scheduling multi-profesional, API find-slots, gates `appointments`. |
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
-| Planes/entitlements | Implementado | Catalogo BD, resolve central, gates, cuotas Redis, budget LLM, kill-switch (Pasos 02–04). |
+| Planes/entitlements | Implementado | D012: `basic`/`advanced`/`premium`; gates; cuotas duros; calendar_* no publicados. |
 | Analytics SQL | **No implementar** (D011) | Feature retirada del catalogo. Paso08 archivado. Sin rutas ni tablas. |
 | Billing Stripe | Implementado | Checkout + portal + webhook firmado; `assign_tenant_plan`; `tenant_plan_changes`; `billing_status`. Requiere Price IDs e Infisical. |
 

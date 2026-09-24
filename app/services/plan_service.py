@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -91,38 +91,53 @@ def _entitlement_rows_for_plan(plan_id: UUID, plan_code: str) -> list[PlanEntitl
 
 
 async def seed_plan_catalog(db: AsyncSession, *, replace_missing: bool = True) -> list[Plan]:
-    """Idempotente: crea planes/entitlements ausentes segun la matriz canonica.
+    """Idempotente: asegura planes activos del catalogo y resincroniza entitlements.
 
-    Pensado para tests y reparacion; la migracion Alembic hace el seed inicial.
+    - Crea ``basic`` / ``advanced`` / ``premium`` si faltan.
+    - Actualiza nombre/descripcion/sort y reemplaza filas de entitlements.
+    - Desactiva codigos legacy (``medium``, ``high``, ``total``) si existen.
     """
     existing = await db.execute(select(Plan))
     by_code = {plan.code: plan for plan in existing.scalars().all()}
-    created: list[Plan] = []
+    touched: list[Plan] = []
 
     for code in sorted(PLAN_CODES, key=lambda c: PLAN_META[c][2]):
-        if code in by_code:
-            continue
-        if not replace_missing:
-            continue
         name, description, sort_order = PLAN_META[code]
-        plan = Plan(
-            id=uuid4(),
-            code=code,
-            name=name,
-            description=description,
-            sort_order=sort_order,
-            is_active=True,
-            is_public=True,
-        )
-        db.add(plan)
-        await db.flush()
+        plan = by_code.get(code)
+        if plan is None:
+            if not replace_missing:
+                continue
+            plan = Plan(
+                id=uuid4(),
+                code=code,
+                name=name,
+                description=description,
+                sort_order=sort_order,
+                is_active=True,
+                is_public=True,
+            )
+            db.add(plan)
+            await db.flush()
+            by_code[code] = plan
+        else:
+            plan.name = name
+            plan.description = description
+            plan.sort_order = sort_order
+            plan.is_active = True
+            plan.is_public = True
+            await db.execute(delete(PlanEntitlement).where(PlanEntitlement.plan_id == plan.id))
         for row in _entitlement_rows_for_plan(plan.id, code):
             db.add(row)
-        created.append(plan)
-        by_code[code] = plan
+        touched.append(plan)
+
+    for legacy_code in ("medium", "high", "total"):
+        legacy = by_code.get(legacy_code)
+        if legacy is not None:
+            legacy.is_active = False
+            legacy.is_public = False
 
     await db.flush()
-    return created
+    return touched
 
 
 def catalog_limits_for(plan_code: str) -> dict[str, Decimal | None]:

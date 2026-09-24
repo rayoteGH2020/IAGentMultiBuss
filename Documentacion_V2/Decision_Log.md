@@ -172,3 +172,23 @@ Consecuencia:
 - `Paso08_Analytics_SQL_ReadOnly.md` queda como historico / NO IMPLEMENTAR.
 - No crear tablas `data_sources` / `analytics_queries` ni rutas `/analytics`.
 - Restos (`TaskType="sql"`, `usage_meter.analytics_queries_count`) documentados como muertos; no reactivar sin nueva decision en este log.
+
+## D012 - Catalogo Basico / Avanzado / Premium (limites duros)
+
+Decision (cerrada 2026-09-23): sustituir `basic|medium|high|total` por tres ofertas publicadas:
+
+- **Basico** (`basic`): documentos + chat documental + knowledge + chat knowledge.
+- **Avanzado** (`advanced`): Basico + citas internas (BBDD saas) + WhatsApp/Telegram.
+- **Premium** (`premium`): mismas features que Avanzado; limites mayores.
+
+Motivo:
+
+- Simplificar venta (2 escalones de producto + 1 de capacidad).
+- No publicitar Calendar Google / voz (codigo se conserva; sin evolucionar).
+- Limites **duros** en los tres: superar Avanzado implica Premium; superar Premium implica custom/SADM.
+
+Consecuencia:
+
+- Migracion `p67_plans_basic_adv_prem_01` (remap tenants + reseed entitlements).
+- Alias legacy: `medium`→`basic`, `high`→`advanced`, `total`→`premium`.
+- Actualizar Stripe Price IDs a los tres codigos nuevos.

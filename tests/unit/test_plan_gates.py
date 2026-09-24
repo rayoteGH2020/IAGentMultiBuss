@@ -13,24 +13,24 @@ from app.core.permissions import nav_items_for_access
 from app.schemas.entitlements import Entitlements
 
 
-def test_nav_hides_knowledge_for_basic() -> None:
+def test_nav_hides_channels_for_basic() -> None:
     ents = Entitlements(
         plan_code="basic",
-        features=frozenset({"documents", "documents_chat"}),
+        features=frozenset({"documents", "documents_chat", "knowledge", "knowledge_chat"}),
         limits={},
     )
     hrefs = {h for h, _, _ in nav_items_for_access("admin", ents)}
     assert "/documents" in hrefs
     assert "/chat" in hrefs
-    assert "/knowledge" not in hrefs
+    assert "/knowledge" in hrefs
     assert "/appointments" not in hrefs
     assert "/calendar" not in hrefs
     assert "/settings" in hrefs
 
 
-def test_nav_medium_shows_knowledge() -> None:
+def test_nav_basic_shows_knowledge() -> None:
     ents = Entitlements(
-        plan_code="medium",
+        plan_code="basic",
         features=frozenset({"documents", "documents_chat", "knowledge", "knowledge_chat"}),
         limits={},
     )
@@ -112,7 +112,7 @@ async def test_worker_skips_llm_when_documents_feature_off() -> None:
 
 def test_entitlements_has_null_limit_unlimited() -> None:
     ents = Entitlements(
-        plan_code="total",
+        plan_code="premium",
         features=frozenset(),
         limits={"llm_budget_eur_month": None},
     )

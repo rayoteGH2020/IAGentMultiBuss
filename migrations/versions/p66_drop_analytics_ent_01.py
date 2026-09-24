@@ -1,6 +1,6 @@
 """Remove analytics entitlement from catalog (modulo 3 no se implementara).
 
-Revision ID: p66_drop_analytics_entitlement_01
+Revision ID: p66_drop_analytics_ent_01
 Revises: p65_stripe_billing_01
 Create Date: 2026-09-23
 
@@ -24,7 +24,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "p66_drop_analytics_entitlement_01"
+revision: str = "p66_drop_analytics_ent_01"
 down_revision: str | None = "p65_stripe_billing_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
