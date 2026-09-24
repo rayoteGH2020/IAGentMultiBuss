@@ -200,7 +200,8 @@ def _log_transient_retry(
 #   la entrada permanece para no romper TaskType/overrides historicos, pero no
 #   hay rutas ni runners que la usen. No reactivar sin decision de producto.
 DEFAULT_MODELS: dict[str, str] = {
-    "extraction": "gemini-2.0-flash",
+    # gemini-2.0-flash devuelve 404 en generateContent (retirado por Google, 2026-09).
+    "extraction": "gemini-2.5-flash",
     "classify": "claude-haiku-4-5-20251001",
     "chat": "gemini-2.5-flash",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY

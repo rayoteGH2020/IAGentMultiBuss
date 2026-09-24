@@ -2,7 +2,7 @@
     "_comment": "Dataset de evals del módulo 1. JSON puro (sin comentarios nativos); los campos '_comment' son documentación y son ignorados por el runner.",
     "version": "v1",
     "_version_comment": "Versión del dataset, no del modelo. Al cambiar la estructura del ground_truth o añadir campos nuevos se incrementa a v2 y se crea un fichero separado. El runner carga el dataset por nombre (invoices_v1.json), por lo que v1 y v2 pueden coexistir.",
-    "model_target": "gemini-2.0-flash",
+    "model_target": "gemini-2.5-flash",
     "_model_target_comment": "Modelo LLM contra el que se anotan los ground truths. Si se cambia el modelo por defecto en DEFAULT_MODELS (llm/client.py), los ground truths deben re-validarse con el nuevo modelo porque los valores extraídos pueden diferir.",
     "notes": "Ground-truth placeholder. Rellenar a mano con los valores reales de cada factura en tests/fixtures/invoices/. Casos con ground_truth a null se omiten en el runner (marcados como 'skipped', no como 'failed'). Ver _ground_truth_schema para el formato esperado.",
     "_ground_truth_schema": {
