@@ -1,0 +1,6 @@
+# Scripts y ficheros que se ejecutan en Linux (VPS / contenedores): LF siempre,
+# aunque se editen en Windows. Un CRLF rompe bash y el entrypoint de Postgres.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+deploy/** text eol=lf

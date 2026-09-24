@@ -192,3 +192,21 @@ Consecuencia:
 - Migracion `p67_plans_basic_adv_prem_01` (remap tenants + reseed entitlements).
 - Alias legacy: `medium`→`basic`, `high`→`advanced`, `total`→`premium`.
 - Actualizar Stripe Price IDs a los tres codigos nuevos.
+
+## D013 - Despliegue con Docker Compose + Caddy (no Coolify)
+
+Decision (cerrada 2026-09-24): produccion en una VPS con `deploy/docker-compose.prod.yml` + Caddy (TLS automatico), arrancado siempre con `infisical run`.
+
+Motivo:
+
+- Una sola app y un solo servidor: el panel/multi-app de Coolify no aporta.
+- Coolify guarda variables en su BD: segunda fuente de secretos fuera de Infisical (Agents.md §2).
+- Menor superficie de ataque: sin panel web con control root de Docker expuesto.
+- Infraestructura versionada y revisable en el repo, con tests (`tests/unit/test_deploy_config.py`).
+
+Consecuencia:
+
+- Backups, deploy y rollback por scripts (`deploy/scripts/`), guia en `Paso11_Despliegue_VPS.md`.
+- Unico secreto fuera de Infisical: Machine Identity de la VPS en `/etc/iagent/infisical-identity.conf` (600).
+- La app conecta como `saas_app` (NOBYPASSRLS); migraciones con `MIGRATIONS_DATABASE_URL` (propietario).
+- Redis de prod con `noeviction` (cola ARQ y anti-replay no se expulsan).

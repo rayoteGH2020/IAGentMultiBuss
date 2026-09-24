@@ -1,0 +1,41 @@
+# Contexto de build mínimo: nada de secretos, datos locales ni artefactos.
+.git
+.github
+.agents
+.claude
+.cursor
+.venv
+.uv-cache
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+*.py[cod]
+.coverage
+htmlcov
+
+# Secretos / configuración local (Agents.md §2)
+.env
+.env.*
+.infisical.json
+.secrets.baseline
+
+# Datos y binarios locales
+docker/data
+data
+bin
+*.log
+*.dump
+*.db
+*.sqlite
+
+# No forman parte de la imagen
+tests
+Documentacion
+Documentacion_V2
+docs
+scripts
+app/evals/results
+app/static/css/app.css
+test-results
+playwright-report

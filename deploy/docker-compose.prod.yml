@@ -1,0 +1,268 @@
+# Producción: una VPS, monolito API + worker ARQ (Arquitectura_V2 §16, D013).
+#
+# Arranque SIEMPRE a través de Infisical (Agents.md §2; nunca .env ni env_file):
+#   bash deploy/scripts/deploy.sh <tag>
+# que ejecuta internamente:
+#   infisical run --env=prod -- docker compose -f deploy/docker-compose.prod.yml ...
+#
+# Solo Caddy publica puertos (80/443). Postgres, Redis y la API quedan en la red
+# interna de Docker: ojo, los puertos publicados por Docker se saltan ufw.
+name: iagent-prod
+
+# Paso de variables sin valor: Compose copia cada una del entorno que inyecta
+# Infisical; si no existe allí, no se define en el contenedor y Settings usa su
+# default. tests/unit/test_deploy_config.py exige que esta lista cubra Settings.
+x-app-env: &app-env
+  - APP_ENV
+  - APP_SECRET_KEY
+  - APP_BASE_URL
+  - LOG_LEVEL
+  - APP_DISPLAY_TIMEZONE
+  - SECURITY_ALLOWED_HOSTS
+  - SECURITY_HTTPS_REDIRECT
+  - SECURITY_HSTS_ENABLED
+  - DATABASE_URL
+  - REDIS_URL
+  - R2_ACCOUNT_ID
+  - R2_ACCESS_KEY_ID
+  - R2_SECRET_ACCESS_KEY
+  - R2_BUCKET
+  - R2_ENDPOINT_URL
+  - R2_PUBLIC_URL
+  - R2_REGION
+  - STORAGE_PRESIGNED_TTL_SECONDS
+  - CLERK_SECRET_KEY
+  - CLERK_PUBLISHABLE_KEY
+  - CLERK_JWKS_URL
+  - CLERK_WEBHOOK_SECRET
+  - CLERK_JS_VERSION
+  - CLERK_JWT_AZP_ALLOWLIST
+  - CLERK_JWT_AUDIENCE_ALLOWLIST
+  - ANTHROPIC_API_KEY
+  - GOOGLE_API_KEY
+  - VOYAGE_API_KEY
+  - LANGFUSE_PUBLIC_KEY
+  - LANGFUSE_SECRET_KEY
+  - LANGFUSE_HOST
+  - LANGFUSE_CAPTURE_CONTENT
+  - LLM_MODEL_EXTRACTION
+  - LLM_MODEL_CHAT
+  - LLM_MODEL_CLASSIFY
+  - LLM_MODEL_SQL
+  - LLM_MODEL_TRANSLATE
+  - LLM_MODEL_TRANSCRIPTION
+  - DOCUMENT_MAX_PDF_PAGES
+  - DOCUMENT_MAX_IMAGE_PIXELS
+  - DOCUMENT_MAX_IMAGE_EDGE_PX
+  - DOCUMENT_PROCESSING_STALE_AFTER_SECONDS
+  - DOCUMENT_EXTRACTION_SLOT_TTL_SECONDS
+  - DOCUMENT_OVERRIDE_MAX_PDF_PAGES
+  - DOCUMENT_ESTIMATED_SECONDS_PER_PAGE
+  - DOCUMENT_ESTIMATED_INPUT_TOKENS_PER_PAGE
+  - DOCUMENT_ESTIMATED_OUTPUT_TOKENS_PER_PAGE
+  - DOCUMENT_OVERRIDE_CHARGE_MULTIPLIER
+  - ENTITLEMENTS_DISABLED_FEATURES
+  - KNOWLEDGE_MAX_PDF_PAGES
+  - KNOWLEDGE_MAX_EXTRACTED_CHARS
+  - KNOWLEDGE_MAX_FILE_SIZE_BYTES
+  - KNOWLEDGE_CHUNK_TARGET_TOKENS
+  - KNOWLEDGE_CHUNK_OVERLAP_TOKENS
+  - KNOWLEDGE_EMBEDDING_MODEL
+  - KNOWLEDGE_EMBEDDING_DIMENSIONS
+  - KNOWLEDGE_INDEX_MAX_CONCURRENT_PER_TENANT
+  - KNOWLEDGE_MAX_UPLOADS_PER_DAY
+  - KNOWLEDGE_ALLOWED_MIMES
+  - KNOWLEDGE_CONTEXTUAL_RETRIEVAL_ENABLED
+  - KNOWLEDGE_RRF_K
+  - KNOWLEDGE_DENSE_CANDIDATES
+  - KNOWLEDGE_SPARSE_CANDIDATES
+  - KNOWLEDGE_DEFAULT_TOP_K
+  - KNOWLEDGE_MAX_TOP_K
+  - KNOWLEDGE_SEARCH_RPM_LIMIT
+  - KNOWLEDGE_TOOLS_ENABLED
+  - KNOWLEDGE_CHAT_MAX_CITATIONS
+  - KNOWLEDGE_CHAT_MIN_SCORE_THRESHOLD
+  - CHAT_DAILY_MESSAGE_LIMIT
+  - CHAT_USER_DAILY_MESSAGE_LIMIT
+  - CHAT_MAX_MESSAGE_BYTES
+  - CHAT_HISTORY_MESSAGE_LIMIT
+  - CHAT_MAX_MESSAGES_PER_THREAD
+  - CHAT_MAX_CONTEXT_CHARS
+  - CHAT_STREAM_CHUNK_CHARS
+  - LLM_RETRY_TRANSIENT_ERRORS
+  - LLM_RETRY_MAX_ATTEMPTS
+  - LLM_RETRY_MAX_WAIT_SECONDS
+  - GOOGLE_OAUTH_CLIENT_ID
+  - GOOGLE_OAUTH_CLIENT_SECRET
+  - GOOGLE_CALENDAR_SCOPES
+  - ENCRYPTION_KEY
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - STRIPE_PUBLISHABLE_KEY
+  - WHATSAPP_VERIFY_TOKEN
+  - WHATSAPP_APP_SECRET
+  - WHATSAPP_API_URL
+  - WHATSAPP_MAX_RESPONSE_CHARS
+  - WEBHOOK_ALLOW_UNSIGNED
+  - WEBHOOK_MAX_BODY_BYTES
+  - WEBHOOK_DEDUPE_TTL_SECONDS
+  - TELEGRAM_API_URL
+  - CHANNEL_CONFIDENCE_THRESHOLD_DEFAULT
+  - CHANNEL_RATE_LIMIT_MSG_PER_HOUR
+  - CHANNEL_CACHE_ENABLED
+  - CHANNEL_CACHE_TTL_HOURS
+  - CHANNEL_CACHE_SIMILARITY_THRESHOLD
+  - CHANNEL_CACHE_MIN_CONFIDENCE
+  - KNOWLEDGE_FAQ_MAX_PAIRS
+  - KNOWLEDGE_FAQ_MIN_ANSWER_CHARS
+  - ADMIN_CLERK_ORG_ID
+  - SUPERADMIN_CLERK_USER_IDS
+  - SMTP_HOST
+  - SMTP_PORT
+  - SMTP_USER
+  - SMTP_PASSWORD
+  - SMTP_FROM
+  - SMTP_STARTTLS
+  - SMTP_SSL
+  - EMAIL_SADM
+  - METRICS_TOKEN
+  - VOICE_CALENDAR_ENABLED
+  - VOICE_MAX_AUDIO_BYTES
+  - VOICE_MAX_AUDIO_SECONDS
+  - VOICE_ALLOWED_AUDIO_MIMES
+  - VOICE_CALENDAR_DEFAULT_TIMEZONE
+  - VOICE_EVENT_DEFAULT_DURATION_MINUTES
+  - VOICE_EVENT_MIN_CONFIDENCE
+  - VOICE_RATE_LIMIT_PER_HOUR
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - APP_DOMAIN
+      - ACME_EMAIL
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: iagent-app:${APP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=2
+      # Solo Caddy alcanza este puerto (red interna): se confía en su
+      # X-Forwarded-Proto para que HTTPSRedirectMiddleware no haga bucle.
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  worker:
+    image: iagent-app:${APP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command: ["arq", "app.jobs.settings.WorkerSettings"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Clave de salud que ARQ escribe en Redis mientras el worker está vivo.
+      test: ["CMD", "arq", "--check", "app.jobs.settings.WorkerSettings"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    # Deja terminar jobs en curso (extracciones LLM) antes de SIGKILL.
+    stop_grace_period: 120s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      # Rol propietario (migraciones). La app usa saas_app (NOBYPASSRLS).
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+      - SAAS_APP_DB_PASSWORD
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Solo se ejecutan con el volumen vacío (primer arranque).
+      - ../docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+      - ./postgres/02-app-role.sh:/docker-entrypoint-initdb.d/02-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      # redis-cli lee REDISCLI_AUTH; el mismo valor se usa como requirepass.
+      - REDISCLI_AUTH=${REDIS_PASSWORD:?REDIS_PASSWORD missing}
+    # noeviction (no allkeys-lru como en dev): Redis guarda la cola ARQ y las
+    # claves anti-replay; expulsarlas por memoria perdería jobs o permitiría
+    # replays. Si se llena, las escrituras fallan de forma visible.
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDISCLI_AUTH" --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:

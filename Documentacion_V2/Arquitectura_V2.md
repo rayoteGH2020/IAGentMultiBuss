@@ -273,10 +273,11 @@ Nota: `-m "integration and not real_llm"` sobre `tests/unit` deselecciona casi t
 
 Fase actual:
 
-- Monolito modular (API + worker ARQ).
-- Hetzner/Coolify o equivalente simple.
-- Postgres, Redis, R2, Clerk, Langfuse self-hosted.
-- Secretos solo Infisical entorno `prod`.
+- Monolito modular (API + worker ARQ), una imagen (`Dockerfile`).
+- VPS (p. ej. Hetzner) con Docker Compose + Caddy (D013); sin Coolify.
+- Postgres (pgvector) y Redis en la misma VPS, sin puertos publicados; R2, Clerk; Langfuse self-hosted aplazable.
+- Secretos solo Infisical entorno `prod` (Machine Identity de la VPS).
+- Guia: `Paso11_Despliegue_VPS.md`.
 
 No introducir Kubernetes, microservicios ni GraphQL hasta dolor medible.
 

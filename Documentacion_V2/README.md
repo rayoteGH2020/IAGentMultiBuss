@@ -38,6 +38,7 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Paso08_Analytics_SQL_ReadOnly.md` | Historico: Analytics SQL — **NO IMPLEMENTAR** (D011). |
 | `Paso09_Billing_Stripe.md` | Billing real con Stripe cuando planes ya existan. |
 | `Paso10_QA_Release_Produccion.md` | QA manual, release y operacion de produccion. |
+| `Paso11_Despliegue_VPS.md` | Despliegue en VPS con Docker Compose + Caddy (D013). |
 | `PasosParaProduccion.md` | Checklist consolidada de go-live (variables, Clerk, infra, QA, rollback). |
 
 ## Estado del repositorio observado
