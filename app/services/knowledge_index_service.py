@@ -15,6 +15,7 @@ No hace commit; el job wrapper gestiona la transacción.
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID, uuid4
 
 import structlog
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.document_text import ExtractedTextResult, extract_knowledge_text
+from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
 from app.core.text_chunking import TooManyChunksError, chunk_text
 from app.llm.client import get_llm_client
@@ -42,6 +44,7 @@ _ERR_EMPTY_TEXT = "empty_text"
 _ERR_TOO_MANY_CHUNKS = "too_many_chunks"
 _ERR_EXTRACT = "extract_error"
 _ERR_EMBED = "embed_error"
+_ERR_MEDIA_LIMIT = "media_limit"
 
 
 async def run_index_pipeline(
@@ -72,6 +75,8 @@ async def run_index_pipeline(
 
     # --- Paso 2: Extracción de texto ---
     # Bifurcación: imágenes → OCR via LLM multimodal; texto/PDF → extracción clásica.
+    # Las imágenes pasan por media_limits dentro de extract_text_from_image
+    # (píxeles/edge/legibilidad) antes de cualquier llamada al LLM.
     if source_mime in KNOWLEDGE_IMAGE_MIMES:
         try:
             ocr_text = await extract_text_from_image(
@@ -86,6 +91,29 @@ async def run_index_pipeline(
                 page_count=None,
                 warnings=[],
             )
+        except MediaLimitExceeded as exc:
+            logger.warning(
+                "knowledge.index.media_limit",
+                document_id=str(document_id),
+                tenant_id=str(tenant_id),
+                mime_type=source_mime,
+                size_bytes=len(file_bytes),
+                error_code=exc.error_code.value,
+                reason=exc.message,
+            )
+            detail = exc.detail or (
+                "la imagen supera los límites permitidos o no se puede inspeccionar"
+            )
+            await mark_failed(
+                db,
+                tenant_id=tenant_id,
+                document_id=document_id,
+                error_message=(
+                    f"{_ERR_MEDIA_LIMIT}: {detail}. "
+                    "Reduce la resolución o el tamaño y vuelve a subirla."
+                ),
+            )
+            return
         except Exception as exc:
             logger.warning(
                 "knowledge.index.ocr_failed",
@@ -98,12 +126,17 @@ async def run_index_pipeline(
                 db,
                 tenant_id=tenant_id,
                 document_id=document_id,
-                error_message=f"{_ERR_EXTRACT}: OCR falló — {exc}",
+                error_message=(
+                    f"{_ERR_EXTRACT}: No se pudo leer el texto de la imagen. "
+                    "Comprueba que sea legible."
+                ),
             )
             return
     else:
         try:
-            extracted = extract_knowledge_text(file_bytes, source_mime)
+            # pypdf recorre el PDF página a página consumiendo CPU: fuera del
+            # event loop para no bloquear al resto de jobs del worker.
+            extracted = await asyncio.to_thread(extract_knowledge_text, file_bytes, source_mime)
         except Exception as exc:
             logger.warning(
                 "knowledge.index.extract_failed",
@@ -115,11 +148,31 @@ async def run_index_pipeline(
                 db,
                 tenant_id=tenant_id,
                 document_id=document_id,
-                error_message=f"{_ERR_EXTRACT}: {exc}",
+                error_message=(
+                    f"{_ERR_EXTRACT}: No se pudo extraer texto del documento. "
+                    "Comprueba que el archivo sea legible y tenga un formato compatible."
+                ),
             )
             return
 
-    # --- Paso 3: Validación de texto no vacío ---
+    # --- Paso 3: Validación de límites y texto no vacío ---
+    too_many_pages = next(
+        (w for w in extracted.warnings if w.startswith("too_many_pages")),
+        None,
+    )
+    if too_many_pages is not None:
+        max_pages = get_settings().knowledge_max_pdf_pages
+        await mark_failed(
+            db,
+            tenant_id=tenant_id,
+            document_id=document_id,
+            error_message=(
+                f"{_ERR_EXTRACT}: El documento tiene {extracted.page_count} páginas y el "
+                f"máximo admitido son {max_pages}. Divídelo en partes más pequeñas."
+            ),
+        )
+        return
+
     if not extracted.text.strip():
         if source_mime == "application/pdf":
             hint = (
@@ -180,7 +233,10 @@ async def run_index_pipeline(
             db,
             tenant_id=tenant_id,
             document_id=document_id,
-            error_message=f"{_ERR_EMBED}: {exc}",
+            error_message=(
+                f"{_ERR_EMBED}: No se pudo indexar el documento para busquedas. "
+                "Intentalo de nuevo mas tarde."
+            ),
         )
         return
 

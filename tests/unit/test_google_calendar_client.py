@@ -145,6 +145,46 @@ async def test_create_event_posts_body() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_event_includes_reminders_when_set() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "id": "voice-evt",
+                "summary": "Cita voz",
+                "start": {"dateTime": "2026-05-27T09:00:00+02:00"},
+                "end": {"dateTime": "2026-05-27T10:00:00+02:00"},
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    reminders = [
+        {"method": "popup", "minutes": 1440},
+        {"method": "popup", "minutes": 60},
+    ]
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = GoogleCalendarClient(_settings(), http_client=http_client)
+        await client.create_event(
+            "token",
+            "primary",
+            CalendarEventCreate(
+                summary="Cita voz",
+                start="2026-05-27T09:00:00+02:00",
+                end="2026-05-27T10:00:00+02:00",
+                reminders=reminders,
+            ),
+        )
+
+    assert captured["json"]["reminders"] == {
+        "useDefault": False,
+        "overrides": reminders,
+    }
+
+
+@pytest.mark.asyncio
 async def test_update_event_patches_body() -> None:
     captured: dict[str, Any] = {}
 

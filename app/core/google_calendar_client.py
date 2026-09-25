@@ -285,6 +285,20 @@ class GoogleCalendarClient:
             raise ExternalServiceError("Invalid Google Calendar update response")
         return _parse_calendar_event(payload)
 
+    async def delete_event(
+        self,
+        access_token: str,
+        calendar_id: str,
+        event_id: str,
+    ) -> None:
+        """Elimina un evento del calendario indicado."""
+        url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events/{event_id}"
+        response = await self._client.delete(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        _handle_google_response(response, context="delete_event")
+
     async def revoke_token(self, token: str) -> None:
         """Revoca un access o refresh token en Google."""
         response = await self._client.post(

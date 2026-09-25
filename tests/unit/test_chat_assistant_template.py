@@ -1,4 +1,4 @@
-"""Plantilla assistant con bloque de citas (Paso 20 E)."""
+"""Plantilla assistant del chat unificado (Paso 20 E)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from app.models import ChatMessageRole
 from app.schemas.chat import ChatCitation, ChatMessageRead
 
 
-def test_chat_message_assistant_renders_citations_block() -> None:
+def test_chat_message_assistant_renders_content_without_inline_refs() -> None:
+    """Contenido del asistente sin refs ``[N]`` inline (bloque de citas deshabilitado temporalmente)."""
     chunk_id = uuid4()
     doc_id = uuid4()
     msg_id = uuid4()
@@ -39,10 +40,7 @@ def test_chat_message_assistant_renders_citations_block() -> None:
     )
     tpl = templates.get_template("components/chat_message_assistant.html")
     html = tpl.render(message=message)
-    assert "citations-block" in html
-    assert "Fuentes" in html
-    assert "FAQ Horarios" in html
-    assert "chat-cite-ref" in html
-    assert "openCitation" in html
-    assert f"/knowledge/{doc_id}" in html
-    assert "citation-panel" in html
+    assert "Abrimos de 9 a 18" in html
+    assert "[1]" not in html
+    assert "citations-block" not in html
+    assert "FAQ Horarios" not in html

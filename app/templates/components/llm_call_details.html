@@ -1,72 +1,69 @@
-{# Detalle de una fila llm_calls. Requiere variable `call`; `source_filename` opcional (legacy). #}
-{% set display_filename = call.source_filename or source_filename|default(none) %}
-<dl class="llm-call-details">
-  <div class="llm-call-details-item llm-call-details-item--wide">
-    <dt>Fichero</dt>
-    <dd class="break-all font-medium text-slate-800" title="{{ display_filename or '' }}">
-      {{ display_filename or "—" }}
-    </dd>
+{# Detalle de una fila llm_calls. Requiere variable `call`. #}
+{% set total_tokens = call.input_tokens + call.output_tokens %}
+<div class="llm-call-details">
+  <div class="llm-call-details-row">
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Tarea</p>
+      <p class="llm-call-details-value llm-call-details-value--nowrap">{{ call.task }}</p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Estado</p>
+      <p class="llm-call-details-value">
+        <span class="llm-call-status llm-call-status--{{ call.status }}">{{ call.status }}</span>
+      </p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Modelo</p>
+      <p class="llm-call-details-value llm-call-details-value--nowrap">
+        <span class="font-mono">{{ call.model }}</span>
+        <span class="text-slate-500"> ({{ call.provider }})</span>
+      </p>
+    </div>
   </div>
-  <div class="llm-call-details-item llm-call-details-item--wide">
-    <dt>ID llamada</dt>
-    <dd class="font-mono text-[11px] break-all">{{ call.id }}</dd>
+
+  <div class="llm-call-details-row">
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Prompt version</p>
+      <p class="llm-call-details-value font-mono llm-call-details-value--nowrap">{{ call.prompt_version or "—" }}</p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Latencia</p>
+      <p class="llm-call-details-value tabular-nums llm-call-details-value--nowrap">{{ call.latency_ms }} ms</p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Tokens</p>
+      <p class="llm-call-details-value tabular-nums llm-call-details-value--nowrap">
+        E: {{ call.input_tokens }}
+        S: {{ call.output_tokens }}
+        T: {{ total_tokens }}
+        <span class="llm-call-cost">({{ "%.6f"|format(call.cost_eur) }} €)</span>
+      </p>
+    </div>
   </div>
-  <div class="llm-call-details-item">
-    <dt>Tarea</dt>
-    <dd>{{ call.task }}</dd>
+
+  <div class="llm-call-details-row">
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Ejecutada</p>
+      <p class="llm-call-details-value llm-call-details-value--nowrap">{{ call.created_at | local_datetime }}</p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Id llamada</p>
+      <p class="llm-call-details-value llm-call-details-value--mono" title="{{ call.id }}">{{ call.id }}</p>
+    </div>
+    <div class="llm-call-details-item">
+      <p class="llm-call-details-label">Langfuse trace id</p>
+      <p class="llm-call-details-value llm-call-details-value--mono" title="{{ call.langfuse_trace_id or '' }}">
+        {{ call.langfuse_trace_id or "—" }}
+      </p>
+    </div>
   </div>
-  <div class="llm-call-details-item">
-    <dt>Estado</dt>
-    <dd>
-      <span class="llm-call-status llm-call-status--{{ call.status }}">{{ call.status }}</span>
-    </dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Modelo</dt>
-    <dd class="font-mono">{{ call.model }}</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Proveedor</dt>
-    <dd class="capitalize">{{ call.provider }}</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Prompt</dt>
-    <dd class="font-mono">{{ call.prompt_version or "—" }}</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Tokens entrada</dt>
-    <dd class="tabular-nums">{{ call.input_tokens }}</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Tokens salida</dt>
-    <dd class="tabular-nums">{{ call.output_tokens }}</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Tokens total</dt>
-    <dd class="tabular-nums">{{ call.input_tokens + call.output_tokens }}</dd>
-  </div>
-  <div class="llm-call-details-item llm-call-details-item--highlight">
-    <dt>Coste</dt>
-    <dd class="tabular-nums font-medium text-amber-800">{{ "%.6f"|format(call.cost_eur) }} €</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Latencia</dt>
-    <dd class="tabular-nums">{{ call.latency_ms }} ms</dd>
-  </div>
-  <div class="llm-call-details-item">
-    <dt>Ejecutada</dt>
-    <dd class="whitespace-nowrap">{{ call.created_at | local_datetime }}</dd>
-  </div>
-  {% if call.langfuse_trace_id %}
-  <div class="llm-call-details-item llm-call-details-item--wide">
-    <dt>Langfuse trace</dt>
-    <dd class="font-mono text-[11px] break-all">{{ call.langfuse_trace_id }}</dd>
-  </div>
-  {% endif %}
+
   {% if call.error %}
-  <div class="llm-call-details-item llm-call-details-item--wide">
-    <dt>Error</dt>
-    <dd class="text-red-700 whitespace-pre-wrap break-words">{{ call.error }}</dd>
+  <div class="llm-call-details-row llm-call-details-row--error">
+    <div class="llm-call-details-item llm-call-details-item--full">
+      <p class="llm-call-details-label">Error</p>
+      <p class="llm-call-details-value text-red-700 whitespace-pre-wrap break-words">{{ call.error }}</p>
+    </div>
   </div>
   {% endif %}
-</dl>
+</div>

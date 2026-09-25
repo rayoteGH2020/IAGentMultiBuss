@@ -1,0 +1,54 @@
+<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+     x-data="{
+       perms: {
+         view: {{ 'true' if member.permissions.appointments.view else 'false' }},
+         create: {{ 'true' if member.permissions.appointments.create else 'false' }},
+         edit: {{ 'true' if member.permissions.appointments.edit else 'false' }},
+         cancel: {{ 'true' if member.permissions.appointments.cancel else 'false' }}
+       }
+     }">
+  <h3 class="text-lg font-semibold mb-4">Permisos de citas</h3>
+  <p class="text-sm text-slate-500 mb-4">
+    Solo afectan a la aplicación. Identidad y rol de organización se gestionan en Clerk.
+  </p>
+
+  <dl class="mb-4 divide-y divide-slate-200 rounded-lg border border-slate-200 px-3">
+    <div class="py-2 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Email</dt>
+      <dd class="text-sm font-medium break-all">{{ member.email }}</dd>
+    </div>
+    <div class="py-2 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Nombre</dt>
+      <dd class="text-sm font-medium">{{ member.name or "—" }}</dd>
+    </div>
+  </dl>
+
+  <form hx-post="/settings/members/{{ member.membership_id }}"
+        hx-target="#member-{{ member.membership_id }}"
+        hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('close-member-modal'))"
+        class="space-y-4">
+
+    <fieldset class="text-sm space-y-2">
+      <legend class="font-medium text-slate-700">Permisos de citas</legend>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_view" value="true" x-model="perms.view"> Ver
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_create" value="true" x-model="perms.create"> Crear
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_edit" value="true" x-model="perms.edit"> Editar
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="perm_cancel" value="true" x-model="perms.cancel"> Cancelar
+      </label>
+    </fieldset>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" @click="window.dispatchEvent(new CustomEvent('close-member-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+    </div>
+  </form>
+</div>

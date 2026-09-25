@@ -1,0 +1,33 @@
+{# Fragmento HTMX: consumo por tenant del periodo (SADM). #}
+<div id="tenant-usage" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  {% if usage %}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Organización</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Documentos</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Llamadas LLM</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Tokens entrada</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Tokens salida</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Coste</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for row in usage %}
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-3 font-medium text-slate-900">{{ row.tenant_name }}</td>
+        <td class="px-4 py-3 text-right text-slate-600">{{ row.documents }}</td>
+        <td class="px-4 py-3 text-right text-slate-600">{{ row.llm_calls }}</td>
+        <td class="px-4 py-3 text-right text-slate-600">{{ row.input_tokens }}</td>
+        <td class="px-4 py-3 text-right text-slate-600">{{ row.output_tokens }}</td>
+        <td class="px-4 py-3 text-right text-slate-900 font-medium">
+          {{ "%.4f"|format(row.cost_eur) }} €
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-slate-400">Sin consumo registrado en el periodo.</div>
+  {% endif %}
+</div>

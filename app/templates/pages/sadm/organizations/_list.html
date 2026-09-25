@@ -1,4 +1,4 @@
-{# Fragmento HTMX: tabla de organizaciones (SADM). #}
+{# Fragmento HTMX: tabla de organizaciones (SADM, read-only). #}
 <div id="org-list" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
   {% if tenants %}
   <table class="w-full text-sm">
@@ -14,11 +14,13 @@
       {% for tenant in tenants %}
       <tr class="hover:bg-slate-50/60">
         <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
-        <td class="px-4 py-3 text-slate-500">{{ tenant.plan }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ tenant.plan_code or tenant.plan }}</td>
         <td class="px-4 py-3 text-slate-500 text-xs">{{ tenant.created_at | local_datetime }}</td>
-        <td class="px-4 py-3 text-right">
+        <td class="px-4 py-3 text-right space-x-3">
           <a href="/sadm/organizations/{{ tenant.id }}/members"
              class="text-xs text-primary-600 hover:underline">Miembros</a>
+          <a href="/sadm/plans/tenants/{{ tenant.id }}"
+             class="text-xs text-primary-600 hover:underline">Plan</a>
         </td>
       </tr>
       {% endfor %}

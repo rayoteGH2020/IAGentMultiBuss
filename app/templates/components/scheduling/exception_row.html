@@ -1,0 +1,16 @@
+<li id="exception-{{ exception.id }}" class="flex items-center justify-between py-3 text-sm">
+  <div>
+    <span class="font-medium">{{ exception.exception_date | string }}</span>
+    {% if exception.label %}
+    <span class="text-slate-500">— {{ exception.label }}</span>
+    {% endif %}
+  </div>
+  <button type="button"
+          hx-delete="/settings/business-hours/exceptions/{{ exception.id }}"
+          hx-target="#exception-{{ exception.id }}"
+          hx-swap="outerHTML"
+          hx-confirm="¿Eliminar esta excepción?"
+          class="text-red-600 hover:text-red-800 text-xs cursor-pointer">
+    Eliminar
+  </button>
+</li>

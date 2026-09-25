@@ -49,6 +49,17 @@ Endpoint protegido por `X-Metrics-Token` (variable `METRICS_TOKEN` en Infisical)
 curl -H "X-Metrics-Token: $METRICS_TOKEN" http://localhost:8000/metrics/module1
 ```
 
+## CI (GitHub Actions)
+
+En cada PR y push a `main` se ejecuta `.github/workflows/ci.yml`:
+
+- **Lint:** ruff + mypy sobre `app/`
+- **Tests:** unit + integración (Postgres pgvector + Redis en el runner); excluye evals LLM y tests `real_llm`
+
+Los evals de extracción con API real están en `.github/workflows/evals.yml` (solo si cambian ficheros LLM relevantes).
+
+Detalle de variables de entorno del job de test: `docs/environment-variables.md` § GitHub Actions.
+
 ## E2E (Playwright)
 
 Test gated por `RUN_E2E=1`. Necesita una sesión Clerk pre-autenticada en `tests/e2e/auth_state.json`.

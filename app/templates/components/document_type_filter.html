@@ -9,6 +9,9 @@
   hx-target="#invoices-table-container"
   hx-swap="outerHTML"
   hx-trigger="change"
+  hx-boost="false"
+  hx-push-url="false"
+  hx-history="false"
   {% if panel_list %}
   hx-vals='{"sort": "{{ panel_list.sort }}", "dir": "{{ panel_list.dir }}"}'
   {% endif %}

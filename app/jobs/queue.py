@@ -50,7 +50,27 @@ def reset_arq_pool_for_tests() -> None:
     _redis_settings.cache_clear()
 
 
-async def enqueue_invoice_processing(invoice_id: UUID, tenant_id: UUID) -> str:
+async def enqueue_invoice_processing(
+    invoice_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de una factura.
+
+    Args:
+        max_pdf_pages: Tope de páginas para esta ejecución. Solo lo usa el
+            procesado excepcional autorizado por el superadmin; `None` aplica
+            el límite de negocio.
+        replace_existing: Borra el job ARQ previo con el mismo id. Necesario al
+            reprocesar un documento que ya tuvo un job (ARQ no re-encola si
+            existen las claves arq:job:/arq:result:).
+    """
+    job_id = f"invoice:{invoice_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
     pool = await get_arq_pool()
     job = await pool.enqueue_job(
         # El string debe coincidir exactamente con el nombre de la función
@@ -61,11 +81,12 @@ async def enqueue_invoice_processing(invoice_id: UUID, tenant_id: UUID) -> str:
         # se convierte a str aquí y se parsea de vuelta a UUID en el worker.
         str(invoice_id),
         str(tenant_id),
+        max_pdf_pages,
         # _job_id determinista por invoice_id: ARQ usa este ID para deduplicar.
         # Si el route llama a enqueue dos veces para la misma factura (doble
         # click, retry del usuario), la segunda llamada devuelve None en lugar
         # de crear un segundo job, evitando doble extracción LLM y doble coste.
-        _job_id=f"invoice:{invoice_id}",
+        _job_id=job_id,
     )
     # job es None cuando ya existe un job con el mismo _job_id en la cola.
     # En el flujo normal esto no debería ocurrir porque la UI deshabilita el
@@ -77,17 +98,29 @@ async def enqueue_invoice_processing(invoice_id: UUID, tenant_id: UUID) -> str:
             invoice_id=str(invoice_id),
             tenant_id=str(tenant_id),
         )
-        return f"invoice:{invoice_id}"
+        return job_id
     return str(job.job_id)
 
 
-async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
+async def enqueue_ticket_processing(
+    ticket_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de un ticket (ver `enqueue_invoice_processing`)."""
+    job_id = f"ticket:{ticket_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
     pool = await get_arq_pool()
     job = await pool.enqueue_job(
         "process_ticket",
         str(ticket_id),
         str(tenant_id),
-        _job_id=f"ticket:{ticket_id}",
+        max_pdf_pages,
+        _job_id=job_id,
     )
     if job is None:
         logger.warning(
@@ -95,7 +128,67 @@ async def enqueue_ticket_processing(ticket_id: UUID, tenant_id: UUID) -> str:
             ticket_id=str(ticket_id),
             tenant_id=str(tenant_id),
         )
-        return f"ticket:{ticket_id}"
+        return job_id
+    return str(job.job_id)
+
+
+async def enqueue_contract_processing(
+    contract_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de un contrato (ver `enqueue_invoice_processing`)."""
+    job_id = f"contract:{contract_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "process_contract",
+        str(contract_id),
+        str(tenant_id),
+        max_pdf_pages,
+        _job_id=job_id,
+    )
+    if job is None:
+        logger.warning(
+            "arq.enqueue_contract_duplicate",
+            contract_id=str(contract_id),
+            tenant_id=str(tenant_id),
+        )
+        return job_id
+    return str(job.job_id)
+
+
+async def enqueue_insurance_processing(
+    insurance_id: UUID,
+    tenant_id: UUID,
+    *,
+    max_pdf_pages: int | None = None,
+    replace_existing: bool = False,
+) -> str:
+    """Encola la extracción de una póliza (ver `enqueue_invoice_processing`)."""
+    job_id = f"insurance:{insurance_id}"
+    if replace_existing:
+        await _purge_arq_job(job_id)
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "process_insurance",
+        str(insurance_id),
+        str(tenant_id),
+        max_pdf_pages,
+        _job_id=job_id,
+    )
+    if job is None:
+        logger.warning(
+            "arq.enqueue_insurance_duplicate",
+            insurance_id=str(insurance_id),
+            tenant_id=str(tenant_id),
+        )
+        return job_id
     return str(job.job_id)
 
 
@@ -106,29 +199,49 @@ async def enqueue_channel_message(
     customer_identifier: str,
     message_text: str,
     integration_id: str,
+    provider_event_id: str | None = None,
 ) -> str:
     """Encola el job de procesado de un mensaje de canal externo (WhatsApp/Telegram).
 
     Los argumentos son str porque ARQ serializa a JSON (UUID → str en el webhook).
-    No usa _job_id determinista: cada mensaje del cliente genera un job independiente.
+    Con ``provider_event_id`` (message id WA / update id TG) se usa ``_job_id``
+    determinista para que ARQ no duplique el mismo evento en cola.
     """
+    from app.core.webhook_ingress import channel_job_id
+
     pool = await get_arq_pool()
-    job = await pool.enqueue_job(
-        "process_channel_message",
-        tenant_id,
-        channel,
-        customer_identifier,
-        message_text,
-        integration_id,
-    )
+    deterministic_id: str | None = None
+    if provider_event_id and provider_event_id.strip():
+        deterministic_id = channel_job_id(channel, provider_event_id)
+
+    if deterministic_id is not None:
+        job = await pool.enqueue_job(
+            "process_channel_message",
+            tenant_id,
+            channel,
+            customer_identifier,
+            message_text,
+            integration_id,
+            _job_id=deterministic_id,
+        )
+    else:
+        job = await pool.enqueue_job(
+            "process_channel_message",
+            tenant_id,
+            channel,
+            customer_identifier,
+            message_text,
+            integration_id,
+        )
     if job is None:
         logger.warning(
             "arq.enqueue_channel_duplicate",
             tenant_id=tenant_id,
             channel=channel,
             customer_identifier=customer_identifier,
+            job_id=deterministic_id,
         )
-        return "unknown"
+        return deterministic_id or "unknown"
     return str(job.job_id)
 
 
@@ -137,6 +250,20 @@ async def _purge_arq_job(job_id: str) -> None:
     pool = await get_arq_pool()
     await pool.delete(job_key_prefix + job_id, result_key_prefix + job_id)
     await pool.zrem(default_queue_name, job_id)
+
+
+async def purge_document_processing_job(document_kind: str, document_id: UUID) -> None:
+    """Borra el job ARQ de extracción de un documento (si existe)."""
+    prefixes = {
+        "invoice": "invoice",
+        "ticket": "ticket",
+        "contract": "contract",
+        "insurance": "insurance",
+    }
+    prefix = prefixes.get(document_kind)
+    if prefix is None:
+        return
+    await _purge_arq_job(f"{prefix}:{document_id}")
 
 
 async def enqueue_knowledge_indexing(

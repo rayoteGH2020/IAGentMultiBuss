@@ -64,20 +64,19 @@ async def test_upload_invoice_and_see_result() -> None:
             # 2. Abrir el modal de subida. El botón activa el estado Alpine `open=true`.
             await page.click("text=Subir documentos")
 
-            # 3. Seleccionar el fichero mediante el selector de ficheros del navegador.
-            # expect_file_chooser intercepta el diálogo OS que se abriría al
-            # hacer click en el label; set_files() proporciona el fichero sin
-            # necesitar interacción con el diálogo nativo del SO.
+            # 3. Clic en la primera zona vacía; el file chooser coloca el PDF en esa zona.
             async with page.expect_file_chooser() as fc_info:
-                await page.click("label.border-dashed")
+                await page.get_by_role(
+                    "button", name="Elegir ficheros para las primeras zonas libres"
+                ).first.click()
             file_chooser = await fc_info.value
             await file_chooser.set_files(str(FIXTURE_PDF))
 
-            # 3b. Elegir tipo de documento (obligatorio).
-            await page.select_option("#doc-type-code", "factura")
+            # 3b. Tipo obligatorio en la zona con fichero (habilita «Procesar»).
+            await page.locator("#doc-type-slot-0").select_option("factura")
 
             # 4. Enviar el formulario. HTMX hace POST multipart a /documents/upload.
-            await page.click("button[type=submit]")
+            await page.click("button[type=submit]:has-text('Procesar')")
 
             # 5. Esperar a que la fila aparezca con estado "listo".
             # El texto "listo" debe ser el valor localizado del badge de estado

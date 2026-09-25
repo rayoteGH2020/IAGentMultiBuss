@@ -1,0 +1,47 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Miembros{% endblock %}
+{% block page_title %}Miembros{% endblock %}
+
+{% block settings_content %}
+<div class="space-y-6">
+  <div>
+    <p class="text-sm text-slate-500">
+      Alta, baja y roles de organización se gestionan en Clerk (SADM).
+      Aquí solo puedes ajustar permisos de citas de la aplicación.
+    </p>
+  </div>
+
+  <div class="card p-0 overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Nombre</th>
+          <th>Permisos citas</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="members-list">
+        {% for member in members %}
+          {% include "components/scheduling/member_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Alpine open state MUST NOT be on the hx-target: afterSettle destroyTree+initTree
+   would reset open=false and close the modal right after opening. #}
+<div x-data="{ open: false }"
+     @open-member-modal.window="open = true"
+     @close-member-modal.window="open = false; $refs.panel.innerHTML = ''">
+  <div x-show="open"
+       x-cloak
+       @keydown.escape.window="if (open) open = false"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @click.self="open = false">
+    <div id="member-modal-panel" x-ref="panel"></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{# Campo hora alineado a slot_granularity_minutes del tenant. Requiere quarterHourTime + businessHoursTable. #}
+
+<div class="inline-flex items-center gap-0.5"
+
+     x-data="quarterHourTime"
+
+     data-weekday="{{ weekday }}"
+
+     data-slot="{{ slot }}"
+
+     data-value="{{ value | default('', true) }}"
+
+     data-minute-options='{{ scheduling_settings.slot_granularity_minutes | slot_minute_options | tojson }}'>
+
+  <select x-model="hour"
+
+          class="h-9 w-[3.35rem] cursor-pointer rounded-lg border border-slate-200 bg-white px-1.5 text-sm tabular-nums shadow-sm transition-colors focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100">
+
+    <option value="">—</option>
+
+    {% for h in range(24) %}
+
+    <option value="{{ '%02d' | format(h) }}">{{ '%02d' | format(h) }}</option>
+
+    {% endfor %}
+
+  </select>
+
+  <span class="select-none text-slate-300">:</span>
+
+  <select x-model="minute"
+
+          class="h-9 w-[3.35rem] cursor-pointer rounded-lg border border-slate-200 bg-white px-1.5 text-sm tabular-nums shadow-sm transition-colors focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100">
+
+    {% for m in scheduling_settings.slot_granularity_minutes | slot_minute_options %}
+
+    <option value="{{ m }}">{{ m }}</option>
+
+    {% endfor %}
+
+  </select>
+
+  <input type="hidden" :name="fieldName" :value="combined">
+
+</div>

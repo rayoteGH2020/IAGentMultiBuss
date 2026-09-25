@@ -1,0 +1,23 @@
+<div class="card space-y-4">
+  <h3 class="font-semibold text-red-700">Reasignación obligatoria</h3>
+  <p class="text-sm text-slate-600">
+    Este profesional tiene {{ future_count }} cita(s) futura(s). Reasígnalas antes de desactivarlo.
+  </p>
+  <form hx-post="/settings/professionals/{{ professional_id }}/reassign"
+        hx-target="#professional-{{ professional_id }}"
+        hx-swap="outerHTML"
+        class="space-y-3">
+    <label class="block text-sm">
+      <span class="text-slate-600">Profesional destino</span>
+      <select name="target_professional_id" required
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        {% for p in professionals if p.id != professional_id and p.is_active and p.is_bookable %}
+        <option value="{{ p.id }}">{{ p.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="text-xs text-slate-500">Se reasignarán todas las citas futuras pendientes de este profesional.</p>
+    <input type="hidden" name="appointment_ids" value="">
+    <button type="submit" class="btn-primary cursor-pointer">Reasignar y desactivar</button>
+  </form>
+</div>

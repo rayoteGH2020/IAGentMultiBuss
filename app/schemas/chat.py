@@ -79,6 +79,7 @@ class ChatThreadRead(BaseModel):
     tenant_id: UUID
     user_id: UUID | None = None
     title: str | None = None
+    is_hidden: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -1,0 +1,8 @@
+<p id="no-org-notify-panel" class="text-sm text-slate-600 text-center leading-relaxed">
+  Hemos notificado al superadmin esta situación.
+</p>
+{% if mailto_url %}
+<script>
+  window.location.href = {{ mailto_url|tojson }};
+</script>
+{% endif %}

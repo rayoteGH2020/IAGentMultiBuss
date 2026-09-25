@@ -125,7 +125,7 @@ async def draft_from_audio(
     integration = await calendar_service.get_integration(db, tenant_id, user_id)
     if integration is None or integration.status != CalendarIntegrationStatus.active.value:
         raise NotFoundError(
-            "Google Calendar no está conectado. " "Ve a Ajustes > Integraciones para vincularlo."
+            "Google Calendar no está conectado. Ve a Ajustes > Integraciones para vincularlo."
         )
 
     # 3. Validar audio (MIME real por magic bytes + tamaño)
@@ -140,13 +140,11 @@ async def draft_from_audio(
     # Usar el MIME validado para la llamada al LLM (más fiable que el declarado)
     mime_to_use = validated_mime
 
-    # 4. Rate-limit por (tenant_id, user_id) por hora
-    await _check_voice_rate_limit(
-        redis,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        max_per_hour=settings.voice_rate_limit_per_hour,
-    )
+    # 4. Rate-limit por plan (tenant + usuario, ventana horaria)
+    from app.services import entitlement_service, plan_quota_service
+
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    await plan_quota_service.ensure_voice_note(redis, ents, tenant_id, user_id)
 
     # 5. Transcripción
     transcript = await voice_calendar.transcribe_audio(

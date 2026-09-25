@@ -1,0 +1,12 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Traza {{ trace.thread.title or 'Sin título' }} · Admin{% endblock %}
+{% block page_title %}Traza de chat{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <a href="/sadm/chat-traces" class="inline-flex text-sm text-primary-600 hover:underline cursor-pointer">
+    ← Volver al listado
+  </a>
+  {% include "pages/sadm/chat_traces/_detail.html" %}
+</div>
+{% endblock %}

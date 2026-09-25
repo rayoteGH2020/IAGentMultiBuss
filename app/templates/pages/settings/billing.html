@@ -4,8 +4,118 @@
 {% block page_title %}Ajustes{% endblock %}
 
 {% block settings_content %}
-<div class="card max-w-xl">
-  <h3 class="font-semibold">Facturación</h3>
-  <p class="text-sm text-slate-600 mt-2">La gestión de pagos llegará cuando integremos Stripe (paso posterior).</p>
+<div class="card max-w-xl space-y-4">
+  <div>
+    <h3 class="font-semibold">Facturación y uso</h3>
+    <p class="text-sm text-slate-600 mt-2">
+      Plan actual: <span class="font-medium">{{ usage.plan_code }}</span>.
+      Estado de cobro:
+      <span class="font-medium">{{ tenant.billing_status }}</span>.
+    </p>
+  </div>
+
+  {% if checkout == "success" %}
+  <p class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+    Pago recibido. Si el plan no se actualiza en unos segundos, recarga la página
+    (el webhook de Stripe puede ir con un pequeño retraso).
+  </p>
+  {% elif checkout == "cancel" %}
+  <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+    Checkout cancelado. No se ha cobrado nada.
+  </p>
+  {% endif %}
+
+  {% if billing_error %}
+  <p class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+    {{ billing_error }}
+  </p>
+  {% endif %}
+  <div id="billing-flash"></div>
+
+  <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Periodo</dt>
+      <dd class="font-medium mt-1">{{ usage.period.strftime('%Y-%m') }}</dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Coste IA acumulado</dt>
+      <dd class="font-medium mt-1">{{ "%.2f"|format(usage.llm_cost_eur) }} EUR</dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Presupuesto IA del plan</dt>
+      <dd class="font-medium mt-1">
+        {% if usage.llm_budget_eur is none %}
+          Ilimitado
+        {% else %}
+          {{ "%.2f"|format(usage.llm_budget_eur) }} EUR / mes
+        {% endif %}
+      </dd>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <dt class="text-slate-500">Mensajes RAG (mes)</dt>
+      <dd class="font-medium mt-1">{{ usage.rag_messages_count }}</dd>
+    </div>
+  </dl>
+
+  {% if stripe_configured %}
+  <div class="space-y-3 border-t border-slate-100 pt-4">
+    <h4 class="text-sm font-semibold text-slate-800">Cambiar plan (Stripe)</h4>
+    {% if purchasable_plans %}
+    <ul class="space-y-2">
+      {% for plan in purchasable_plans %}
+      <li class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+        <div>
+          <span class="font-medium">{{ plan.name }}</span>
+          <span class="text-slate-500">({{ plan.code }})</span>
+        </div>
+        {% if plan.code == usage.plan_code and tenant.billing_status == "active" %}
+        <span class="text-xs text-emerald-700">Plan activo</span>
+        {% else %}
+        <form
+          hx-post="/settings/billing/checkout"
+          hx-target="#billing-flash"
+          hx-swap="innerHTML"
+          class="inline"
+        >
+          <input type="hidden" name="plan_code" value="{{ plan.code }}">
+          <button type="submit" class="cursor-pointer rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">
+            Suscribirse
+          </button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-600">
+      No hay planes con <code>stripe_price_id</code> en el catalogo. Asigna los
+      Price IDs en SADM / base de datos antes de ofrecer checkout.
+    </p>
+    {% endif %}
+
+    {% if tenant.stripe_customer_id %}
+    <form
+      hx-post="/settings/billing/portal"
+      hx-target="#billing-flash"
+      hx-swap="innerHTML"
+    >
+      <button type="submit" class="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50">
+        Gestionar facturacion en Stripe
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-xs text-slate-500">
+    Los pagos con tarjeta requieren <code>STRIPE_SECRET_KEY</code> en Infisical.
+    Mientras tanto el plan se asigna desde SADM.
+  </p>
+  {% endif %}
+
+  <p class="text-xs text-slate-500">
+    Los limites diarios de documentos, chat y subidas se aplican segun tu plan comercial.
+    Si el cobro falla, el estado pasa a <code>past_due</code> sin quitar el plan de inmediato;
+    al cancelar la suscripcion se baja a <code>basic</code>.
+  </p>
 </div>
 {% endblock %}

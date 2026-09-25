@@ -1,0 +1,30 @@
+<div id="plan-tenants" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  <div class="px-4 py-3 border-b border-slate-200">
+    <h2 class="text-sm font-semibold text-slate-900">Tenants</h2>
+  </div>
+  {% if tenants %}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Organización</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Plan</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Acción</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for tenant in tenants %}
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ tenant.plan_code or tenant.plan }}</td>
+        <td class="px-4 py-3 text-right">
+          <a href="/sadm/plans/tenants/{{ tenant.id }}"
+             class="text-xs text-primary-600 hover:underline">Asignar / override</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-slate-400">Sin tenants.</div>
+  {% endif %}
+</div>

@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "invoices"
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_llm]
 
 
 @pytest.mark.skipif(

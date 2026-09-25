@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 from fastapi import Request
@@ -12,8 +13,19 @@ from app.core.calendar_datetime import (
     google_iso_to_local_input,
 )
 from app.core.chat_content import chat_content_plain
+from app.core.csrf import csrf_tenant_id_for_request, generate_csrf_token
+from app.core.currency_display import currency_symbol
 from app.core.datetime_display import local_datetime
 from app.core.document_processing_errors import format_user_processing_error
+from app.core.permissions import (
+    home_path_for_role,
+    membership_can_appointment,
+    nav_items_for_access,
+    nav_items_for_role,
+)
+from app.core.scheduling_granularity import slot_minute_options
+from app.core.scheduling_ui import format_range_label
+from app.schemas.scheduling import sanitize_professional_color
 
 # Instancia a nivel de módulo: Jinja2 cachea las plantillas compiladas en
 # memoria. Crear una nueva instancia por request recompilaria las plantillas
@@ -22,6 +34,7 @@ from app.core.document_processing_errors import format_user_processing_error
 # donde se lanza uvicorn.
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["local_datetime"] = local_datetime
+templates.env.filters["currency_symbol"] = currency_symbol
 templates.env.filters["calendar_event_time"] = format_calendar_event_time
 templates.env.filters["calendar_local_input"] = google_iso_to_local_input
 templates.env.filters["calendar_event_date_chip"] = calendar_event_date_chip
@@ -35,6 +48,34 @@ def _user_processing_error_filter(raw_error: str | None, filename: str | None = 
 
 templates.env.filters["user_processing_error"] = _user_processing_error_filter
 templates.env.filters["chat_content_plain"] = chat_content_plain
+templates.env.filters["scheduling_range_label"] = lambda view, start, end: format_range_label(
+    view, start, end
+)
+templates.env.filters["professional_color"] = sanitize_professional_color
+templates.env.filters["slot_minute_options"] = slot_minute_options
+templates.env.globals["membership_can_appointment"] = membership_can_appointment
+templates.env.globals["nav_items_for_role"] = nav_items_for_role
+templates.env.globals["nav_items_for_access"] = nav_items_for_access
+templates.env.globals["home_path_for_role"] = home_path_for_role
+
+# Marca de tiempo del arranque del proceso: usada como query param de
+# cache-busting en /static (ver static_asset() más abajo).
+_STATIC_ASSET_VERSION = str(int(time.time()))
+
+
+def static_asset(path: str) -> str:
+    """Añade `?v=<arranque del proceso>` a una ruta /static.
+
+    Con hx-boost, la navegación entre páginas no vuelve a ejecutar las
+    etiquetas <script>/<link> del <head>; y sin este parámetro, el navegador
+    puede seguir sirviendo una versión cacheada de un asset ya cambiado en
+    disco (p. ej. tras un redeploy) hasta que el usuario fuerce un refresco
+    completo. Cambiar el query param en cada arranque invalida esa caché.
+    """
+    return f"{path}?v={_STATIC_ASSET_VERSION}"
+
+
+templates.env.globals["static_asset"] = static_asset
 
 
 def _inject_auth_context(request: Request) -> dict[str, Any]:
@@ -42,10 +83,22 @@ def _inject_auth_context(request: Request) -> dict[str, Any]:
     # request.state es un objeto dinámico (SimpleNamespace); acceder a un
     # atributo no existente lanzaría AttributeError. En rutas sin auth
     # (health, assets estáticos) estos atributos pueden no estar seteados.
+    user = getattr(request.state, "user", None)
+    tenant = getattr(request.state, "tenant", None)
+    csrf_token = ""
+    if user is not None:
+        tenant_for_csrf = csrf_tenant_id_for_request(
+            tenant_id=tenant.id if tenant is not None else None,
+            missing_organization=bool(getattr(request.state, "auth_missing_organization", False)),
+        )
+        if tenant_for_csrf is not None:
+            csrf_token = generate_csrf_token(user_id=user.id, tenant_id=tenant_for_csrf)
     return {
-        "user": getattr(request.state, "user", None),
-        "tenant": getattr(request.state, "tenant", None),
+        "user": user,
+        "tenant": tenant,
         "membership": getattr(request.state, "membership", None),
+        "entitlements": getattr(request.state, "entitlements", None),
+        "csrf_token": csrf_token,
     }
 
 

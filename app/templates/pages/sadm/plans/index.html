@@ -1,0 +1,41 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Planes · Admin{% endblock %}
+{% block page_title %}Planes comerciales{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Catálogo global y asignación por tenant. No hay feature <code>sadm_only</code> vendible a clientes.
+  </p>
+
+  <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-900">Catálogo</h2>
+    </div>
+    {% if plans %}
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-200">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Código</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Nombre</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Descripción</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for plan in plans %}
+        <tr>
+          <td class="px-4 py-3 font-mono text-xs">{{ plan.code }}</td>
+          <td class="px-4 py-3 font-medium">{{ plan.name }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ plan.description or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="p-6 text-sm text-slate-400">Sin planes en catálogo. Ejecuta la migración p64.</div>
+    {% endif %}
+  </div>
+
+  {% include "pages/sadm/plans/_tenants.html" %}
+</div>
+{% endblock %}

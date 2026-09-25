@@ -1,0 +1,167 @@
+{% if professional %}
+{# Edición: cabecera y acciones fijas al hacer scroll. #}
+<div class="flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+  <header class="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+    <h3 class="truncate text-lg font-semibold text-slate-900"
+        title="Editar datos de: {{ professional.display_name }}">
+      Editar datos de: {{ professional.display_name }}
+    </h3>
+  </header>
+
+  {% if just_created %}
+  <div class="shrink-0 border-b border-emerald-200 bg-emerald-50 px-6 py-3 text-sm text-emerald-800" role="status">
+    Profesional creado. Revisa y ajusta el horario semanal si lo necesitas.
+  </div>
+  {% endif %}
+
+  {% if hours_error_message %}
+  <div class="shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-800">
+    {{ hours_error_message }}
+  </div>
+  {% endif %}
+
+  <form hx-post="/settings/professionals/{{ professional.id }}"
+        hx-target="#professional-{{ professional.id }}"
+        hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('close-professional-modal'))"
+        class="flex min-h-0 flex-1 flex-col">
+
+    <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-4">
+      <div class="space-y-4">
+        <label class="block text-sm">
+          <span class="text-slate-600">Nombre visible</span>
+          <input type="text" name="display_name" required maxlength="255"
+                 value="{{ professional.display_name }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        </label>
+
+        <div class="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          {% include "components/scheduling/professional_color_palette.html" %}
+          <label class="block text-sm">
+            <span class="text-slate-600">Usuario vinculado</span>
+            <select name="user_id" class="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm">
+              <option value="">— Sin vincular —</option>
+              {% for m in members %}
+              <option value="{{ m.user_id }}"
+                {% if professional.user_id == m.user_id %}selected{% endif %}>
+                {{ m.name or m.email }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <div class="flex gap-4 text-sm">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="is_active" value="true"
+                   {% if professional.is_active %}checked{% endif %}>
+            Activo
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="is_bookable" value="true"
+                   {% if professional.is_bookable %}checked{% endif %}>
+            Agendable
+          </label>
+        </div>
+
+        <fieldset class="text-sm">
+          <legend class="text-slate-600 font-medium">Especialidades (máx. 3, solo servicios activos)</legend>
+          {% set selected_ids = professional.specialty_service_ids %}
+          <div class="professional-specialties-grid">
+            {% for service in services if service.is_active %}
+            <div class="professional-specialties-grid__item">
+              <input type="checkbox"
+                     id="specialty-{{ service.id }}"
+                     name="specialty_service_ids"
+                     value="{{ service.id }}"
+                     class="mt-0.5 shrink-0 cursor-pointer"
+                     {% if service.id in selected_ids %}checked{% endif %}>
+              <span class="professional-specialties-grid__label">{{ service.name }}</span>
+            </div>
+            {% else %}
+            <p class="col-span-4 text-xs text-slate-500">No hay servicios activos. Créalos en Settings → Servicios.</p>
+            {% endfor %}
+          </div>
+        </fieldset>
+      </div>
+
+      {% include "components/scheduling/professional_hours_grid.html" %}
+    </div>
+
+    <footer class="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4">
+      <button type="button"
+              @click="window.dispatchEvent(new CustomEvent('close-professional-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+    </footer>
+  </form>
+</div>
+{% else %}
+{# Alta: formulario completo (sin sticky). #}
+<div class="w-full max-w-5xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+  <h3 class="text-lg font-semibold mb-4">Nuevo profesional</h3>
+
+  {% if hours_error_message %}
+  <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    {{ hours_error_message }}
+  </div>
+  {% endif %}
+
+  <form hx-post="/settings/professionals"
+        hx-target="#professional-modal-panel"
+        hx-swap="innerHTML"
+        class="space-y-6">
+
+    <div class="space-y-4">
+      <label class="block text-sm">
+        <span class="text-slate-600">Nombre visible</span>
+        <input type="text" name="display_name" required maxlength="255" value=""
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+
+      <div class="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        {% include "components/scheduling/professional_color_palette.html" %}
+        <label class="block text-sm">
+          <span class="text-slate-600">Usuario vinculado</span>
+          <select name="user_id" class="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm">
+            <option value="">— Sin vincular —</option>
+            {% for m in members %}
+            <option value="{{ m.user_id }}">{{ m.name or m.email }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <input type="hidden" name="is_bookable" value="true">
+      <p class="text-xs text-slate-500">
+        Al crear se copia el horario del centro. Tras guardar podrás ajustarlo en la cuadrícula.
+      </p>
+
+      <fieldset class="text-sm">
+        <legend class="text-slate-600 font-medium">Especialidades (máx. 3, solo servicios activos)</legend>
+        <div class="professional-specialties-grid">
+          {% for service in services if service.is_active %}
+          <div class="professional-specialties-grid__item">
+            <input type="checkbox"
+                   id="specialty-new-{{ service.id }}"
+                   name="specialty_service_ids"
+                   value="{{ service.id }}"
+                   class="mt-0.5 shrink-0 cursor-pointer">
+            <span class="professional-specialties-grid__label">{{ service.name }}</span>
+          </div>
+          {% else %}
+          <p class="col-span-4 text-xs text-slate-500">No hay servicios activos. Créalos en Settings → Servicios.</p>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2 border-t border-slate-200">
+      <button type="button"
+              @click="window.dispatchEvent(new CustomEvent('close-professional-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+    </div>
+  </form>
+</div>
+{% endif %}

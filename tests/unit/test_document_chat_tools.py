@@ -41,7 +41,7 @@ async def _seed_invoice(
     factura = Factura(
         fecha=date(2025, 4, 10),
         proveedor=proveedor,
-        cif_nif="B-TEST-001",  # pragma: allowlist secret
+        cif_nif="B12345678",  # pragma: allowlist secret
         base_imponible=total,
         iva_percent=Decimal("21"),
         iva_amount=Decimal("0"),

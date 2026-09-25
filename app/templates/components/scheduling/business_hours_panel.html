@@ -1,0 +1,199 @@
+<div class="space-y-6" id="business-hours-panel">
+  {% if saved %}
+  <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    Cambios guardados correctamente.
+  </div>
+  {% endif %}
+  {% if error_message %}
+  <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ error_message }}</div>
+  {% endif %}
+
+  <form hx-post="/settings/business-hours"
+        hx-target="#business-hours-panel"
+        hx-swap="outerHTML"
+        class="space-y-8"
+        x-data="businessHoursTable"
+        data-weekday-labels='{{ weekday_labels | tojson }}'
+        hx-on::before-request="if (!$data.validateBeforeSave()) event.preventDefault()">
+    <div x-show="formError" x-cloak
+         class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+         x-text="formError"></div>
+    <section class="card space-y-4">
+      <div>
+        <h3 class="font-semibold text-slate-900">Parámetros de citas</h3>
+        <p class="text-sm text-slate-500">Máximo días citas, tramos, descansos y zona horaria del tenant.</p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block text-sm">
+          <span class="text-slate-600">Zona horaria (IANA)</span>
+          <input type="text" name="timezone" value="{{ scheduling_settings.timezone }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-600">Máximo días para buscar citas</span>
+          <input type="number" name="search_horizon_days" min="1" max="90"
+                 value="{{ scheduling_settings.search_horizon_days }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-600">Tramo de reserva (min)</span>
+          <input type="number" name="slot_granularity_minutes" min="5" max="60"
+                 value="{{ scheduling_settings.slot_granularity_minutes }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-600">Descanso entre citas (0–15 min)</span>
+          <input type="number" name="buffer_minutes" min="0" max="15"
+                 value="{{ scheduling_settings.buffer_minutes }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </label>
+      </div>
+    </section>
+
+    <section class="card overflow-hidden p-0">
+      <div class="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-4">
+        <h3 class="font-semibold text-slate-900">Horario semanal del centro</h3>
+        <p class="mt-1 text-sm text-slate-500">Por cada tramo (mañana o tarde), indica <strong>De</strong> y <strong>A</strong>, o déjalo vacío para cerrar ese tramo.</p>
+      </div>
+
+      <div class="overflow-x-auto px-4 py-4 sm:px-6">
+        <table class="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr>
+              <th class="w-[4.5rem] rounded-tl-xl border border-slate-200 bg-slate-100/80 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Día
+              </th>
+              <th colspan="2"
+                  class="border-y border-r border-slate-200 bg-amber-50/90 px-4 py-3 text-center text-sm font-semibold text-amber-900">
+                Mañana
+              </th>
+              <th colspan="2"
+                  class="border-y border-r border-slate-200 bg-sky-50/90 px-4 py-3 text-center text-sm font-semibold text-sky-900">
+                Tarde
+              </th>
+              <th class="w-[5.5rem] rounded-tr-xl border border-slate-200 bg-slate-100/80 px-2 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <span class="sr-only">Acciones</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for weekday in range(7) %}
+            {% set morning = business_hours | selectattr('weekday', 'equalto', weekday) | selectattr('sort_order', 'equalto', 0) | list | first %}
+            {% set afternoon = business_hours | selectattr('weekday', 'equalto', weekday) | selectattr('sort_order', 'equalto', 1) | list | first %}
+            {% set is_weekend = weekday >= 5 %}
+            <tr class="group">
+              <td class="border-b border-l border-slate-200 px-3 py-3 align-middle
+                         {{ 'rounded-bl-xl' if loop.last else '' }}
+                         {{ 'bg-slate-50/60' if is_weekend else 'bg-white' }}">
+                <span class="font-semibold text-slate-800">{{ weekday_labels[weekday] }}</span>
+              </td>
+
+              <td colspan="2"
+                  class="border-b border-r border-slate-200 px-3 py-3 align-middle
+                         {{ 'bg-amber-50/25' if not is_weekend else 'bg-amber-50/10' }}">
+                <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-10 text-right text-[10px] font-medium uppercase tracking-wide text-amber-700/70">De</span>
+                    {% with slot='sort_0_opens', value=morning.opens_at.strftime('%H:%M') if morning and morning.opens_at else '' %}
+                      {% include "components/scheduling/time_quarter_input.html" %}
+                    {% endwith %}
+                  </div>
+                  <span class="text-amber-300/80 select-none" aria-hidden="true">→</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-10 text-right text-[10px] font-medium uppercase tracking-wide text-amber-700/70">A</span>
+                    {% with slot='sort_0_closes', value=morning.closes_at.strftime('%H:%M') if morning and morning.closes_at else '' %}
+                      {% include "components/scheduling/time_quarter_input.html" %}
+                    {% endwith %}
+                  </div>
+                </div>
+              </td>
+
+              <td colspan="2"
+                  class="border-b border-r border-slate-200 px-3 py-3 align-middle
+                         {{ 'bg-sky-50/25' if not is_weekend else 'bg-sky-50/10' }}">
+                <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-10 text-right text-[10px] font-medium uppercase tracking-wide text-sky-700/70">De</span>
+                    {% with slot='sort_1_opens', value=afternoon.opens_at.strftime('%H:%M') if afternoon and afternoon.opens_at else '' %}
+                      {% include "components/scheduling/time_quarter_input.html" %}
+                    {% endwith %}
+                  </div>
+                  <span class="text-sky-300/80 select-none" aria-hidden="true">→</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-10 text-right text-[10px] font-medium uppercase tracking-wide text-sky-700/70">A</span>
+                    {% with slot='sort_1_closes', value=afternoon.closes_at.strftime('%H:%M') if afternoon and afternoon.closes_at else '' %}
+                      {% include "components/scheduling/time_quarter_input.html" %}
+                    {% endwith %}
+                  </div>
+                </div>
+              </td>
+
+              <td class="border-b border-r border-slate-200 px-2 py-3 text-center align-middle
+                         {{ 'rounded-br-xl' if loop.last else '' }}
+                         {{ 'bg-slate-50/60' if is_weekend else 'bg-white' }}">
+                <div class="inline-flex items-center justify-center gap-1">
+                  {% if weekday < 6 %}
+                  <button type="button"
+                          class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                          title="Copiar horario a {{ weekday_labels[weekday + 1] }}"
+                          aria-label="Copiar horario a {{ weekday_labels[weekday + 1] }}"
+                          @click="copyRowToNext({{ weekday }})">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M12 11v6m0 0l-2-2m2 2l2-2"/>
+                    </svg>
+                  </button>
+                  {% endif %}
+                  <button type="button"
+                          class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                          title="Vaciar horario de {{ weekday_labels[weekday] }}"
+                          aria-label="Vaciar horario de {{ weekday_labels[weekday] }}"
+                          @click="clearRow({{ weekday }})">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="border-t border-slate-200 bg-slate-50/50 px-6 py-4">
+        <button type="submit" class="btn-primary cursor-pointer">Guardar horario y parámetros</button>
+      </div>
+    </section>
+  </form>
+
+  <section class="card space-y-4">
+    <div>
+      <h3 class="font-semibold text-slate-900">Excepciones / festivos</h3>
+      <p class="text-sm text-slate-500">Días cerrados para todo el centro.</p>
+    </div>
+    <form hx-post="/settings/business-hours/exceptions"
+          hx-target="#exceptions-list" hx-swap="beforeend"
+          class="flex flex-wrap items-end gap-3">
+      <label class="text-sm">
+        <span class="text-slate-600">Fecha</span>
+        <input type="date" name="exception_date" required
+               class="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      </label>
+      <label class="text-sm flex-1 min-w-[12rem]">
+        <span class="text-slate-600">Etiqueta (opcional)</span>
+        <input type="text" name="label" maxlength="255"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      </label>
+      <button type="submit" class="btn-secondary cursor-pointer">Añadir cierre</button>
+    </form>
+    <ul id="exceptions-list" class="divide-y divide-slate-100">
+      {% for exception in exceptions %}
+        {% include "components/scheduling/exception_row.html" %}
+      {% endfor %}
+    </ul>
+  </section>
+</div>

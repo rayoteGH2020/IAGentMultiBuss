@@ -1,8 +1,39 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, BeforeValidator, Field, SecretStr, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from app.core.clerk_frontend import DEFAULT_CLERK_JS_VERSION
+
+
+def _parse_comma_or_json_str_list(value: object) -> list[str]:
+    """Acepta JSON ``["a","b"]`` o CSV ``a,b`` (Infisical suele usar CSV)."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            import json
+
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                raise ValueError("expected a JSON array of strings")
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        return [part.strip() for part in text.split(",") if part.strip()]
+    raise ValueError(f"unsupported list value type: {type(value)!r}")
+
+
+# NoDecode: pydantic-settings no intenta json.loads antes del validator.
+CommaSeparatedStrList = Annotated[
+    list[str],
+    NoDecode,
+    BeforeValidator(_parse_comma_or_json_str_list),
+]
 
 
 class Settings(BaseSettings):
@@ -30,6 +61,16 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # Zona horaria por defecto para mostrar timestamps en plantillas (BD sigue en UTC).
     app_display_timezone: str = "Europe/Madrid"
+    # Seguridad HTTP. En produccion se fuerza HTTPS redirect y HSTS desde create_app().
+    # SECURITY_ALLOWED_HOSTS: CSV (localhost,127.0.0.1) o JSON ["localhost"].
+    security_allowed_hosts: CommaSeparatedStrList = [
+        "localhost",
+        "127.0.0.1",
+        "testserver",
+        "test",
+    ]
+    security_https_redirect: bool = False
+    security_hsts_enabled: bool = False
 
     # Database
     # Sin defaults: ambas conexiones son imprescindibles para cualquier request.
@@ -63,6 +104,13 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = ""
     clerk_jwks_url: str = ""
     clerk_webhook_secret: SecretStr = SecretStr("")
+    # Versión fijada de @clerk/clerk-js (CDN). No usar @latest (supply chain).
+    clerk_js_version: str = DEFAULT_CLERK_JS_VERSION
+    # Allowlists JWT session de Clerk (Paso01 §3). CSV o JSON.
+    # Si la lista no está vacía, el claim correspondiente es obligatorio y debe
+    # coincidir. En staging/production al menos una allowlist debe estar definida.
+    clerk_jwt_azp_allowlist: CommaSeparatedStrList = []
+    clerk_jwt_audience_allowlist: CommaSeparatedStrList = []
 
     # LLM providers — se usan en Paso 10
     anthropic_api_key: SecretStr = SecretStr("")
@@ -75,27 +123,84 @@ class Settings(BaseSettings):
     # En local apunta al Langfuse del docker-compose; en prod a la instancia
     # self-hosted en la VPS (arquitectura.md §2).
     langfuse_host: str = "http://localhost:3000"
+    # Captura de contenido íntegro (prompts, documentos, respuestas) en las
+    # trazas. Por defecto solo se envían metadatos de evaluación: el contenido
+    # de cliente no sale de Postgres/R2 (arquitectura.md §8). Solo activable en
+    # desarrollo y con datos sintéticos.
+    langfuse_capture_content: bool = False
 
     # Overrides opcionales del router de modelos (arquitectura.md §8).
     # Si son None, LLMClient usa los DEFAULT_MODELS definidos en llm/client.py.
-    # Útil para cambiar el modelo en staging sin tocar código.
+    # Cada campo se inyecta vía Infisical con su nombre en MAYÚSCULAS
+    # (p. ej. LLM_MODEL_EXTRACTION) y tiene prioridad sobre el default.
+    # El proveedor se infiere del prefijo del modelo en _resolve_model:
+    # "claude-*" → Anthropic, "voyage-*" → Voyage, resto → Google.
+    # Permite cambiar de modelo/proveedor en staging o prod sin redeploy.
     llm_model_extraction: str | None = None
     llm_model_chat: str | None = None
     llm_model_classify: str | None = None
+    # D011: override historico para task=sql; modulo Analytics no se implementa.
+    # Mantener el setting no activa producto; no anadir runners sql_*.
     llm_model_sql: str | None = None
+    llm_model_translate: str | None = None
+    # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
+    llm_model_transcription: str | None = None
+
+    # Límites de recursos en procesado documental.
+    # Un PDF o una imagen pequeños en bytes pueden expandirse a gigabytes al
+    # decodificarse (decompression bomb). Estos topes se validan ANTES de
+    # decodificar y son fail-closed: si no se pueden verificar, se rechaza.
+    # Páginas admitidas por documento de negocio (factura, ticket). Todas se
+    # envían al LLM, así que subir este número multiplica coste y latencia.
+    document_max_pdf_pages: int = 3
+    # Área máxima en píxeles tras decodificar (unos 8000 por 5000). Pillow
+    # aborta la decodificación al superarlo (Image.MAX_IMAGE_PIXELS).
+    document_max_image_pixels: int = 40_000_000
+    # Lado máximo: descarta imágenes tipo 1 por 500.000 px que pasan el área.
+    document_max_image_edge_px: int = 20_000
+    # Tras este tiempo en processing sin finalizar, se considera huérfano
+    # (p. ej. worker reiniciado) y se puede abandonar / reintentar.
+    # 3 min: equilibrio entre no abortar extracciones lentas y no dejar la UI
+    # bloqueada tras un kill/OOM o un retry que dejó el attempt abierto.
+    document_processing_stale_after_seconds: int = 180
+    # TTL del semáforo Redis de extracción por tenant. Si el worker muere
+    # sin DECR, la clave caduca sola (evita cupos fantasma permanentes).
+    document_extraction_slot_ttl_seconds: int = 3600
+    # Techo duro del procesado excepcional autorizado por el superadmin. El
+    # override salta los límites de negocio, no los de supervivencia del worker.
+    document_override_max_pdf_pages: int = 100
+    # Estimación mostrada al superadmin antes de autorizar. Calibrado a ojo con
+    # extracciones de 1-3 páginas; ajustar con datos reales de llm_calls.
+    document_estimated_seconds_per_page: float = 15.0
+    document_estimated_input_tokens_per_page: int = 2_500
+    document_estimated_output_tokens_per_page: int = 900
+    # Multiplicador sobre el coste de proveedor al repercutir un procesado
+    # excepcional al cliente (1.0 = a coste, sin margen).
+    document_override_charge_multiplier: float = 1.0
+
+    # Planes / entitlements (Paso02): kill-switch global de features.
+    # CSV o JSON de codigos FEATURE_* desactivados para todos los tenants.
+    entitlements_disabled_features: CommaSeparatedStrList = []
 
     # Knowledge / RAG ingesta (Paso 18)
+    # Los documentos de conocimiento son libros o manuales: el tope es mucho más
+    # alto que en facturas, pero existe (pypdf recorre página a página).
+    knowledge_max_pdf_pages: int = 300
+    # Techo de texto extraído antes de chunkificar (~325k tokens).
+    knowledge_max_extracted_chars: int = 1_300_000
     knowledge_max_file_size_bytes: int = 15 * 1024 * 1024  # 15 MB
     knowledge_chunk_target_tokens: int = 600
     knowledge_chunk_overlap_tokens: int = 100
-    knowledge_embedding_model: str = "voyage-3-lite"
+    # Default en runtime: voyage-3-lite (ver resolved_knowledge_embedding_model).
+    # Override vía KNOWLEDGE_EMBEDDING_MODEL en Infisical.
+    knowledge_embedding_model: str | None = None
     # voyage-3-lite solo admite 512 dimensiones; debe coincidir con vector(N) en BD.
     knowledge_embedding_dimensions: int = 512
     knowledge_index_max_concurrent_per_tenant: int = 3
     knowledge_max_uploads_per_day: int = 20
     # MIME permitidos: PDF, texto plano, Markdown y fotos (JPEG/PNG/WebP).
     # Las imágenes pasan por OCR vía LLM antes de ser chunkificadas (Paso 22).
-    knowledge_allowed_mimes: list[str] = [
+    knowledge_allowed_mimes: CommaSeparatedStrList = [
         "application/pdf",
         "text/plain",
         "text/markdown",
@@ -117,6 +222,7 @@ class Settings(BaseSettings):
     # Chunks devueltos al LLM tras el merge. top_k ≤ max_top_k siempre.
     knowledge_default_top_k: int = 10
     knowledge_max_top_k: int = 25  # techo para evitar saturar el contexto LLM
+
     # Rate-limit de búsqueda por tenant (peticiones/minuto); ventana deslizante en Redis.
     knowledge_search_rpm_limit: int = 120
 
@@ -130,8 +236,14 @@ class Settings(BaseSettings):
     knowledge_chat_max_citations: int = 5
     knowledge_chat_min_score_threshold: float = 0.0
     chat_daily_message_limit: int = 60
+    # Tope por usuario dentro del pool del tenant (anti abuso de un solo miembro).
+    chat_user_daily_message_limit: int = 40
     chat_max_message_bytes: int = 4096
     chat_history_message_limit: int = 20
+    # Máximo de mensajes persistidos por hilo (user+assistant+tool).
+    chat_max_messages_per_thread: int = 200
+    # Techo aproximado de caracteres de contexto enviados al LLM (system+historial).
+    chat_max_context_chars: int = 48_000
     chat_stream_chunk_chars: int = 80
 
     # Reintentos ante errores transitorios del proveedor LLM (HTTP 429/5xx/529).
@@ -161,10 +273,17 @@ class Settings(BaseSettings):
     )
 
     # Crypto
-    # Clave para cifrar campos sensibles en BD (p. ej. conexiones de clientes
-    # en módulo 3 via pgcrypto). 32 bytes en base64 es el tamaño recomendado
-    # para AES-256.
+    # Clave Fernet/AES para cifrar campos sensibles en BD (tokens OAuth de
+    # integraciones, etc.). D011: el caso "conexiones BD cliente / modulo 3
+    # Analytics" NO se implementara; pgcrypto sigue siendo util para OAuth.
+    # 32 bytes en base64 es el tamaño recomendado para AES-256.
     encryption_key: SecretStr = SecretStr("")
+
+    # Stripe Billing (Paso09)
+    # Vacío = checkout/portal deshabilitados; webhooks rechazan si falta el secret.
+    stripe_secret_key: SecretStr = SecretStr("")
+    stripe_webhook_secret: SecretStr = SecretStr("")
+    stripe_publishable_key: str = ""
 
     # WhatsApp Business API (Paso 21 E)
     # whatsapp_verify_token: token arbitrario que Meta devuelve en la verificación GET.
@@ -173,6 +292,15 @@ class Settings(BaseSettings):
     whatsapp_app_secret: SecretStr = SecretStr("")
     whatsapp_api_url: str = "https://graph.facebook.com/v20.0"
     whatsapp_max_response_chars: int = 1000
+
+    # Webhooks externos (WhatsApp / Telegram) — fail-closed en staging/prod (Paso CDX 4).
+    # True solo en dev local explícito; nunca en staging/production (validado abajo).
+    webhook_allow_unsigned: bool = False
+    # Tope de body antes de parsear JSON (Paso01 §4). 256 KiB cubre payloads
+    # normales de WA/TG/Clerk; no loguear el cuerpo si se supera.
+    webhook_max_body_bytes: int = 262_144
+    # Ventana Redis SET NX anti-replay (reintentos Meta/Telegram/Svix).
+    webhook_dedupe_ttl_seconds: int = 86_400
 
     # Telegram Bot API (Paso 21 F)
     telegram_api_url: str = "https://api.telegram.org"
@@ -196,15 +324,33 @@ class Settings(BaseSettings):
     # ID de la organización Clerk que identifica al superadmin (Ruben).
     # Si está vacío, las rutas /admin devuelven 403.
     admin_clerk_org_id: str = ""
+    # Allowlist opcional (defensa en profundidad): clerk_user_id separados por
+    # coma. Vacío = cualquier admin activo de ADMIN_CLERK_ORG_ID. Con valores,
+    # además del rol admin el usuario debe estar en la lista.
+    superadmin_clerk_user_ids: str = ""
 
     # Email SMTP — notificaciones internas (Paso 21, solución temporal)
     # Si smtp_host está vacío, los envíos se omiten silenciosamente (útil en dev).
+    # Puerto 587: SMTP_STARTTLS=true, SMTP_SSL=false
+    # Puerto 465: SMTP_STARTTLS=false, SMTP_SSL=true (TLS implícito)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_from: str = ""
     smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    # Destino de avisos "usuario sin organización" (onboarding). Infisical:
+    # EMAIL_SADM (también acepta email_sadam por typo histórico).
+    email_sadm: str = Field(  # type: ignore[pydantic-alias]
+        default="",
+        validation_alias=AliasChoices(
+            "EMAIL_SADM",
+            "email_sadm",
+            "EMAIL_SADAM",
+            "email_sadam",
+        ),
+    )
 
     # Métricas interno (Paso 15) — token para `/metrics/module1`
     # Bearer token simple para proteger el endpoint de métricas internas.
@@ -217,7 +363,7 @@ class Settings(BaseSettings):
     voice_max_audio_seconds: int = 60  # duración máx. de la nota
     # MIME aceptados por Gemini audio. audio/webm puede requerir transcodificación
     # en algunos entornos; preferir audio/ogg o audio/mp4 desde MediaRecorder.
-    voice_allowed_audio_mimes: list[str] = [
+    voice_allowed_audio_mimes: CommaSeparatedStrList = [
         "audio/ogg",
         "audio/mpeg",
         "audio/mp4",
@@ -234,12 +380,57 @@ class Settings(BaseSettings):
     voice_event_min_confidence: float = 0.5
     # Rate-limit por usuario: notas de voz por hora (ventana deslizante en Redis).
     voice_rate_limit_per_hour: int = 30
-    # Override opcional del modelo de transcripción (None → DEFAULT_MODELS["transcription"]).
-    llm_model_transcription: str | None = None
+
+    @property
+    def resolved_knowledge_embedding_model(self) -> str:
+        """Modelo Voyage para RAG; fallback al default de LLMClient si no hay override."""
+        return self.knowledge_embedding_model or "voyage-3-lite"
 
     @property
     def is_dev(self) -> bool:
         return self.app_env == "development"
+
+    @property
+    def superadmin_clerk_user_id_set(self) -> frozenset[str]:
+        """Allowlist de superadmins; vacía significa "sin restricción extra"."""
+        return frozenset(
+            part.strip() for part in self.superadmin_clerk_user_ids.split(",") if part.strip()
+        )
+
+    @property
+    def allows_unsigned_webhooks(self) -> bool:
+        """Permite omitir verificación criptográfica solo en dev con flag explícito."""
+        return self.is_dev and self.webhook_allow_unsigned
+
+    @model_validator(mode="after")
+    def _reject_unsigned_webhooks_outside_dev(self) -> Self:
+        if self.webhook_allow_unsigned and not self.is_dev:
+            raise ValueError(
+                "WEBHOOK_ALLOW_UNSIGNED must be false when APP_ENV is staging or production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_langfuse_content_outside_dev(self) -> Self:
+        if self.langfuse_capture_content and not self.is_dev:
+            raise ValueError(
+                "LANGFUSE_CAPTURE_CONTENT must be false when APP_ENV is staging or production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_clerk_jwt_audience_outside_dev(self) -> Self:
+        """En staging/prod con Clerk JWT activo, exigir azp o aud (fail-closed)."""
+        if self.is_dev:
+            return self
+        if not self.clerk_jwks_url:
+            return self
+        if self.clerk_jwt_azp_allowlist or self.clerk_jwt_audience_allowlist:
+            return self
+        raise ValueError(
+            "CLERK_JWT_AZP_ALLOWLIST or CLERK_JWT_AUDIENCE_ALLOWLIST must be set "
+            "when APP_ENV is staging or production and CLERK_JWKS_URL is configured"
+        )
 
 
 # Singleton de configuración: se construye una sola vez leyendo el entorno y

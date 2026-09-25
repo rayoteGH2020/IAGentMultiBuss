@@ -8,7 +8,18 @@ on:
     paths:
       - "app/llm/**"           # Cambios en cliente LLM, prompts, pricing, tracing
       - "app/schemas/invoice.py"       # Cambios en el schema Pydantic de extracción
+      - "app/schemas/ticket.py"
+      - "app/schemas/contract.py"
+      - "app/schemas/insurance.py"
+      - "app/schemas/document_query.py"
       - "app/services/invoice_service.py"  # Cambios en el servicio que aplica el resultado
+      - "app/services/ticket_service.py"
+      - "app/services/contract_service.py"
+      - "app/services/insurance_service.py"
+      - "app/services/document_query_service.py"  # Consultas del chat documental
+      - "tests/fixtures/invoices/**"
+      - "tests/fixtures/contracts/**"
+      - "tests/fixtures/insurances/**"
       - "app/services/knowledge_search_service.py"
       - "app/services/chat_service.py"
       - "app/services/chat_citations.py"
@@ -31,11 +42,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1
+
       - name: Sync dependencies
         run: uv sync --frozen
 
       - name: Validate knowledge_qa_v1 dataset
         run: uv run python -m app.evals.runners.knowledge_qa --validate-only
+
+      - name: Validate chat_documents_v2 dataset
+        run: uv run python -m app.evals.runners.chat_documents --validate-only
 
   invoice-extraction:
     runs-on: ubuntu-latest
@@ -55,12 +72,13 @@ jobs:
           POSTGRES_DB: saas
         ports:
           - 5432:5432
+        # Health: 10 reintentos × 5s ≈ 50s (arranque en frío en runners GitHub).
+        # IMPORTANTE: no poner `#` dentro del bloque `options: >-` — YAML lo
+        # trata como texto literal y Docker recibe `invalid reference format`.
         options: >-
           --health-cmd "pg_isready -U saas -d saas"
           --health-interval 5s
           --health-timeout 5s
-          # 10 reintentos × 5 s = hasta 50 s para que Postgres arranque.
-          # El arranque en frío del contenedor puede tardar 20-30 s en GitHub-hosted runners.
           --health-retries 10
       redis:
         image: redis:7
@@ -108,7 +126,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1 postgresql-client
+
       - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: saas  # pragma: allowlist secret
+        run: psql -h localhost -U saas -d saas -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Apply DB migrations
         # --frozen: usa las versiones exactas de uv.lock sin intentar resolver
         # nuevas versiones. Garantiza reproducibilidad entre ejecuciones de CI.
         run: uv sync --frozen
@@ -117,6 +146,7 @@ jobs:
         # Se aplican TODAS las migraciones (upgrade head) para que las tablas
         # invoices, llm_calls, etc. existan antes de que el runner las use.
         # Si una migración falla aquí, el eval falla antes de gastar créditos LLM.
+        id: migrate
         run: uv run alembic upgrade head
 
       - name: Run invoice extraction evals
@@ -126,6 +156,18 @@ jobs:
         # suficiente para CI donde no hay tenants reales.
         # No se usa `infisical run --` porque los secretos llegan via el bloque env:.
         run: uv run python -m app.evals.runners.extraction
+
+      - name: Run ticket, contract and insurance extraction evals
+        # Se ejecuta aunque falle el eval de facturas (cada step falla por su
+        # cuenta), pero no si fallaron las migraciones: no gastar LLM sin BD.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: uv run python -m app.evals.runners.document_extraction all
+
+      - name: Run document chat eval
+        # Siembra documentos conocidos en el tenant de evals y puntúa la
+        # respuesta final del chat (chat_documents_v2, D015).
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: uv run python -m app.evals.runners.chat_documents
 
       - name: Upload eval results
         # if: always(): sube los resultados AUNQUE el step anterior haya fallado.

@@ -1,0 +1,193 @@
+{# Detalle de traza: cabecera + timeline de mensajes + llm_calls + audit. #}
+{% set thread = trace.thread %}
+<div id="chat-trace-detail" class="space-y-6">
+
+  <section class="rounded-xl border border-slate-200 bg-white p-5">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900">{{ thread.title or "Sin título" }}</h2>
+        <p class="mt-1 text-sm text-slate-500">
+          {{ thread.tenant_name }}
+          · {{ thread.user_email or "usuario desconocido" }}
+          · {{ thread.message_count }} mensajes
+          {% if thread.is_hidden %}· <span class="text-amber-700">oculto en UI</span>{% endif %}
+        </p>
+      </div>
+      <dl class="text-xs text-slate-500 space-y-1 font-mono">
+        <div><dt class="inline text-slate-400">thread</dt> <dd class="inline">{{ thread.id }}</dd></div>
+        <div><dt class="inline text-slate-400">tenant</dt> <dd class="inline">{{ thread.tenant_id }}</dd></div>
+        <div><dt class="inline text-slate-400">creado</dt> <dd class="inline">{{ thread.created_at | local_datetime }}</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500">
+      Timeline de mensajes (orden de creación)
+    </h3>
+
+    {% if trace.messages %}
+      {% for msg in trace.messages %}
+      <article class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
+          <div class="flex items-center gap-2">
+            {% if msg.role == "user" or msg.role.value == "user" %}
+              <span class="rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-800 ring-1 ring-sky-100">user</span>
+            {% elif msg.role == "assistant" or msg.role.value == "assistant" %}
+              <span class="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-800 ring-1 ring-violet-100">assistant</span>
+            {% else %}
+              <span class="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 ring-1 ring-amber-100">tool</span>
+            {% endif %}
+            <span class="text-xs text-slate-500">{{ msg.created_at | local_datetime }}</span>
+          </div>
+          <span class="font-mono text-[10px] text-slate-400">{{ msg.id }}</span>
+        </header>
+
+        <div class="space-y-3 px-4 py-3">
+          {% if msg.content %}
+          <div>
+            <h4 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">content</h4>
+            <pre class="mt-1 whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm text-slate-800">{{ msg.content }}</pre>
+          </div>
+          {% else %}
+          <p class="text-xs italic text-slate-400">content = null (paso intermedio de tool-calling o mensaje sin texto)</p>
+          {% endif %}
+
+          {% if msg.tool_call %}
+          <div x-data="{ open: true }">
+            <button type="button" @click="open = !open"
+                    class="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800">
+              tool_call <span x-text="open ? '▾' : '▸'"></span>
+            </button>
+            <pre x-show="open" x-cloak
+                 class="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{{ msg.tool_call | tojson(indent=2) }}</pre>
+          </div>
+          {% endif %}
+
+          {% if msg.tool_result %}
+          <div x-data="{ open: false }">
+            <button type="button" @click="open = !open"
+                    class="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800">
+              tool_result <span x-text="open ? '▾' : '▸'"></span>
+            </button>
+            <pre x-show="open" x-cloak
+                 class="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{{ msg.tool_result | tojson(indent=2) }}</pre>
+          </div>
+          {% endif %}
+
+          {% if msg.citations %}
+          <div x-data="{ open: false }">
+            <button type="button" @click="open = !open"
+                    class="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800">
+              citations ({{ msg.citations | length }}) <span x-text="open ? '▾' : '▸'"></span>
+            </button>
+            <pre x-show="open" x-cloak
+                 class="mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{{ msg.citations | tojson(indent=2) }}</pre>
+          </div>
+          {% endif %}
+
+          {% if msg.llm_call %}
+          {% set call = msg.llm_call %}
+          <div class="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+            <h4 class="text-[11px] font-semibold uppercase tracking-wide text-violet-700">llm_call vinculado</h4>
+            <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700 sm:grid-cols-3">
+              <div><dt class="text-slate-400">modelo</dt><dd class="font-mono">{{ call.model }}</dd></div>
+              <div><dt class="text-slate-400">provider</dt><dd>{{ call.provider }}</dd></div>
+              <div><dt class="text-slate-400">status</dt><dd>{{ call.status }}</dd></div>
+              <div><dt class="text-slate-400">tokens</dt><dd>{{ call.input_tokens }} → {{ call.output_tokens }}</dd></div>
+              <div><dt class="text-slate-400">coste</dt><dd>{{ "%.6f"|format(call.cost_eur) }} €</dd></div>
+              <div><dt class="text-slate-400">latencia</dt><dd>{{ call.latency_ms }} ms</dd></div>
+              <div class="col-span-2 sm:col-span-3"><dt class="text-slate-400">id</dt><dd class="font-mono break-all">{{ call.id }}</dd></div>
+              {% if call.langfuse_trace_id %}
+              <div class="col-span-2 sm:col-span-3"><dt class="text-slate-400">langfuse</dt><dd class="font-mono break-all">{{ call.langfuse_trace_id }}</dd></div>
+              {% endif %}
+              {% if call.prompt_version %}
+              <div class="col-span-2 sm:col-span-3"><dt class="text-slate-400">prompt</dt><dd class="font-mono">{{ call.prompt_version }}</dd></div>
+              {% endif %}
+            </dl>
+            {% if call.error %}
+            <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-red-50 p-2 text-xs text-red-800">{{ call.error }}</pre>
+            {% endif %}
+          </div>
+          {% elif msg.llm_call_id %}
+          <p class="text-xs text-amber-700">llm_call_id={{ msg.llm_call_id }} (fila no encontrada)</p>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        Este hilo no tiene mensajes.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <h3 class="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
+      llm_calls relacionados ({{ trace.llm_calls | length }})
+    </h3>
+    {% if trace.llm_calls %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500">Creado</th>
+            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500">Modelo</th>
+            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500">Status</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500">In</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500">Out</th>
+            <th class="px-4 py-2 text-right text-xs font-medium text-slate-500">Coste</th>
+            <th class="px-4 py-2 text-left text-xs font-medium text-slate-500">Langfuse</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for call in trace.llm_calls %}
+          <tr class="hover:bg-slate-50/60">
+            <td class="px-4 py-2 text-xs text-slate-500">{{ call.created_at | local_datetime }}</td>
+            <td class="px-4 py-2 font-mono text-xs">{{ call.model }}</td>
+            <td class="px-4 py-2 text-xs">{{ call.status }}</td>
+            <td class="px-4 py-2 text-right text-xs">{{ call.input_tokens }}</td>
+            <td class="px-4 py-2 text-right text-xs">{{ call.output_tokens }}</td>
+            <td class="px-4 py-2 text-right text-xs">{{ "%.6f"|format(call.cost_eur) }} €</td>
+            <td class="px-4 py-2 font-mono text-[10px] text-slate-400 break-all max-w-[12rem]">
+              {{ call.langfuse_trace_id or "—" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="p-4 text-sm text-slate-400">Sin llamadas LLM asociadas.</p>
+    {% endif %}
+  </section>
+
+  <section class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <h3 class="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
+      audit_log ({{ trace.audit_events | length }})
+    </h3>
+    {% if trace.audit_events %}
+    <ul class="divide-y divide-slate-100">
+      {% for ev in trace.audit_events %}
+      <li class="px-4 py-3" x-data="{ open: false }">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="text-sm font-medium text-slate-800">{{ ev.action }}</span>
+            <span class="ml-2 text-xs text-slate-400">{{ ev.resource_type }}</span>
+            <span class="ml-2 text-xs text-slate-500">{{ ev.created_at | local_datetime }}</span>
+          </div>
+          <button type="button" @click="open = !open"
+                  class="cursor-pointer text-xs text-primary-600 hover:underline">
+            metadata
+          </button>
+        </div>
+        <pre x-show="open" x-cloak
+             class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{{ ev.metadata | tojson(indent=2) }}</pre>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="p-4 text-sm text-slate-400">Sin eventos de auditoría para este hilo.</p>
+    {% endif %}
+  </section>
+</div>

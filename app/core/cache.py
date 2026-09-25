@@ -45,5 +45,9 @@ async def close_redis() -> None:
     """
     global _client
     if _client is not None:
-        await _client.aclose()
+        try:
+            await _client.aclose()
+        except RuntimeError as exc:
+            if "Event loop is closed" not in str(exc):
+                raise
         _client = None

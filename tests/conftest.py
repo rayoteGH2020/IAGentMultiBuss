@@ -11,25 +11,37 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from tests.db_target import resolve_test_urls
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Valores mínimos para importar `app` en tests sin Infisical."""
     os.environ.setdefault("APP_SECRET_KEY", "test-app-secret-not-for-production")
-    os.environ.setdefault(
-        "DATABASE_URL",
-        "postgresql+asyncpg://saas_app:saas@localhost:5432/saas",  # pragma: allowlist secret
-    )
+    # Siempre saas_test (aunque Infisical inyecte la BD de la app): los tests
+    # de integración dejan tenants/usuarios/documentos que no se limpian.
+    # Crear/migrar: `infisical run -- bash scripts/test_db_setup.sh`.
+    database_url, rls_database_url = resolve_test_urls(os.environ)
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["RLS_TEST_DATABASE_URL"] = rls_database_url
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+    # TestClient → Host: testserver; AsyncClient base_url=http://test → Host: test.
+    # Infisical puede inyectar SECURITY_ALLOWED_HOSTS sin esos hosts de test.
+    allowed = os.environ.get("SECURITY_ALLOWED_HOSTS", "").strip()
+    for host in ("testserver", "test", "localhost", "127.0.0.1"):
+        if host not in {h.strip() for h in allowed.split(",") if h.strip()}:
+            allowed = f"{allowed},{host}" if allowed else host
+    os.environ["SECURITY_ALLOWED_HOSTS"] = allowed
     # Python 3.14 + Windows + asyncpg: QueuePool.dispose() deja el ProactorEventLoop
     # en estado inválido. NullPool evita la contaminación entre tests function-scoped.
     from app.core.db import use_null_pool_for_tests
 
     use_null_pool_for_tests()
+    try:
+        from app.config import get_settings
 
-
-_DEFAULT_RLS_URL = (
-    "postgresql+asyncpg://saas_app:saas@localhost:5432/saas"  # pragma: allowlist secret
-)
+        get_settings.cache_clear()
+    except Exception:
+        pass
 
 
 @pytest.fixture
@@ -58,12 +70,22 @@ async def invoices_migration_applied(rls_database_url: str) -> None:
 
 @pytest.fixture
 def rls_database_url() -> str:
-    return os.environ.get("RLS_TEST_DATABASE_URL", _DEFAULT_RLS_URL)
+    # pytest_configure ya la fijó a saas_test; resolve de nuevo por si un test
+    # la ha borrado del entorno.
+    return resolve_test_urls(os.environ)[1]
 
 
 @pytest.fixture
 async def db_session(rls_database_url: str) -> AsyncIterator[AsyncSession]:
+    """Sesión async con rol RLS. Skip si Postgres no está levantado."""
     engine = create_async_engine(rls_database_url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except (SQLAlchemyError, OSError):
+        await engine.dispose()
+        pytest.skip("Postgres no disponible para tests de integración.")
+
     sm = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
     async with sm() as session:
         yield session
@@ -77,8 +99,16 @@ async def tenant_factory(
 ) -> Callable[..., Coroutine[Any, Any, Tenant]]:
     from uuid import uuid4
 
-    async def _make(name: str | None = None) -> Tenant:
-        t = Tenant(name=name or f"T {uuid4().hex[:8]}")
+    async def _make(
+        name: str | None = None,
+        *,
+        plan_code: str = "basic",
+    ) -> Tenant:
+        t = Tenant(
+            name=name or f"T {uuid4().hex[:8]}",
+            plan=plan_code,
+            plan_code=plan_code,
+        )
         db_session.add(t)
         await db_session.flush()
         return t
@@ -112,10 +142,89 @@ async def invoices_schema_ready(db_session: AsyncSession) -> None:
     )
     if tickets.scalar_one_or_none() is None:
         pytest.skip("Run Paso11 migration (`uv run alembic upgrade head`).")
+    vat_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'vat_breakdown'"
+        ),
+    )
+    if vat_col.scalar_one_or_none() is None:
+        pytest.skip("Run p51_invoice_vat_breakdown migration (`uv run alembic upgrade head`).")
+    dismissed_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'dismissed_at'"
+        ),
+    )
+    if dismissed_col.scalar_one_or_none() is None:
+        pytest.skip("Run p52_document_retry_dismiss migration (`uv run alembic upgrade head`).")
+    attempts = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'document_processing_attempts'"
+        ),
+    )
+    if attempts.scalar_one_or_none() is None:
+        pytest.skip("Run p52_document_retry_dismiss migration (`uv run alembic upgrade head`).")
+    error_code_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'invoices' "
+            "AND column_name = 'error_code'"
+        ),
+    )
+    if error_code_col.scalar_one_or_none() is None:
+        pytest.skip("Run p56_doc_limits_charges migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def processing_charges_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si falta la tabla de cargos por procesado excepcional (p56)."""
+    result = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'processing_charges'"
+        ),
+    )
+    if result.scalar_one_or_none() is None:
+        pytest.skip("Run p56_doc_limits_charges migration (`uv run alembic upgrade head`).")
+
+
+@pytest.fixture
+async def scheduling_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si Postgres no tiene tablas de scheduling (migración p30 pendiente)."""
+    for table in (
+        "appointments",
+        "business_hours",
+        "professionals",
+        "professional_working_hours",
+        "services",
+        "schedule_exceptions",
+    ):
+        result = await db_session.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                f"WHERE table_schema = 'public' AND table_name = '{table}'"
+            ),
+        )
+        if result.scalar_one_or_none() is None:
+            pytest.skip("Run Paso30 migration (`uv run alembic upgrade head`).")
+    notes_col = await db_session.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'services' "
+            "AND column_name = 'notes'"
+        ),
+    )
+    if notes_col.scalar_one_or_none() is None:
+        pytest.skip("Run p63_services_notes migration (`uv run alembic upgrade head`).")
 
 
 @pytest.fixture
 async def chat_schema_ready(db_session: AsyncSession) -> None:
+    """SKIP si Postgres no tiene tablas de chat (migración p16/p20 pendiente)."""
     for table in ("chat_threads", "chat_messages"):
         result = await db_session.execute(
             text(

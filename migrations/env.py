@@ -3,22 +3,49 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from pydantic import ValidationError
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.config import get_settings
 from app.models import Base
 
 # IMPORTANTE: importar todos los modelos para que autogenerate los detecte
-from app.models import invoice, llm_call, membership, tenant, user  # noqa: F401
+from app.models import (
+    appointment,
+    business_hour,
+    invoice,
+    llm_call,
+    membership,
+    professional,
+    professional_specialty,
+    professional_working_hour,
+    schedule_exception,
+    scheduling_service,
+    tenant,
+    user,
+)  # noqa: F401
 
 
 def _database_url() -> str:
-    """Solo migraciones: permitir `DATABASE_URL` sin cargar el resto de Settings."""
+    """URL de Postgres para migraciones.
+
+    Prioridad:
+    1. `DATABASE_URL` en el entorno (suficiente para Alembic).
+    2. `get_settings().database_url` (requiere secretos vía Infisical).
+    """
     if url := os.environ.get("DATABASE_URL"):
         return url
-    return get_settings().database_url
+    try:
+        from app.config import get_settings
+
+        return get_settings().database_url
+    except ValidationError as exc:
+        msg = (
+            "Alembic no puede conectar: falta DATABASE_URL (y Settings no está completo). "
+            "Ejecuta: infisical run -- uv run alembic upgrade head"
+        )
+        raise RuntimeError(msg) from exc
 
 
 config = context.config

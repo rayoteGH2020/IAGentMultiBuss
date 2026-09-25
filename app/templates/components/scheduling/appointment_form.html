@@ -1,0 +1,154 @@
+<div class="space-y-4"
+     x-data="{
+       serviceId: '{{ appointment.service_id if appointment and appointment.service_id else '' }}',
+       services: {{ services | map(attribute='id') | list | tojson }},
+       inactiveIds: [{% for s in services if not s.is_active %}'{{ s.id }}'{% if not loop.last %},{% endif %}{% endfor %}],
+       gridSlotsValid: true,
+       get serviceInactive() {
+         return this.serviceId && this.inactiveIds.includes(this.serviceId);
+       },
+       get canSubmit() {
+         return !this.serviceInactive && this.gridSlotsValid && {{ 'false' if read_only else 'true' }};
+       }
+     }"
+     @appointment-grid-slots.window="gridSlotsValid = $event.detail.valid">
+  <div class="flex items-center justify-between">
+    <h2 class="text-lg font-semibold">
+      {% if mode == 'create' %}Nueva cita{% elif read_only %}Detalle de cita{% else %}Editar cita{% endif %}
+    </h2>
+    {% if read_only %}
+    <span class="text-xs rounded bg-slate-100 px-2 py-1 text-slate-600">Solo lectura</span>
+    {% endif %}
+  </div>
+
+  <form {% if appointment %}
+          hx-post="/appointments/{{ appointment.id }}"
+        {% else %}
+          hx-post="/appointments"
+        {% endif %}
+        :disabled="!canSubmit"
+        class="space-y-4">
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Servicio</span>
+      <select name="service_id" x-model="serviceId" {% if read_only %}disabled{% endif %}
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        <option value="">— Sin servicio —</option>
+        {% for s in services %}
+        <option value="{{ s.id }}" class="{{ 'text-red-600' if not s.is_active else '' }}"
+          {% if appointment and appointment.service_id == s.id %}selected{% endif %}>
+          {{ s.name }}{% if not s.is_active %} (inactivo){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <p x-show="serviceInactive" x-cloak class="text-sm text-red-600">
+      El servicio seleccionado está inactivo. Elige un servicio activo o reactívalo en Ajustes.
+    </p>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Profesional</span>
+      <select name="professional_id" {% if read_only %}disabled{% endif %}
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        <option value="">— Sin asignar —</option>
+        {% for prof, is_star in professionals_ordered %}
+        <option value="{{ prof.id }}"
+                {% if not prof.is_active %}disabled{% endif %}
+                {% if appointment and appointment.professional_id == prof.id %}selected{% endif %}>
+          {% if is_star %}★ {% endif %}{{ prof.display_name }}{% if not prof.is_active %} (inactivo){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div>
+        {% include "components/scheduling/appointment_start_picker.html" %}
+      </div>
+      <label class="block text-sm">
+        <span class="text-slate-600">Duración (min, si sin servicio)</span>
+        <select name="duration_minutes" {% if read_only %}disabled{% endif %}
+                class="mt-1 w-full cursor-pointer rounded-lg border border-slate-300 px-3 py-2">
+          <option value="">—</option>
+          {% for minutes in range(15, 241, scheduling_settings.slot_granularity_minutes) %}
+          <option value="{{ minutes }}"
+            {% if appointment_duration_minutes == minutes %}selected{% endif %}>{{ minutes }} min</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="block text-sm">
+        <span class="text-slate-600">Nombre cliente *</span>
+        <input type="text" name="client_name" required {% if read_only %}disabled{% endif %}
+               value="{{ appointment.client_name if appointment else '' }}"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="text-slate-600">Teléfono *</span>
+        <input type="tel" name="client_phone" required {% if read_only %}disabled{% endif %}
+               value="{{ appointment.client_phone if appointment else '' }}"
+               class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+      </label>
+    </div>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Email (opcional)</span>
+      <input type="email" name="client_email" {% if read_only %}disabled{% endif %}
+             value="{{ appointment.client_email if appointment and appointment.client_email else '' }}"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Notas</span>
+      <textarea name="notes" rows="2" {% if read_only %}disabled{% endif %}
+                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">{{ appointment.notes if appointment and appointment.notes else '' }}</textarea>
+    </label>
+
+    {% if appointment and mode == 'edit' %}
+    <label class="block text-sm">
+      <span class="text-slate-600">Estado</span>
+      <select name="status" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+        {% for st in statuses %}
+        <option value="{{ st.value }}" {% if appointment.status == st %}selected{% endif %}>{{ st.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+
+    {% if not read_only and (mode == 'create' or mode == 'edit') %}
+    <div id="slot-results" class="border-t border-slate-200 pt-3"></div>
+    <button type="button"
+            hx-get="/appointments/find-slots"
+            hx-include="closest form"
+            hx-target="#slot-results"
+            hx-vals='js:{
+              appointment_date: document.querySelector("[name=appointment_date]").value,
+              start_time: document.querySelector("[name=start_time]").value,
+              mode: "{{ mode }}"
+            }'
+            :disabled="serviceInactive || !serviceId"
+            class="btn-secondary cursor-pointer text-sm">
+      Buscar huecos
+    </button>
+    {% endif %}
+
+    <div class="flex flex-wrap gap-2 pt-2">
+      {% if not read_only %}
+      <button type="submit" :disabled="!canSubmit" class="btn-primary cursor-pointer disabled:opacity-40">
+        Guardar
+      </button>
+      {% endif %}
+      {% if appointment and not read_only and membership_can_appointment(membership, 'cancel') and appointment.status.value != 'cancelled' %}
+      <button type="button"
+              hx-post="/appointments/{{ appointment.id }}/cancel"
+              hx-confirm="¿Cancelar esta cita?"
+              class="btn-secondary text-red-600 cursor-pointer">
+        Cancelar cita
+      </button>
+      {% endif %}
+    </div>
+  </form>
+</div>

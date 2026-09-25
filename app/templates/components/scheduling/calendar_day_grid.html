@@ -1,0 +1,129 @@
+{# Vista día: grid vertical con franjas según granularidad y separación mañana/tarde. #}
+{% if day_grid and day_grid.is_closed %}
+<div class="card p-8 text-center">
+  {% if is_today %}
+  <p class="text-xs font-semibold uppercase tracking-wide text-primary-600 mb-2">Hoy</p>
+  {% endif %}
+  <p class="text-slate-600">{{ day_grid.closed_message }}</p>
+</div>
+{% elif day_grid %}
+<div class="card overflow-hidden">
+  <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+    <div class="flex items-center gap-2">
+      {% if is_today %}
+      <span class="inline-flex items-center rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-800">
+        Hoy
+      </span>
+      {% endif %}
+      <span class="text-sm text-slate-600">
+        Franjas de {{ day_grid.granularity_minutes }} min
+      </span>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <div class="flex min-w-[48rem]" style="--slot-h: {{ day_grid.slot_height_px }}px;">
+      {# Eje de horas #}
+      <div class="w-[4.75rem] shrink-0 border-r border-slate-200 bg-slate-50">
+        <div class="h-10 border-b border-slate-200"></div>
+        {% for row in day_grid.rows %}
+          {% if row.kind.value == 'period_header' %}
+          <div class="flex h-9 flex-col justify-center border-b border-slate-200 bg-slate-100 px-2">
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-700">{{ row.period_label }}</span>
+            <span class="text-[10px] text-slate-500">{{ row.period_range }}</span>
+          </div>
+          {% elif row.kind.value == 'break_separator' %}
+          <div class="flex h-[3.25rem] items-center justify-center border-y border-dashed border-slate-300 bg-slate-100/70 px-1 text-center text-[10px] font-medium text-slate-500">
+            {{ row.break_label }}
+          </div>
+          {% else %}
+          <div class="flex h-[var(--slot-h)] items-start border-b px-2 pt-0.5 text-[11px] tabular-nums
+                      {{ 'border-slate-200 font-semibold text-slate-700' if row.is_hour_start else 'border-slate-100 text-slate-500' }}">
+            {{ row.time_label }}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      {# Columnas por profesional #}
+      {% for p in professionals %}
+      <div class="min-w-[11rem] flex-1 border-r border-slate-200">
+        <div class="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-slate-200 bg-white px-3">
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:{{ p.color | professional_color }}"></span>
+          <span class="truncate text-sm font-semibold text-slate-900">{{ p.display_name }}</span>
+        </div>
+        <div class="relative" style="height: {{ day_grid.total_height_px }}px;">
+          {% set ns = namespace(offset=0) %}
+          {% for row in day_grid.rows %}
+            {% if row.kind.value == 'period_header' %}
+            <div class="pointer-events-none absolute inset-x-0 border-b border-slate-200 bg-slate-50/80"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% elif row.kind.value == 'break_separator' %}
+            <div class="pointer-events-none absolute inset-x-0 border-y border-dashed border-slate-300 bg-slate-100/60"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% else %}
+            <div class="pointer-events-none absolute inset-x-0 border-b
+                        {{ 'border-slate-200' if row.is_hour_start else 'border-slate-100' }}"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% endif %}
+            {% set ns.offset = ns.offset + row.height_px %}
+          {% endfor %}
+
+          {% set prof_key = p.id | string %}
+          {% for block in appointment_blocks_by_prof.get(prof_key, []) %}
+          <a hx-get="/appointments/{{ block.appointment_id }}"
+             hx-target="#appointment-drawer"
+             hx-swap="innerHTML"
+             class="absolute left-1 right-1 z-20 overflow-hidden rounded-md border px-2 py-1 text-[11px] leading-tight shadow-sm cursor-pointer
+                    {{ 'opacity-50 line-through' if block.status == 'cancelled' else 'hover:brightness-95' }}"
+             style="top: {{ block.top_px }}px; height: {{ block.height_px }}px;
+                    background: {{ (block.color | professional_color) ~ '22' }};
+                    border-color: {{ (block.color | professional_color) ~ '66' }};
+                    color: rgb(30 41 59);">
+            <span class="font-semibold block truncate">{{ block.time_label }}</span>
+            <span class="block truncate">{{ block.client_name }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {# Sin asignar #}
+      <div class="min-w-[11rem] flex-1 border-r border-slate-200 bg-amber-50/20">
+        <div class="sticky top-0 z-10 flex h-10 items-center border-b border-amber-200 bg-amber-50 px-3">
+          <span class="truncate text-sm font-semibold text-amber-900">Sin asignar</span>
+        </div>
+        <div class="relative" style="height: {{ day_grid.total_height_px }}px;">
+          {% set ns = namespace(offset=0) %}
+          {% for row in day_grid.rows %}
+            {% if row.kind.value == 'period_header' %}
+            <div class="pointer-events-none absolute inset-x-0 border-b border-slate-200 bg-slate-50/80"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% elif row.kind.value == 'break_separator' %}
+            <div class="pointer-events-none absolute inset-x-0 border-y border-dashed border-slate-300 bg-slate-100/60"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% else %}
+            <div class="pointer-events-none absolute inset-x-0 border-b
+                        {{ 'border-slate-200' if row.is_hour_start else 'border-slate-100' }}"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% endif %}
+            {% set ns.offset = ns.offset + row.height_px %}
+          {% endfor %}
+
+          {% for block in appointment_blocks_by_prof.get('unassigned', []) %}
+          <a hx-get="/appointments/{{ block.appointment_id }}"
+             hx-target="#appointment-drawer"
+             hx-swap="innerHTML"
+             class="absolute left-1 right-1 z-20 overflow-hidden rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-[11px] leading-tight shadow-sm cursor-pointer hover:bg-amber-200
+                    {{ 'opacity-50 line-through' if block.status == 'cancelled' else '' }}"
+             style="top: {{ block.top_px }}px; height: {{ block.height_px }}px;">
+            <span class="font-semibold block truncate text-amber-950">{{ block.time_label }}</span>
+            <span class="block truncate text-amber-900">{{ block.client_name }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

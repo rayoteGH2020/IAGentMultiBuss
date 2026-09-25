@@ -26,16 +26,19 @@ from app.core.calendar_datetime import (
     shift_week_start,
 )
 from app.core.datetime_display import display_today
-from app.core.errors import AppError, ValidationError
+from app.core.errors import AppError, ValidationError, public_error_message
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, get_db
-from app.models.calendar_integration import CalendarIntegrationStatus
-from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate
+from app.deps import CurrentTenant, CurrentUser, get_db, require_feature
+from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate, CalendarIntegrationStatus
 from app.services import calendar_service
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/calendar", tags=["calendar"])
+router = APIRouter(
+    prefix="/calendar",
+    tags=["calendar"],
+    dependencies=[Depends(require_feature("calendar_google"))],
+)
 
 
 async def _events_ctx(
@@ -75,7 +78,10 @@ async def _events_ctx(
                 max_results=50,
             )
         except AppError as exc:
-            ctx["error_message"] = exc.message
+            ctx["error_message"] = public_error_message(
+                exc,
+                fallback="No se pudieron cargar los eventos del calendario.",
+            )
             logger.warning(
                 "calendar.events.list_failed",
                 tenant_id=str(tenant_id),
@@ -188,7 +194,10 @@ async def calendar_create_event(
         await calendar_service.create_calendar_event(db, tenant.id, user.id, payload)
         success_message = "Evento creado en Google Calendar."
     except AppError as exc:
-        error_message = exc.message
+        error_message = public_error_message(
+            exc,
+            fallback="No se pudo crear el evento. Inténtalo de nuevo.",
+        )
     ctx = await _events_ctx(
         db,
         tenant_id=tenant.id,
@@ -237,7 +246,10 @@ async def calendar_update_event(
         )
         success_message = "Evento actualizado."
     except AppError as exc:
-        error_message = exc.message
+        error_message = public_error_message(
+            exc,
+            fallback="No se pudo actualizar el evento. Inténtalo de nuevo.",
+        )
     ctx = await _events_ctx(
         db,
         tenant_id=tenant.id,

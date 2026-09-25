@@ -1,7 +1,7 @@
 {# Formulario de subida de documentos de conocimiento RAG (Paso 18).
-   Reutiliza el mismo patrón Alpine.js + dropzone que upload_modal.html.
-   Acepta: PDF, TXT, MD. Máx. 15 MB por fichero.
-   El selector de categoría (kind) es obligatorio antes de poder enviar. #}
+   Alpine.data('knowledgeUploadForm'): estado del modal + adjunto de ficheros
+   en hx:configRequest (scope Alpine, no hx-on HTMX).
+   Cierre del modal solo con HX-Trigger knowledge-upload-result ok=true. #}
 
 {% set kind_labels = {
   "contract": "Contrato",
@@ -15,14 +15,15 @@
 } %}
 
 <div
-  x-data="{ open: false, files: [], dragging: false, kind: '', uploadInputKey: 0, isMobile: window.matchMedia('(hover: none) and (pointer: coarse)').matches }"
-  @keydown.escape.window="open = false"
+  x-data="knowledgeUploadForm"
+  @keydown.escape.window="if (open) closeModal()"
+  @knowledge-upload-result.window="onUploadResult($event.detail)"
   hx-boost="false"
   class="inline-block">
 
   <button
     type="button"
-    @click="open = true; files = []; kind = ''; uploadInputKey++"
+    @click="openModal()"
     class="btn-primary shrink-0">
     Subir documento
   </button>
@@ -52,21 +53,13 @@
     class="sr-only"
     accept="image/*"
     capture="environment"
-    @change="
-      const captured = Array.from($event.target.files || []);
-      if (captured.length > 0) {
-        files = captured;
-        kind = '';
-        uploadInputKey++;
-        open = true;
-      }
-      $event.target.value = '';">
+    @change="onCameraCapture($event)">
 
   <div
     x-show="open"
     x-cloak
     class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
-    @click.self="open = false">
+    @click.self="closeModal()">
 
     <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
 
@@ -74,10 +67,17 @@
         <h2 class="text-lg font-semibold text-slate-900">Añadir a la base de conocimiento</h2>
         <button
           type="button"
-          @click="open = false"
+          @click="closeModal()"
           class="text-slate-400 hover:text-slate-600 text-xl leading-none"
           aria-label="Cerrar">✕</button>
       </div>
+
+      <div
+        x-show="formError"
+        x-cloak
+        class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        role="alert"
+        x-text="formError"></div>
 
       <form
         hx-post="/knowledge/upload"
@@ -86,26 +86,8 @@
         hx-swap="outerHTML"
         hx-indicator="#k-upload-spinner"
         hx-boost="false"
-        hx-on::config-request="
-          if (files.length === 0 || !kind) {
-            event.preventDefault();
-            return;
-          }
-          const fd = event.detail.formData;
-          if (!fd) return;
-          fd.delete('files');
-          files.forEach(function (f) { fd.append('files', f, f.name); });"
-        @submit="
-          const dt = new DataTransfer();
-          files.forEach(function (f) { dt.items.add(f); });
-          if ($refs.kinput) $refs.kinput.files = dt.files;"
-        @htmx:after-request="
-          if ($event.detail.successful) {
-            open = false;
-            files = [];
-            kind = '';
-            uploadInputKey++;
-          }">
+        @htmx:config-request="prepareRequest($event)"
+        @submit="syncInputFiles()">
 
         {# Dropzone #}
         <label
@@ -113,12 +95,7 @@
           :class="dragging ? 'border-primary-400 bg-primary-50' : 'border-slate-300 hover:border-slate-400'"
           @dragover.prevent="dragging = true"
           @dragleave.prevent="dragging = false"
-          @drop.prevent="
-            dragging = false;
-            files = Array.from($event.dataTransfer.files);
-            const dt = new DataTransfer();
-            files.forEach(function (f) { dt.items.add(f); });
-            $refs.kinput.files = dt.files;">
+          @drop.prevent="onDrop($event)">
 
           <input
             type="file"
@@ -128,7 +105,7 @@
             class="hidden"
             multiple
             accept=".pdf,.txt,.md,.markdown,.jpg,.jpeg,.png,.webp"
-            @change="files = Array.from($event.target.files || [])">
+            @change="onFilePick($event)">
 
           <svg class="mx-auto h-8 w-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -185,7 +162,7 @@
           </span>
           <button
             type="button"
-            @click="open = false"
+            @click="closeModal()"
             class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 transition-colors">
             Cancelar
           </button>

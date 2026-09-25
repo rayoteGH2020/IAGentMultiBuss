@@ -1,0 +1,43 @@
+<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+  <h3 class="text-lg font-semibold mb-4">Editar servicio</h3>
+
+  <form hx-post="/settings/services/{{ service.id }}"
+        hx-target="#service-{{ service.id }}"
+        hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('close-service-modal'))"
+        class="space-y-4">
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Nombre</span>
+      <input type="text" name="name" required maxlength="255" value="{{ service.name }}"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Duración (min)</span>
+      <input type="number" name="duration_minutes" min="15" max="240" required
+             value="{{ service.duration_minutes }}"
+             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+    </label>
+
+    <label class="block text-sm">
+      <span class="text-slate-600">Observaciones</span>
+      <textarea name="notes" rows="3" maxlength="2000"
+                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="Opcional">{{ service.notes or "" }}</textarea>
+    </label>
+
+    <label class="flex items-center gap-2 text-sm cursor-pointer">
+      <input type="checkbox" name="is_active" value="true"
+             {% if service.is_active %}checked{% endif %}>
+      Activo
+    </label>
+
+    <div class="flex justify-end gap-2">
+      <button type="button"
+              @click="window.dispatchEvent(new CustomEvent('close-service-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar</button>
+    </div>
+  </form>
+</div>

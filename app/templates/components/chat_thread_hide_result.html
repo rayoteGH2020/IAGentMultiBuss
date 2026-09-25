@@ -1,0 +1,7 @@
+{# Respuesta al ocultar un hilo: refresca sidebar; si era el activo, vacía el panel. #}
+{% include "components/chat_thread_list.html" %}
+{% if clear_main %}
+<div id="chat-main" hx-swap-oob="innerHTML">
+  {% include "components/chat_empty_state.html" %}
+</div>
+{% endif %}

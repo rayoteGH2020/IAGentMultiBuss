@@ -192,6 +192,46 @@ async def test_run_index_pipeline_too_many_chunks_marks_failed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_index_pipeline_extract_error_does_not_persist_exception_detail() -> None:
+    db = _make_db_mock()
+
+    with (
+        patch("app.services.knowledge_index_service.get_storage") as mock_storage,
+        patch("app.services.knowledge_index_service.get_llm_client"),
+        patch("app.services.knowledge_index_service.mark_indexing", new_callable=AsyncMock),
+        patch(
+            "app.services.knowledge_index_service.mark_failed", new_callable=AsyncMock
+        ) as mock_mf,
+        patch(
+            "app.services.knowledge_index_service.apply_index_result", new_callable=AsyncMock
+        ) as mock_air,
+        patch("app.services.knowledge_index_service.extract_knowledge_text") as mock_extract,
+        patch("app.services.audit_service.log_action", new_callable=AsyncMock),
+    ):
+        storage = AsyncMock()
+        storage.download_bytes = AsyncMock(return_value=_TEXT_BYTES)
+        mock_storage.return_value = storage
+        mock_extract.side_effect = RuntimeError("parser failed at C:\\secret\\doc.pdf")
+
+        from app.services.knowledge_index_service import run_index_pipeline
+
+        await run_index_pipeline(
+            db,
+            tenant_id=_TENANT_ID,
+            document_id=_DOC_ID,
+            source_file_key=_FILE_KEY,
+            source_mime=_TXT_MIME,
+        )
+
+    mock_mf.assert_called_once()
+    message = mock_mf.call_args.kwargs.get("error_message", "")
+    assert "extract_error" in message
+    assert "C:\\secret" not in message
+    assert "parser failed" not in message
+    mock_air.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_run_index_pipeline_embed_error_marks_failed() -> None:
     db = _make_db_mock()
 
@@ -212,7 +252,7 @@ async def test_run_index_pipeline_embed_error_marks_failed() -> None:
         mock_storage.return_value = storage
 
         llm = AsyncMock()
-        llm.embed = AsyncMock(side_effect=RuntimeError("Voyage AI timeout"))
+        llm.embed = AsyncMock(side_effect=RuntimeError("Voyage AI timeout token=secret"))
         mock_client.return_value = llm
 
         from app.services.knowledge_index_service import run_index_pipeline
@@ -227,5 +267,8 @@ async def test_run_index_pipeline_embed_error_marks_failed() -> None:
 
     mock_mf.assert_called_once()
     args = mock_mf.call_args
-    assert "embed_error" in args.kwargs.get("error_message", "")
+    message = args.kwargs.get("error_message", "")
+    assert "embed_error" in message
+    assert "Voyage AI timeout" not in message
+    assert "token=secret" not in message
     mock_air.assert_not_called()

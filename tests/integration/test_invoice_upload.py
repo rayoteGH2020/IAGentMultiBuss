@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from app.core.csrf import CSRF_HEADER_NAME, generate_csrf_token
 from app.core.db import set_tenant_context
 from app.core.storage import reset_storage_for_tests
 from app.jobs.queue import reset_arq_pool_for_tests
@@ -26,6 +27,7 @@ from app.models import DocTypeCode, Invoice, InvoiceStatus, Membership, Tenant, 
 from app.services import invoice_service
 from fastapi import Request
 from httpx import ASGITransport, AsyncClient
+from pypdf import PdfWriter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -58,6 +60,28 @@ def _fake_get_storage() -> _FakeStorage:
     return _FakeStorage()
 
 
+def _stub_redis_on_app(app: object) -> None:
+    """Evita Redis real (cuotas): flaky en Windows/Py3.14 con event loops cerrados."""
+    from app.deps import get_redis_dep
+
+    redis = AsyncMock()
+    redis.incrby = AsyncMock(return_value=1)
+    redis.expire = AsyncMock(return_value=True)
+
+    async def _redis() -> AsyncMock:
+        return redis
+
+    app.dependency_overrides[get_redis_dep] = _redis  # type: ignore[attr-defined]
+
+
+def _csrf_headers(user_id: UUID, tenant_id: UUID, *, bearer: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {bearer}",
+        "HX-Request": "true",
+        CSRF_HEADER_NAME: generate_csrf_token(user_id=user_id, tenant_id=tenant_id),
+    }
+
+
 async def _seed_tenant_bundle(
     rls_database_url: str,
     *,
@@ -80,7 +104,8 @@ async def _seed_tenant_bundle(
         tenant = Tenant(
             clerk_org_id=org_id,
             name="Upload Org",
-            plan="free",
+            plan="basic",
+            plan_code="basic",
             settings={},
         )
         user = User(
@@ -135,7 +160,8 @@ def _fake_clerk_resolve_builder(
         tenant = Tenant(
             clerk_org_id=org_id,
             name="Upload Org",
-            plan="free",
+            plan="basic",
+            plan_code="basic",
             settings={},
             created_at=now,
             updated_at=now,
@@ -193,15 +219,13 @@ async def test_upload_invoice_creates_row(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
                 files=[("files", ("ejemplo.pdf", BytesIO(_PDF_BYTES), "application/pdf"))],
-                data={"doc_type_code": DocTypeCode.factura.value},
-                headers={
-                    "Authorization": "Bearer fake-jwt-upload",
-                    "HX-Request": "true",
-                },
+                data={"doc_type_codes": DocTypeCode.factura.value},
+                headers=_csrf_headers(uid, tid, bearer="fake-jwt-upload"),
             )
         assert response.status_code == 200
         rows = await _list_invoices(rls_database_url, tid)
@@ -235,23 +259,75 @@ async def test_upload_invoice_rejects_invalid_type(
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
                 files=[
                     ("files", ("evil.txt", BytesIO(b"This is plain text."), "text/plain")),
                 ],
-                data={"doc_type_code": DocTypeCode.factura.value},
-                headers={
-                    "Authorization": "Bearer fake-jwt-bad-upload",
-                    "HX-Request": "true",
-                },
+                data={"doc_type_codes": DocTypeCode.factura.value},
+                headers=_csrf_headers(uid, tid, bearer="fake-jwt-bad-upload"),
             )
         assert response.status_code == 200
         assert "unsupported" in response.text.lower()
 
         rows = await _list_invoices(rls_database_url, tid)
         assert len(rows) == 0
+    finally:
+        reset_storage_for_tests()
+        reset_arq_pool_for_tests()
+
+
+async def test_upload_rejects_pdf_over_page_limit_without_enqueueing(
+    invoices_migration_applied: None,
+    rls_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PDF con más páginas de las admitidas: se guarda, se marca y no llega al worker."""
+    user_sub = f"u_pages_{uuid4().hex[:12]}"
+    org_id = f"o_pages_{uuid4().hex[:12]}"
+    tid, uid = await _seed_tenant_bundle(rls_database_url, user_sub=user_sub, org_id=org_id)
+
+    enqueue = AsyncMock(return_value="job-should-not-run")
+    monkeypatch.setattr(invoice_service, "get_storage", _fake_get_storage)
+    monkeypatch.setattr(
+        "app.services.document_upload_service.enqueue_invoice_processing",
+        enqueue,
+    )
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
+    )
+
+    writer = PdfWriter()
+    for _ in range(5):
+        writer.add_blank_page(width=595, height=842)
+    buffer = BytesIO()
+    writer.write(buffer)
+    big_pdf = buffer.getvalue()
+
+    try:
+        app = create_app()
+        _stub_redis_on_app(app)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/documents/upload",
+                files=[("files", ("anual.pdf", BytesIO(big_pdf), "application/pdf"))],
+                data={"doc_type_codes": DocTypeCode.factura.value},
+                headers=_csrf_headers(uid, tid, bearer="fake-jwt-pages"),
+            )
+        assert response.status_code == 200
+        enqueue.assert_not_awaited()
+
+        rows = await _list_invoices(rls_database_url, tid)
+        assert len(rows) == 1
+        assert rows[0].status == InvoiceStatus.failed
+        assert rows[0].error_code == "too_many_pages"
+        # El original queda en R2 para que el superadmin pueda revisarlo.
+        assert rows[0].source_file_key is not None
+        assert rows[0].error_message is not None
+        assert "administrador del sitio" in rows[0].error_message
     finally:
         reset_storage_for_tests()
         reset_arq_pool_for_tests()
@@ -277,19 +353,18 @@ async def test_upload_two_sequential_htmx_requests(
         _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
     )
 
-    headers = {
-        "Authorization": "Bearer fake-jwt-seq",
-        "HX-Request": "true",
-    }
-    payload = {"doc_type_code": DocTypeCode.factura.value}
+    headers = _csrf_headers(uid, tid, bearer="fake-jwt-seq")
+    payload = {"doc_type_codes": DocTypeCode.factura.value}
 
     try:
         # Cada request usa su propio AsyncClient (y por tanto su propio ciclo de
         # vida ASGI + engine singleton). Así se evita la contaminación de estado
         # asyncpg entre peticiones cuando el event loop es function-scoped.
         for name in ("primera.pdf", "segunda.pdf"):
+            app = create_app()
+            _stub_redis_on_app(app)
             async with AsyncClient(
-                transport=ASGITransport(app=create_app()), base_url="http://test"
+                transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/documents/upload",
@@ -324,17 +399,15 @@ async def test_upload_without_files_field_returns_html_panel(
         _fake_clerk_resolve_builder(tid, uid, user_sub=user_sub, org_id=org_id),
     )
 
-    headers = {
-        "Authorization": "Bearer fake-jwt-nof",
-        "HX-Request": "true",
-    }
+    headers = _csrf_headers(uid, tid, bearer="fake-jwt-nof")
 
     try:
         app = create_app()
+        _stub_redis_on_app(app)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/documents/upload",
-                data={"doc_type_code": DocTypeCode.factura.value},
+                data={"doc_type_codes": DocTypeCode.factura.value},
                 headers=headers,
             )
         assert response.status_code == 200

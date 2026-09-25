@@ -64,7 +64,7 @@ async def test_index_knowledge_document_worker_full_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Documento pending → worker ejecuta pipeline → status=ready, chunks > 0."""
-    tenant: Tenant = await tenant_factory()
+    tenant: Tenant = await tenant_factory(plan_code="basic")
     await set_tenant_context(db_session, str(tenant.id))
 
     # Parchear storage en knowledge_index_service, que es quien llama a get_storage.
@@ -74,18 +74,14 @@ async def test_index_knowledge_document_worker_full_flow(
 
     monkeypatch.setattr(kis, "get_storage", lambda: fake_storage)
 
-    async def fake_embed(texts: list[str], *, tenant_id: Any, db: Any) -> list[list[float]]:
-        return [_FAKE_EMBEDDING[:] for _ in texts]
-
-    import app.llm.client as llm_mod
-
-    original_get_client = llm_mod.get_llm_client
-
     class _FakeLLMClient:
         async def embed(self, texts: list[str], *, tenant_id: Any, db: Any) -> list[list[float]]:
             return [_FAKE_EMBEDDING[:] for _ in texts]
 
-    monkeypatch.setattr(llm_mod, "get_llm_client", lambda: _FakeLLMClient())
+    monkeypatch.setattr(
+        "app.services.knowledge_index_service.get_llm_client",
+        lambda: _FakeLLMClient(),
+    )
 
     # Saltarse el semáforo Redis.
     @asynccontextmanager
@@ -151,4 +147,3 @@ async def test_index_knowledge_document_worker_full_flow(
     assert all(c.content for c in chunks)
 
     reset_storage_for_tests()
-    monkeypatch.setattr(llm_mod, "get_llm_client", original_get_client)

@@ -1,0 +1,41 @@
+{# Estado vacío del panel principal de /chat (sin hilo activo). #}
+<div class="flex flex-1 flex-col items-center justify-center p-8 md:p-12">
+  <div class="chat-empty-hero">
+    <span class="chat-badge-doc mb-4 inline-flex">
+      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      Consulta documental
+    </span>
+    <h2 class="text-2xl font-semibold tracking-tight text-slate-900">
+      Pregunta sobre tus documentos
+    </h2>
+    <p class="mt-3 text-sm leading-relaxed text-slate-600">
+      Facturas y tickets ya extraídos. El asistente obtiene totales, fechas y proveedores
+      con <strong class="font-medium text-slate-700">herramientas tipadas</strong> — no inventa cifras.
+    </p>
+    <p class="chat-badge-rag-hint mt-2">
+      No es la base de conocimiento (manuales / políticas); eso llegará en un módulo posterior.
+    </p>
+    <form
+      class="mt-8"
+      hx-post="/chat/threads"
+      hx-target="#chat-main"
+      hx-swap="innerHTML"
+      hx-indicator="#chat-new-thread-spinner">
+      <button type="submit" class="btn-primary relative cursor-pointer px-6 py-2.5">
+        <span>Iniciar conversación</span>
+        <svg
+          id="chat-new-thread-spinner"
+          class="htmx-indicator absolute inset-0 m-auto h-5 w-5 animate-spin text-white"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      </button>
+    </form>
+  </div>
+</div>

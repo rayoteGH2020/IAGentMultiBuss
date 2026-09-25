@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -56,6 +57,7 @@ class Ticket(Base):
         Enum(TicketStatus, name="ticket_status", native_enum=True),
         nullable=False,
         default=TicketStatus.pending,
+        server_default=text("'pending'::ticket_status"),
     )
 
     source_file_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -70,11 +72,18 @@ class Ticket(Base):
     iva_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     iva_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="EUR",
+        server_default=text("'EUR'"),
+    )
 
     raw_extraction: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     llm_call_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     llm_call: Mapped[LLMCall | None] = relationship(
         "LLMCall",
@@ -105,4 +114,10 @@ class Ticket(Base):
     __table_args__ = (
         Index("ix_tickets_tenant_status", "tenant_id", "status"),
         Index("ix_tickets_tenant_fecha", "tenant_id", "fecha"),
+        Index("ix_tickets_tenant_dismissed", "tenant_id", "dismissed_at"),
+        Index(
+            "ix_tickets_error_code",
+            "error_code",
+            postgresql_where=text("error_code IS NOT NULL"),
+        ),
     )

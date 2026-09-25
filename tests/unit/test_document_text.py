@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.core.document_text import ExtractedTextResult, extract_knowledge_text
+import pytest
+from app.config import get_settings
+from app.core.document_text import (
+    ExtractedTextResult,
+    extract_document_text,
+    extract_knowledge_text,
+)
 
 _TXT_BYTES = b"Hola mundo. Este es texto plano en UTF-8."
 # "Sección" y "sección" en UTF-8 (ó = \xc3\xb3)
@@ -120,3 +126,71 @@ def test_extract_unsupported_mime_returns_empty() -> None:
     result = extract_knowledge_text(b"data", "application/octet-stream")
     assert result.text == ""
     assert "unsupported_mime" in result.warnings
+
+
+# ---------------------------------------------------------------------------
+# Límites de recursos (hallazgo de seguridad #5)
+# ---------------------------------------------------------------------------
+
+
+def test_knowledge_pdf_over_page_limit_is_rejected_whole(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mejor rechazar el libro entero que indexar un trozo silenciosamente."""
+    monkeypatch.setenv("KNOWLEDGE_MAX_PDF_PAGES", "2")
+    get_settings.cache_clear()
+
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "texto"
+    mock_reader = MagicMock()
+    mock_reader.pages = [mock_page] * 5
+
+    try:
+        with patch("pypdf.PdfReader", return_value=mock_reader):
+            result = extract_knowledge_text(b"%PDF-1.4 fake", "application/pdf")
+    finally:
+        get_settings.cache_clear()
+
+    assert result.text == ""
+    assert result.page_count == 5
+    assert "too_many_pages:5" in result.warnings
+
+
+def test_knowledge_pdf_text_is_truncated_at_char_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KNOWLEDGE_MAX_EXTRACTED_CHARS", "50")
+    get_settings.cache_clear()
+
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "x" * 40
+    mock_reader = MagicMock()
+    mock_reader.pages = [mock_page] * 10
+
+    try:
+        with patch("pypdf.PdfReader", return_value=mock_reader):
+            result = extract_knowledge_text(b"%PDF-1.4 fake", "application/pdf")
+    finally:
+        get_settings.cache_clear()
+
+    assert result.char_count == 50
+    assert "text_truncated:50" in result.warnings
+
+
+def test_classification_text_stops_at_document_page_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La extracción para clasificar no recorre un PDF entero de miles de páginas."""
+    monkeypatch.setenv("DOCUMENT_MAX_PDF_PAGES", "3")
+    get_settings.cache_clear()
+
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "pagina"
+    mock_reader = MagicMock()
+    mock_reader.pages = [mock_page] * 50
+
+    try:
+        with patch("pypdf.PdfReader", return_value=mock_reader):
+            text = extract_document_text(b"%PDF-1.4 fake", "application/pdf")
+    finally:
+        get_settings.cache_clear()
+
+    assert text.count("pagina") == 3

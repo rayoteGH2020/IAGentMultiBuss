@@ -1,0 +1,68 @@
+{# Vista mes: rejilla con mini-grid vertical por día (franjas abiertas). #}
+<div class="card overflow-hidden">
+  <div class="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+    Franjas de {{ month_view.granularity_minutes }} min · verde = horario abierto
+  </div>
+
+  <div class="grid grid-cols-7 border-b border-slate-200 bg-slate-100/80 text-center text-xs font-semibold uppercase tracking-wide text-slate-600">
+    {% for label in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+    <div class="border-r border-slate-200 py-2 last:border-r-0">{{ label }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-cols-7">
+    {% for cell in month_view.cells %}
+      {% if cell.day is none %}
+      <div class="min-h-[9.5rem] border-b border-r border-slate-100 bg-slate-50/50"></div>
+      {% else %}
+      <div class="min-h-[9.5rem] border-b border-r border-slate-200 bg-white p-1.5 flex flex-col
+                  {{ 'ring-2 ring-inset ring-primary-300 bg-primary-50/30' if cell.is_today else '' }}">
+        <div class="flex items-start justify-between gap-1 mb-1">
+          <a href="/appointments?view=day&date={{ cell.day.isoformat() }}"
+             class="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md px-1 text-xs font-bold tabular-nums cursor-pointer
+                    {{ 'bg-primary-600 text-white' if cell.is_today else 'text-slate-800 hover:bg-slate-100' }}">
+            {{ cell.day_number }}
+          </a>
+          {% if cell.open_periods %}
+          <div class="flex flex-col items-end gap-0.5 text-[9px] leading-tight text-slate-500">
+            {% for period in cell.open_periods %}
+            <span class="rounded bg-emerald-50 px-1 py-px text-emerald-800 border border-emerald-100">{{ period }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        {% if cell.is_closed %}
+        <p class="mt-auto text-[10px] text-center text-slate-400">{{ cell.closed_message or 'Cerrado' }}</p>
+        {% elif cell.time_rows %}
+        <div class="relative mt-1 flex-1 rounded border border-slate-100 bg-slate-50/50 overflow-hidden"
+             style="min-height: {{ [cell.time_rows | length * month_view.mini_slot_height_px, 48] | max }}px;">
+          {% set ns = namespace(offset=0) %}
+          {% for row in cell.time_rows %}
+          <div class="absolute inset-x-0 border-b border-emerald-100/80 bg-emerald-50/60"
+               style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+          {% set ns.offset = ns.offset + row.height_px %}
+          {% endfor %}
+
+          {% for block in cell.appointments %}
+          <a hx-get="/appointments/{{ block.appointment_id }}"
+             hx-target="#appointment-drawer"
+             hx-swap="innerHTML"
+             title="{{ block.client_name }} · {{ block.time_label }}"
+             class="absolute left-0.5 right-0.5 z-10 truncate rounded-sm border px-0.5 text-[8px] font-medium leading-tight cursor-pointer
+                    {{ 'opacity-50 line-through' if block.status == 'cancelled' else 'hover:brightness-95' }}"
+             style="top: {{ block.top_px }}px; height: {{ [block.height_px, month_view.mini_slot_height_px] | max }}px;
+                    background: {{ (block.color | professional_color) ~ '44' if block.color else '#fef3c7' }};
+                    border-color: {{ (block.color | professional_color) ~ '99' if block.color else '#fcd34d' }};">
+            {{ block.time_label }}
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="mt-auto text-[10px] text-center text-slate-400">Sin horario</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>

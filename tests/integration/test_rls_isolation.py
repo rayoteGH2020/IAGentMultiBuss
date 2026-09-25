@@ -71,5 +71,8 @@ async def test_membership_rls_isolation() -> None:
         assert len(memberships) == 1
         assert memberships[0].tenant_id == t2_id
 
+    # Cleanup acotado: evita TRUNCATE CASCADE (exige TRUNCATE en tablas hijas).
     async with _rls_session_scope() as s:
-        await s.execute(text("TRUNCATE memberships, users, tenants CASCADE"))
+        for tid in (t1_id, t2_id):
+            await set_tenant_context(s, str(tid))
+            await s.execute(text("DELETE FROM memberships"))

@@ -5,7 +5,7 @@ import httpx
 import jwt
 from jwt import PyJWKClient
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.errors import AuthError
 
 _jwks_client: PyJWKClient | None = None
@@ -21,11 +21,52 @@ def _get_jwks_client() -> PyJWKClient:
     return _jwks_client
 
 
+def _claim_values(raw: object) -> list[str]:
+    """Normaliza claims JWT que pueden ser string o lista de strings."""
+    if isinstance(raw, str) and raw:
+        return [raw]
+    if isinstance(raw, (list, tuple)):
+        return [item for item in raw if isinstance(item, str) and item]
+    return []
+
+
+def assert_clerk_jwt_authorized_party(
+    claims: dict[str, Any],
+    settings: Settings | None = None,
+) -> None:
+    """Valida ``azp`` / ``aud`` contra allowlists de Settings.
+
+    Política (Paso01 §3):
+    - Allowlist vacía → ese claim no se exige (útil en development).
+    - Allowlist no vacía → el claim es obligatorio y debe intersectar la lista.
+    - Fallar cerrado ante ausencia o valor incorrecto cuando el claim es requerido.
+    """
+    cfg = settings if settings is not None else get_settings()
+
+    azp_allow = frozenset(cfg.clerk_jwt_azp_allowlist)
+    if azp_allow:
+        azp_values = _claim_values(claims.get("azp"))
+        if not azp_values:
+            raise AuthError("Token missing required azp claim")
+        if not azp_allow.intersection(azp_values):
+            raise AuthError("Token azp is not an authorized party")
+
+    aud_allow = frozenset(cfg.clerk_jwt_audience_allowlist)
+    if aud_allow:
+        aud_values = _claim_values(claims.get("aud"))
+        if not aud_values:
+            raise AuthError("Token missing required aud claim")
+        if not aud_allow.intersection(aud_values):
+            raise AuthError("Token audience is not authorized")
+
+
 def verify_clerk_jwt(token: str) -> dict[str, Any]:
-    """Valida un JWT de Clerk y devuelve los claims."""
+    """Valida un JWT de Clerk (firma, expiración, azp/aud) y devuelve claims."""
     try:
         client = _get_jwks_client()
         signing_key = client.get_signing_key_from_jwt(token)
+        # verify_aud=False: la audiencia se valida con allowlists propias
+        # (multi-valor / azp) vía assert_clerk_jwt_authorized_party.
         decoded: object = jwt.decode(
             token,
             signing_key.key,
@@ -35,7 +76,11 @@ def verify_clerk_jwt(token: str) -> dict[str, Any]:
         )
         if not isinstance(decoded, dict):
             raise AuthError("Invalid token structure")
-        return cast("dict[str, Any]", decoded)
+        claims = cast("dict[str, Any]", decoded)
+        assert_clerk_jwt_authorized_party(claims)
+        return claims
+    except AuthError:
+        raise
     except jwt.ExpiredSignatureError as e:
         raise AuthError("Token expired") from e
     except jwt.InvalidTokenError as e:

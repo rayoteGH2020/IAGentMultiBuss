@@ -1,0 +1,156 @@
+{
+    "_comment": "Eval de extracción de pólizas de seguro (módulo 1). Formato del ground truth en app/evals/document_compare.py. Rutas de 'file' relativas a tests/fixtures/.",
+    "version": "v1",
+    "doc_type": "seguro",
+    "model_target": "gemini-3.8-flash",
+    "notes": "Documentos ficticios (lo indican en su pie). prima acepta la prima total anual o la prima neta: el schema dice 'prima o importe a pagar' sin concretar. tipo_seguro no se puntúa (texto libre, cada modelo lo redacta distinto; deuda en D014): solo alimenta el seed del eval de chat documental.",
+    "cases": [
+        {
+            "id": "pol_decesos",
+            "file": "insurances/poliza_decesos.pdf",
+            "ground_truth": {
+                "aseguradora": "Iberia Mutual Seguros",
+                "numero_poliza": "DC-30-2026-017724",
+                "tomador": "José María Hernández Martínez",
+                "cif_nif": "22981437K",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "412.48",
+                        "381.40"
+                    ]
+                },
+                "tipo_seguro": "Decesos"
+            }
+        },
+        {
+            "id": "pol_multirriesgo_comercio",
+            "file": "insurances/poliza_multirriesgo_comercio.pdf",
+            "ground_truth": {
+                "aseguradora": "Levante Previsión",
+                "numero_poliza": "MC-41-2026-038860",
+                "tomador": "Cuídame Centro de Fisioterapia",
+                "cif_nif": "B90416272",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "972.60",
+                        "882.00"
+                    ]
+                },
+                "tipo_seguro": "Multirriesgo comercio"
+            }
+        },
+        {
+            "id": "pol_rc_profesional",
+            "file": "insurances/poliza_rc_profesional.pdf",
+            "ground_truth": {
+                "aseguradora": "Iberia Mutual Seguros",
+                "numero_poliza": "RC-08-2026-004519",
+                "tomador": "Codelab Sistemes Barcelona",
+                "cif_nif": "B08519373",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "3243.42",
+                        "2999.00"
+                    ]
+                },
+                "tipo_seguro": "Responsabilidad civil profesional"
+            }
+        },
+        {
+            "id": "pol_salud",
+            "file": "insurances/poliza_salud.pdf",
+            "ground_truth": {
+                "aseguradora": "Saludmed Asistencia",
+                "numero_poliza": "SM-2026-29-006742",
+                "tomador": "Antonio Jesús Benítez Moreno",
+                "cif_nif": "74839215K",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "1874.21",
+                        "1871.40"
+                    ]
+                },
+                "tipo_seguro": "Salud"
+            }
+        },
+        {
+            "id": "pol_vida",
+            "file": "insurances/poliza_vida.pdf",
+            "ground_truth": {
+                "aseguradora": "Cantábrico Vida",
+                "numero_poliza": "VR-0026-73184-5",
+                "tomador": "Ane Goikoetxea Larrañaga",
+                "cif_nif": "78926154K",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "172.05",
+                        "171.60"
+                    ]
+                },
+                "tipo_seguro": "Vida"
+            }
+        },
+        {
+            "id": "pol_hogar",
+            "file": "insurances/poliza_hogar.pdf",
+            "ground_truth": {
+                "aseguradora": "Levante Previsión",
+                "numero_poliza": "HG-46-2026-112095",
+                "tomador": "Marta Ribera Climent",
+                "cif_nif": "20471853J",
+                "fecha_inicio": "2026-10-15",
+                "fecha_fin": "2027-10-15",
+                "prima": {
+                    "any_of": [
+                        "328.98",
+                        "289.50"
+                    ]
+                },
+                "tipo_seguro": "Hogar"
+            }
+        },
+        {
+            "id": "pol_auto",
+            "file": "insurances/poliza_auto.pdf",
+            "ground_truth": {
+                "aseguradora": "Iberia Mutual Seguros",
+                "numero_poliza": "AU-2026-0048317",
+                "tomador": "Sergio Navarro Gil",
+                "cif_nif": "51624387J",
+                "fecha_inicio": "2026-10-01",
+                "fecha_fin": "2027-10-01",
+                "prima": {
+                    "any_of": [
+                        "693.18",
+                        "639.00"
+                    ]
+                },
+                "tipo_seguro": "Automóvil"
+            }
+        },
+        {
+            "id": "pol_accidentes",
+            "file": "insurances/poliza_accidentes.pdf",
+            "ground_truth": {
+                "aseguradora": "Cantábrico Vida",
+                "numero_poliza": "AC-50-2026-002981",
+                "tomador": "Raúl Lacasa Sierra",
+                "cif_nif": "17436298K",
+                "fecha_inicio": "2026-11-01",
+                "fecha_fin": "2027-11-01",
+                "prima": "355.18",
+                "tipo_seguro": "Accidentes personales"
+            }
+        }
+    ]
+}

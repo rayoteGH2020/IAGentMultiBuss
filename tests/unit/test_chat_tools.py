@@ -318,6 +318,10 @@ async def test_run_tool_loop_attaches_citations_from_search_knowledge(
         "app.llm.chat_loop.LLMCall",
         lambda **kwargs: MagicMock(id=uuid4()),
     )
+    monkeypatch.setattr(
+        "app.llm.chat_loop.filter_citations_existing_for_tenant",
+        AsyncMock(side_effect=lambda _db, *, tenant_id, citations, settings=None: citations),
+    )
 
     ctx = ToolContext(db=db, tenant_id=uuid4())
     settings = get_settings()

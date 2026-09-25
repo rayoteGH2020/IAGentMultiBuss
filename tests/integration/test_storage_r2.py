@@ -19,7 +19,7 @@ import pytest
 from app.config import get_settings
 from app.core.storage import get_storage, reset_storage_for_tests
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_llm]
 
 
 @pytest.mark.skipif(

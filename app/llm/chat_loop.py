@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 import uuid
@@ -16,6 +17,11 @@ from google.genai import types as genai_types
 from langfuse.types import TraceContext
 
 from app.config import Settings
+from app.core.document_processing_errors import (
+    PROVIDER_OVERLOAD_USER_MESSAGE,
+    is_provider_overload_error,
+)
+from app.llm.observability import trace_messages, trace_status_message, trace_text
 from app.llm.pricing import compute_cost_eur
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
 from app.llm.tracing import get_langfuse
@@ -24,6 +30,7 @@ from app.schemas.chat import ChatCitation
 from app.services.chat_citations import (
     citations_to_json,
     extract_citations_from_tool_result,
+    filter_citations_existing_for_tenant,
     merge_citation_lists,
 )
 
@@ -32,6 +39,11 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
+
+# Clave interna del historial in-memory: Content nativo de Gemini (con thought_signature).
+_GEMINI_MODEL_CONTENT_KEY = "gemini_model_content"
+# Campo serializable en tool_calls persistidos (base64) para rehidratar Parts.
+_THOUGHT_SIGNATURE_KEY = "thought_signature"
 
 _MAX_ITERATIONS_DEFAULT = 6
 _EXHAUSTED_MESSAGE = (
@@ -127,11 +139,12 @@ async def run_tool_loop(
                 "iteration": iteration + 1,
             },
             model=model,
-            input=conversation,
+            input=trace_messages(conversation),
         )
         started = time.perf_counter()
         status = "ok"
         error: str | None = None
+        error_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         llm_call: LLMCall | None = None
@@ -213,6 +226,7 @@ async def run_tool_loop(
         except Exception as exc:
             status = "error"
             error = str(exc)[:1000]
+            error_type = type(exc).__name__
             logger.exception(
                 "chat_loop.turn_failed",
                 iteration=iteration + 1,
@@ -272,12 +286,24 @@ async def run_tool_loop(
                     turn_messages.append(record)
 
             obs.update(
-                output=final_text,
-                metadata={"latency_ms": latency_ms, "status": status},
+                output=trace_text(final_text),
+                metadata={
+                    "latency_ms": latency_ms,
+                    "status": status,
+                    "tool_calls": [name for name, _ in tools_this_turn],
+                },
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=error,
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=(
+                        PROVIDER_OVERLOAD_USER_MESSAGE
+                        if is_provider_overload_error(error)
+                        else None
+                    ),
+                ),
             )
             obs.end()
             langfuse.flush()
@@ -289,6 +315,12 @@ async def run_tool_loop(
         final_text = _EXHAUSTED_MESSAGE
 
     final_citations = merge_citation_lists(*citation_batches, settings=settings)
+    final_citations = await filter_citations_existing_for_tenant(
+        db,
+        tenant_id=tenant_id,
+        citations=final_citations,
+        settings=settings,
+    )
     citations_json = citations_to_json(final_citations) if final_citations else None
 
     if turn_messages:
@@ -365,24 +397,27 @@ async def _gemini_turn(
     text_parts: list[str] = []
 
     candidate = response.candidates[0] if response.candidates else None
-    parts = (
-        list(candidate.content.parts)
-        if candidate and candidate.content and candidate.content.parts
-        else []
-    )
+    model_content = candidate.content if candidate and candidate.content else None
+    parts = list(model_content.parts) if model_content and model_content.parts else []
 
     for part in parts:
         if part.text:
             text_parts.append(part.text)
         if part.function_call:
             fc = part.function_call
-            tool_calls.append(
-                {
-                    "id": fc.id or str(uuid.uuid4()),
-                    "name": fc.name or "",
-                    "arguments": dict(fc.args or {}),
-                },
-            )
+            call: dict[str, Any] = {
+                "id": fc.id or str(uuid.uuid4()),
+                "name": fc.name or "",
+                "arguments": dict(fc.args or {}),
+            }
+            # Gemini 3 exige reenviar thought_signature en el siguiente turno.
+            # Lo serializamos (base64) para historial BD; el Content nativo se
+            # guarda aparte para el loop in-memory.
+            if part.thought_signature:
+                call[_THOUGHT_SIGNATURE_KEY] = base64.b64encode(part.thought_signature).decode(
+                    "ascii"
+                )
+            tool_calls.append(call)
 
     assistant_message: dict[str, Any] = {
         "role": "assistant",
@@ -390,6 +425,9 @@ async def _gemini_turn(
     }
     if tool_calls:
         assistant_message["tool_calls"] = tool_calls
+    # Reutilizar el Content completo de la API (no reconstruir Parts a mano).
+    if model_content is not None:
+        assistant_message[_GEMINI_MODEL_CONTENT_KEY] = model_content
 
     return _TurnOutcome(
         assistant_message=assistant_message,
@@ -481,20 +519,23 @@ def _to_gemini_contents(
             )
             continue
         if role == "assistant":
+            native = msg.get(_GEMINI_MODEL_CONTENT_KEY)
+            if isinstance(native, genai_types.Content):
+                # Preferir el Content de la API (incluye thought_signature intacto).
+                if native.role:
+                    contents.append(native)
+                else:
+                    contents.append(
+                        genai_types.Content(role="model", parts=list(native.parts or []))
+                    )
+                continue
             parts: list[genai_types.Part] = []
             if msg.get("content"):
                 parts.append(genai_types.Part(text=str(msg["content"])))
             for call in msg.get("tool_calls", []):
-                parts.append(
-                    genai_types.Part(
-                        function_call=genai_types.FunctionCall(
-                            id=call.get("id"),
-                            name=call["name"],
-                            args=call.get("arguments", {}),
-                        ),
-                    ),
-                )
-            contents.append(genai_types.Content(role="model", parts=parts))
+                parts.append(_gemini_function_call_part(call))
+            if parts:
+                contents.append(genai_types.Content(role="model", parts=parts))
             continue
         if role == "tool":
             payload = msg.get("content", "")
@@ -521,6 +562,33 @@ def _to_gemini_contents(
             )
 
     return ("\n\n".join(system_parts) if system_parts else None, contents)
+
+
+def _gemini_function_call_part(call: dict[str, Any]) -> genai_types.Part:
+    """Reconstruye un Part de functionCall rehidratando thought_signature si existe."""
+    signature = _decode_thought_signature(call.get(_THOUGHT_SIGNATURE_KEY))
+    return genai_types.Part(
+        function_call=genai_types.FunctionCall(
+            id=call.get("id"),
+            name=call["name"],
+            args=call.get("arguments", {}),
+        ),
+        thought_signature=signature,
+    )
+
+
+def _decode_thought_signature(raw: object) -> bytes | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            return base64.b64decode(raw.encode("ascii"), validate=True)
+        except (ValueError, TypeError):
+            logger.warning("chat_loop.invalid_thought_signature_b64")
+            return None
+    return None
 
 
 def _to_anthropic_messages(
@@ -578,7 +646,9 @@ def _gemini_token_usage(raw: Any) -> tuple[int, int]:
     um = getattr(raw, "usage_metadata", None)
     if um is None:
         return 0, 0
-    return (
-        int(getattr(um, "prompt_token_count", None) or 0),
-        int(getattr(um, "candidates_token_count", None) or 0),
+    # Google factura el razonamiento como output pero no lo incluye en
+    # candidates_token_count (mismo criterio que client._extract_token_usage).
+    output = int(getattr(um, "candidates_token_count", None) or 0) + int(
+        getattr(um, "thoughts_token_count", None) or 0
     )
+    return int(getattr(um, "prompt_token_count", None) or 0), output

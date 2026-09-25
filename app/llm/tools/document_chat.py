@@ -20,8 +20,10 @@ from app.schemas.chat import DocTypeRead
 from app.schemas.document_query import (
     AggregateGroupBy,
     AggregateMetric,
+    ContractRead,
     DocumentRead,
     DocumentSearchFilters,
+    InsuranceRead,
     InvoiceRead,
     TicketRead,
 )
@@ -36,7 +38,9 @@ class ListDocTypesArgs(BaseModel):
 
 
 class SearchDocumentsArgs(BaseModel):
-    doc_type_code: str = Field(description="Código del catálogo doc_types (p. ej. factura, ticket)")
+    doc_type_code: str = Field(
+        description="Código del catálogo doc_types (factura, ticket, contrato, seguro)",
+    )
     fecha_from: date | None = None
     fecha_to: date | None = None
     total_min: Decimal | None = Field(default=None, ge=0)
@@ -48,6 +52,11 @@ class SearchDocumentsArgs(BaseModel):
     comercio_query: str | None = None
     numero_ticket: str | None = None
     forma_pago: str | None = None
+    parte_contraria_query: str | None = None
+    numero_contrato: str | None = None
+    aseguradora_query: str | None = None
+    numero_poliza: str | None = None
+    tipo_seguro: str | None = None
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
@@ -61,7 +70,10 @@ class AggregateDocumentsArgs(BaseModel):
     doc_type_code: str
     metric: str = Field(description="count o sum_total")
     group_by: str = Field(
-        default="none", description="none, proveedor, comercio, month, year, status"
+        default="none",
+        description=(
+            "none, proveedor, comercio, parte_contraria, aseguradora, month, year, status"
+        ),
     )
     fecha_from: date | None = None
     fecha_to: date | None = None
@@ -74,6 +86,11 @@ class AggregateDocumentsArgs(BaseModel):
     comercio_query: str | None = None
     numero_ticket: str | None = None
     forma_pago: str | None = None
+    parte_contraria_query: str | None = None
+    numero_contrato: str | None = None
+    aseguradora_query: str | None = None
+    numero_poliza: str | None = None
+    tipo_seguro: str | None = None
 
 
 class ListDocumentPartiesArgs(BaseModel):
@@ -115,6 +132,12 @@ def _citation_from_document(doc: DocumentRead) -> ToolCitation:
     elif isinstance(doc, TicketRead):
         label = doc.comercio or doc.source_filename or str(doc.id)
         snippet = f"ticket total={doc.total} fecha={doc.fecha}"
+    elif isinstance(doc, ContractRead):
+        label = doc.parte_contraria or doc.titulo or doc.source_filename or str(doc.id)
+        snippet = f"contrato importe={doc.importe} fecha_inicio={doc.fecha_inicio}"
+    elif isinstance(doc, InsuranceRead):
+        label = doc.aseguradora or doc.tomador or doc.source_filename or str(doc.id)
+        snippet = f"seguro prima={doc.prima} fecha_inicio={doc.fecha_inicio}"
     else:
         label = str(doc.id)
         snippet = None
@@ -231,7 +254,7 @@ def build_document_chat_registry() -> ToolRegistry:
             family=ToolFamily.document,
             description=(
                 "Agrega documentos: metric count o sum_total, group_by opcional "
-                "(none, proveedor, comercio, month, year, status)."
+                "(none, proveedor, comercio, parte_contraria, aseguradora, month, year, status)."
             ),
             parameters_model=AggregateDocumentsArgs,
             executor=execute_aggregate_documents,
@@ -242,7 +265,8 @@ def build_document_chat_registry() -> ToolRegistry:
             name="list_document_parties",
             family=ToolFamily.document,
             description=(
-                "Lista proveedores (factura) o comercios (ticket) distintos del tenant, "
+                "Lista partes distintas del tenant según el tipo: proveedores (factura), "
+                "comercios (ticket), partes contrarias (contrato) o aseguradoras (seguro), "
                 "con filtro opcional por nombre."
             ),
             parameters_model=ListDocumentPartiesArgs,

@@ -12,6 +12,8 @@ from arq.connections import RedisSettings
 
 from app.config import get_settings
 from app.jobs.channel_jobs import process_channel_message
+from app.jobs.contract_jobs import process_contract
+from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
 from app.jobs.ticket_jobs import process_ticket
@@ -30,6 +32,8 @@ class WorkerSettings:
     functions: ClassVar[list[object]] = [
         process_invoice,
         process_ticket,
+        process_contract,
+        process_insurance,
         arq_func(index_knowledge_document, timeout=600),
         arq_func(process_channel_message, timeout=120),
     ]

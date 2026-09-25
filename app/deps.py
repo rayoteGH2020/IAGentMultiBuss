@@ -2,13 +2,19 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Annotated, Any, cast
 
 import redis.asyncio as redis
+import structlog
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_redis
 from app.core.db import get_sessionmaker, set_tenant_context
-from app.core.errors import AuthError, ForbiddenError
+from app.core.errors import AuthError, ForbiddenError, PlanRequiredError, ValidationError
+from app.core.permissions import is_platform_superadmin
 from app.models import Membership, Tenant, User
+from app.schemas.entitlements import Entitlements
+from app.services import entitlement_service
+
+log = structlog.get_logger(__name__)
 
 
 async def current_user(request: Request) -> User:
@@ -106,17 +112,32 @@ async def get_db_no_tenant() -> AsyncIterator[AsyncSession]:
 
 
 async def current_superadmin(request: Request) -> Tenant:
-    """Dependency that restricts access to the platform superadmin.
+    """Restringe el acceso al superadmin de plataforma.
 
-    The superadmin is identified by the Clerk org matching ADMIN_CLERK_ORG_ID.
-    Raises ForbiddenError for any other authenticated tenant.
+    No basta con pertenecer a `ADMIN_CLERK_ORG_ID`: se exige rol `admin`
+    activo en esa organización (y allowlist opcional). Se revalida aquí en
+    lugar de confiar en `request.state.is_superadmin`.
     """
     from app.config import get_settings
-    from app.core.errors import ForbiddenError
 
     tenant = await current_tenant(request)
-    admin_org = get_settings().admin_clerk_org_id.strip()
-    if not admin_org or tenant.clerk_org_id != admin_org:
+    user = await current_user(request)
+    membership = await current_membership(request)
+    settings = get_settings()
+    if not is_platform_superadmin(
+        tenant=tenant,
+        membership=membership,
+        user=user,
+        admin_clerk_org_id=settings.admin_clerk_org_id,
+        allowed_clerk_user_ids=settings.superadmin_clerk_user_id_set,
+    ):
+        log.warning(
+            "sadm.access_denied",
+            path=request.url.path,
+            clerk_user_id=user.clerk_user_id,
+            clerk_org_id=tenant.clerk_org_id,
+            role=membership.role,
+        )
         raise ForbiddenError("Superadmin access required")
     return tenant
 
@@ -144,6 +165,98 @@ def require_role(*roles: str) -> Callable[..., Coroutine[Any, Any, Membership]]:
 # Mismo patrón que CurrentUser/CurrentTenant: importar desde deps en lugar de
 # redeclarar RequireAdmin en cada módulo de rutas.
 RequireAdmin = Annotated[Membership, Depends(require_role("admin"))]
+
+
+def require_appointment_permission(
+    *actions: str,
+) -> Callable[..., Coroutine[Any, Any, Membership]]:
+    """Factory: al menos uno de los permisos de citas (admin bypass)."""
+
+    from app.core.permissions import membership_can_appointment
+
+    async def _dep(membership: Membership = Depends(current_membership)) -> Membership:
+        if membership.role == "admin":
+            return membership
+        for action in actions:
+            if membership_can_appointment(membership, action):  # type: ignore[arg-type]
+                return membership
+        raise ForbiddenError(f"Requires appointment permission: {', '.join(actions)}")
+
+    return _dep
+
+
+RequireAppointmentView = Annotated[Membership, Depends(require_appointment_permission("view"))]
+RequireAppointmentCreate = Annotated[Membership, Depends(require_appointment_permission("create"))]
+RequireAppointmentEdit = Annotated[Membership, Depends(require_appointment_permission("edit"))]
+RequireAppointmentCancel = Annotated[Membership, Depends(require_appointment_permission("cancel"))]
+RequireAppointmentCreateOrEdit = Annotated[
+    Membership, Depends(require_appointment_permission("create", "edit"))
+]
+
+
+async def get_entitlements(
+    request: Request,
+    tenant: Tenant = Depends(current_tenant),
+    db: AsyncSession = Depends(get_db),
+) -> Entitlements:
+    """Resuelve entitlements una vez por request (cache en ``request.state``)."""
+    cached = getattr(request.state, "entitlements", None)
+    if isinstance(cached, Entitlements):
+        return cached
+    try:
+        ents = await entitlement_service.resolve_entitlements(db, tenant)
+    except ValidationError:
+        log.warning(
+            "entitlements.resolve_failed",
+            tenant_id=str(tenant.id),
+            path=getattr(request.url, "path", None),
+        )
+        ents = entitlement_service.fail_closed_entitlements(
+            entitlement_service.resolve_plan_code_for_tenant(tenant)
+        )
+    request.state.entitlements = ents
+    return ents
+
+
+EntitlementsDep = Annotated[Entitlements, Depends(get_entitlements)]
+
+
+def require_feature(feature: str) -> Callable[..., Coroutine[Any, Any, Entitlements]]:
+    """Factory: deniega con ``PlanRequiredError`` si el plan no incluye ``feature``."""
+
+    async def _dep(ents: Entitlements = Depends(get_entitlements)) -> Entitlements:
+        if not ents.has(feature):
+            raise PlanRequiredError(feature)
+        return ents
+
+    return _dep
+
+
+def require_any_feature(
+    *features: str,
+) -> Callable[..., Coroutine[Any, Any, Entitlements]]:
+    """Factory: basta con una de las features (p. ej. chat documental o knowledge)."""
+    if not features:
+        msg = "require_any_feature requires at least one feature code"
+        raise ValueError(msg)
+
+    async def _dep(ents: Entitlements = Depends(get_entitlements)) -> Entitlements:
+        if any(ents.has(code) for code in features):
+            return ents
+        raise PlanRequiredError(features[0])
+
+    return _dep
+
+
+RequireDocuments = Annotated[Entitlements, Depends(require_feature("documents"))]
+RequireKnowledge = Annotated[Entitlements, Depends(require_feature("knowledge"))]
+RequireCalendarGoogle = Annotated[Entitlements, Depends(require_feature("calendar_google"))]
+RequireCalendarVoice = Annotated[Entitlements, Depends(require_feature("calendar_voice"))]
+RequireAppointments = Annotated[Entitlements, Depends(require_feature("appointments"))]
+RequireChat = Annotated[
+    Entitlements,
+    Depends(require_any_feature("documents_chat", "knowledge_chat")),
+]
 
 
 async def get_redis_dep() -> redis.Redis:

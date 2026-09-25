@@ -109,19 +109,21 @@ async def test_create_faq_and_index_full_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """create_from_faq → job → status=ready, chunk_count > 0, faq_content persistido."""
-    tenant: Tenant = await tenant_factory()
+    tenant: Tenant = await tenant_factory(plan_code="basic")
     await set_tenant_context(db_session, str(tenant.id))
 
     fake_storage = _FakeStorage()
 
-    import app.llm.client as llm_mod
     import app.services.audit_service as audit_mod
     import app.services.knowledge_document_service as kds
     import app.services.knowledge_index_service as kis
 
     monkeypatch.setattr(kis, "get_storage", lambda: fake_storage)
     monkeypatch.setattr(kds, "get_storage", lambda: fake_storage)
-    monkeypatch.setattr(llm_mod, "get_llm_client", lambda: _FakeLLMClient())
+    monkeypatch.setattr(
+        "app.services.knowledge_index_service.get_llm_client",
+        lambda: _FakeLLMClient(),
+    )
 
     async def _noop_log(*a: Any, **kw: Any) -> None:
         pass
@@ -185,7 +187,7 @@ async def test_get_faq_pairs_roundtrip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Los pares Q/A se recuperan fielmente tras create_from_faq."""
-    tenant: Tenant = await tenant_factory()
+    tenant: Tenant = await tenant_factory(plan_code="basic")
     await set_tenant_context(db_session, str(tenant.id))
 
     fake_storage = _FakeStorage()

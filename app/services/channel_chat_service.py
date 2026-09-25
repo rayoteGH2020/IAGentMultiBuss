@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from app.config import get_settings
+from app.core.datetime_display import resolve_display_timezone
 from app.llm.client import get_llm_client
 from app.llm.prompts_loader import render_prompt
 from app.llm.tools import build_channel_registry
@@ -28,6 +30,14 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _CHANNEL_PROMPT_VERSION = "channel_external_v1"
+
+
+def _channel_current_datetime() -> str:
+    """Fecha/hora local para el prompt de canal (expresiones relativas del cliente)."""
+    local = datetime.now(UTC).astimezone(resolve_display_timezone())
+    return local.strftime("%Y-%m-%d %H:%M %Z")
+
+
 _HISTORY_LIMIT = 10
 
 
@@ -36,6 +46,25 @@ class _CacheHit:
     cache_id: str  # UUID as string for UPDATE
     answer_text: str
     confidence: float
+
+
+async def invalidate_response_cache_for_tenant(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+) -> int:
+    """Invalida el caché semántico de canal del tenant (reindex/delete knowledge)."""
+    result = await db.execute(
+        delete(ChannelResponseCache).where(ChannelResponseCache.tenant_id == tenant_id),
+    )
+    deleted = int(getattr(result, "rowcount", 0) or 0)
+    if deleted:
+        logger.info(
+            "channel.cache.invalidated",
+            tenant_id=str(tenant_id),
+            deleted=deleted,
+        )
+    return deleted
 
 
 async def _lookup_cache(
@@ -224,7 +253,11 @@ async def answer_for_channel(
     else:
         # 3. Pipeline RAG completo
         history = await _load_history(db, tenant_id=tenant.id, conversation_id=conversation.id)
-        system_prompt = render_prompt(_CHANNEL_PROMPT_VERSION, company_name=tenant.name)
+        system_prompt = render_prompt(
+            _CHANNEL_PROMPT_VERSION,
+            company_name=tenant.name,
+            current_datetime=_channel_current_datetime(),
+        )
         llm_messages = _build_llm_messages(
             history, system_prompt=system_prompt, user_text=message_text
         )

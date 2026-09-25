@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy import ColumnElement, String, cast, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.core.document_processing_errors import format_user_processing_error
+from app.core.document_processing_errors import DocumentErrorCode, failure_message
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import ticket_key
 from app.core.storage import get_storage
@@ -49,7 +49,7 @@ async def list_tickets(
 ) -> Sequence[Ticket]:
     stmt = (
         select(Ticket)
-        .where(Ticket.tenant_id == tenant_id)
+        .where(Ticket.tenant_id == tenant_id, Ticket.dismissed_at.is_(None))
         .order_by(Ticket.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -69,7 +69,7 @@ async def get_ticket(
     stmt = (
         select(Ticket)
         .where(Ticket.tenant_id == tenant_id, Ticket.id == ticket_id)
-        .options(selectinload(Ticket.llm_call))
+        .options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     )
     result = await db.execute(stmt)
     ticket = result.scalar_one_or_none()
@@ -127,6 +127,29 @@ async def create_ticket_from_upload(
     return ticket
 
 
+async def create_ticket_from_existing_storage(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_file_key: str,
+    source_filename: str,
+    source_mime: str,
+    doc_type: DocTypeCode = DocTypeCode.ticket,
+) -> Ticket:
+    """Crea stub de ticket reutilizando un fichero ya subido a R2."""
+    ticket = await create_ticket_stub(
+        db,
+        tenant_id,
+        source_file_key=source_file_key,
+        source_filename=original_upload_filename(source_filename),
+        source_mime=source_mime,
+        doc_type=doc_type,
+    )
+    ticket.status = TicketStatus.processing
+    await db.flush()
+    return ticket
+
+
 async def apply_extraction_result(
     db: AsyncSession,
     *,
@@ -134,7 +157,46 @@ async def apply_extraction_result(
     recibo: TicketRecibo,
     llm_call_id: UUID,
 ) -> Ticket:
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        ticket_extraction_is_usable,
+    )
+
     ticket.llm_call_id = llm_call_id
+    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
+    ticket.raw_extraction = recibo.model_dump(mode="json")
+    ticket.updated_at = datetime.now(tz=UTC)
+
+    if not ticket_extraction_is_usable(recibo):
+        ticket.status = TicketStatus.failed
+        ticket.error_code = DocumentErrorCode.extraction_failed.value
+        ticket.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=ticket.source_filename,
+        )
+        logger.warning(
+            "ticket.extraction_unusable",
+            ticket_id=str(ticket.id),
+            tenant_id=str(ticket.tenant_id),
+            confidence=float(ticket.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=ticket.tenant_id,
+            document_kind="ticket",
+            document_id=ticket.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=ticket.error_message,
+            error_code=ticket.error_code,
+        )
+        await db.flush()
+        return ticket
+
     ticket.fecha = recibo.fecha
     ticket.comercio = recibo.comercio[:300]
     ticket.numero_ticket = recibo.numero_ticket[:100] if recibo.numero_ticket else None
@@ -144,12 +206,21 @@ async def apply_extraction_result(
     ticket.iva_amount = recibo.iva_amount
     ticket.total = recibo.total
     ticket.currency = recibo.currency[:3]
-    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
-    ticket.raw_extraction = recibo.model_dump(mode="json")
     ticket.status = TicketStatus.ready
-    ticket.updated_at = datetime.now(tz=UTC)
     ticket.error_message = None
+    ticket.error_code = None
     await db.flush()
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=ticket.tenant_id,
+        document_kind="ticket",
+        document_id=ticket.id,
+        status=ProcessingAttemptStatus.ok,
+        llm_call_id=llm_call_id,
+    )
     return ticket
 
 
@@ -160,7 +231,10 @@ async def mark_failed(
     tenant_id: UUID,
     error: str,
     llm_call_id: UUID | None = None,
+    error_code: DocumentErrorCode = DocumentErrorCode.extraction_failed,
+    detail: str | None = None,
 ) -> None:
+    """Marca un ticket como fallido con motivo estructurado (ver invoice_service)."""
     ticket = await get_ticket(db, tenant_id, ticket_id)
     ticket.status = TicketStatus.failed
     if llm_call_id is not None:
@@ -170,13 +244,31 @@ async def mark_failed(
         ticket_id=str(ticket_id),
         tenant_id=str(tenant_id),
         source_filename=ticket.source_filename,
+        error_code=error_code.value,
         technical_error=error[:2000],
     )
-    ticket.error_message = format_user_processing_error(
+    ticket.error_code = error_code.value
+    ticket.error_message = failure_message(
         error,
+        error_code=error_code,
         filename=ticket.source_filename,
-    )[:2000]
+        detail=detail,
+    )
     ticket.updated_at = datetime.now(tz=UTC)
+
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=tenant_id,
+        document_kind="ticket",
+        document_id=ticket_id,
+        status=ProcessingAttemptStatus.failed,
+        llm_call_id=llm_call_id,
+        error_message=ticket.error_message,
+        error_code=error_code.value,
+    )
 
 
 def _ticket_to_read(ticket: Ticket) -> TicketRead:
