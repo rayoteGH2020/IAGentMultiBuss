@@ -1,0 +1,51 @@
+{
+    "_comment": "Eval de extracción de tickets (módulo 1). Formato del ground truth en app/evals/document_compare.py. Rutas de 'file' relativas a tests/fixtures/.",
+    "version": "v1",
+    "doc_type": "ticket",
+    "model_target": "gemini-3.8-flash",
+    "notes": "Los tres tickets son los mismos ficheros que inv_001-inv_003 de invoices_v1 (facturas simplificadas): se reutilizan sin duplicarlos. ALDI tiene tres tipos de IVA, por eso iva_percent es null y base/iva son la suma de los desgloses.",
+    "cases": [
+        {
+            "id": "tk_ikea_1041916",
+            "file": "invoices/ejemplo_02.png",
+            "ground_truth": {
+                "fecha": "2023-08-21",
+                "comercio": "IKEA",
+                "numero_ticket": "SIM_282_2023/1041916",
+                "forma_pago": "tarjeta",
+                "base_imponible": "17.33",
+                "iva_percent": "21",
+                "iva_amount": "3.64",
+                "total": "20.97"
+            }
+        },
+        {
+            "id": "tk_aldi",
+            "file": "invoices/ejemplo_03.jpg",
+            "ground_truth": {
+                "fecha": "2023-09-15",
+                "comercio": "ALDI",
+                "numero_ticket": "FS002501012023007307",
+                "forma_pago": "tarjeta",
+                "base_imponible": {"any_of": ["24.85", null]},
+                "iva_percent": {"any_of": [null]},
+                "iva_amount": {"any_of": ["2.80", null]},
+                "total": "27.65"
+            }
+        },
+        {
+            "id": "tk_ikea_1041910",
+            "file": "invoices/ejemplo_01.png",
+            "ground_truth": {
+                "fecha": "2023-08-21",
+                "comercio": "IKEA",
+                "numero_ticket": "SIM_282_2023/1041910",
+                "forma_pago": "tarjeta",
+                "base_imponible": "15.26",
+                "iva_percent": "21",
+                "iva_amount": "3.21",
+                "total": "18.47"
+            }
+        }
+    ]
+}

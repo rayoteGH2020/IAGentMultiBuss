@@ -1,0 +1,211 @@
+{
+    "_comment": "Eval de extracción de contratos (módulo 1). Formato del ground truth en app/evals/document_compare.py. Rutas de 'file' relativas a tests/fixtures/.",
+    "version": "v1",
+    "doc_type": "contrato",
+    "model_target": "gemini-3.8-flash",
+    "notes": "Documentos ficticios. any_of recoge la ambigüedad del schema ContratoDocumento: fecha_inicio = firma o inicio de vigencia; importe = cuota periódica o total; fecha_fin = null si el contrato no fija fin cerrado. parte_contraria depende de quién archiva el contrato: vale cualquiera de las 'partes' si el cif_nif es el de la parte elegida. titulo no se puntúa: solo alimenta el seed del eval de chat documental.",
+    "cases": [
+        {
+            "id": "ctr_consultoria",
+            "file": "contracts/contrato_consultoria.pdf",
+            "ground_truth": {
+                "titulo": "Contrato de prestación de servicios profesionales",
+                "numero_contrato": "PS-NXR-2026-031",
+                "partes": [
+                    {
+                        "nombre": "Nexora Soluciones Digitales",
+                        "cif_nif": "B86427192"
+                    },
+                    {
+                        "nombre": "Alberto Crespo Villanueva",
+                        "cif_nif": "33418765H"
+                    }
+                ],
+                "fecha_inicio": {
+                    "any_of": [
+                        "2026-09-21",
+                        "2026-10-01"
+                    ]
+                },
+                "fecha_fin": "2027-03-31",
+                "importe": {
+                    "any_of": [
+                        "3200",
+                        "19200",
+                        "3392",
+                        "3872"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "ctr_arrendamiento_vivienda",
+            "file": "contracts/contrato_arrendamiento_vivienda.pdf",
+            "ground_truth": {
+                "titulo": "Contrato de arrendamiento de vivienda",
+                "numero_contrato": "ARR-VIV-2026-0417",
+                "partes": [
+                    {
+                        "nombre": "María Pilar Sanz Echevarría",
+                        "cif_nif": "50831247M"
+                    },
+                    {
+                        "nombre": "Javier Ortega Muñoz",
+                        "cif_nif": "47205916A"
+                    }
+                ],
+                "fecha_inicio": {
+                    "any_of": [
+                        "2026-09-14",
+                        "2026-10-01"
+                    ]
+                },
+                "fecha_fin": {
+                    "any_of": [
+                        "2027-09-30",
+                        "2027-10-01",
+                        null
+                    ]
+                },
+                "importe": {
+                    "any_of": [
+                        "1150",
+                        "13800"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "ctr_mantenimiento_ascensores",
+            "file": "contracts/contrato_mantenimiento_ascensores.pdf",
+            "ground_truth": {
+                "titulo": "Contrato de mantenimiento de aparatos elevadores",
+                "numero_contrato": "MNT-EGM-26/1142",
+                "partes": [
+                    {
+                        "nombre": "Elevadores Guadalquivir Mantenimiento",
+                        "cif_nif": "B41835208"
+                    },
+                    {
+                        "nombre": "Comunidad de Propietarios C/ Asunción 47",
+                        "cif_nif": "H41276049"
+                    }
+                ],
+                "fecha_inicio": {
+                    "any_of": [
+                        "2026-09-02",
+                        "2026-10-01"
+                    ]
+                },
+                "fecha_fin": {
+                    "any_of": [
+                        "2027-09-30",
+                        "2027-10-01",
+                        null
+                    ]
+                },
+                "importe": {
+                    "any_of": [
+                        "118.50",
+                        "237",
+                        "711",
+                        "860.31",
+                        "3441.24"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "ctr_compraventa_vehiculo",
+            "file": "contracts/contrato_compraventa_vehiculo.jpg",
+            "ground_truth": {
+                "titulo": "Contrato de compraventa de vehículo usado",
+                "numero_contrato": "CV-4827KXM",
+                "partes": [
+                    {
+                        "nombre": "Francisco Javier Moreno Castillo",
+                        "cif_nif": "24671830Y"
+                    },
+                    {
+                        "nombre": "Elena Gutiérrez Pascual",
+                        "cif_nif": "53972418C"
+                    }
+                ],
+                "fecha_inicio": "2026-09-18",
+                "fecha_fin": {
+                    "any_of": [
+                        null
+                    ]
+                },
+                "importe": "9800"
+            }
+        },
+        {
+            "id": "ctr_nda",
+            "file": "contracts/contrato_nda.jpg",
+            "ground_truth": {
+                "titulo": "Acuerdo de confidencialidad",
+                "numero_contrato": "NDA-TML-KDA-2026",
+                "partes": [
+                    {
+                        "nombre": "Tecnologías Médicas Levante",
+                        "cif_nif": "A46193876"
+                    },
+                    {
+                        "nombre": "Kuantia Data Analytics",
+                        "cif_nif": "B08752149"
+                    }
+                ],
+                "fecha_inicio": "2026-09-07",
+                "fecha_fin": {
+                    "any_of": [
+                        null
+                    ]
+                },
+                "importe": {
+                    "any_of": [
+                        null,
+                        "30000"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "ctr_arrendamiento_garaje",
+            "file": "contracts/contrato_garaje.jpg",
+            "ground_truth": {
+                "titulo": "Contrato de arrendamiento de plaza de garaje",
+                "numero_contrato": "GAR-NRV-037/2026",
+                "partes": [
+                    {
+                        "nombre": "Inversiones Inmobiliarias Nervión 2008",
+                        "cif_nif": "B41961533"
+                    },
+                    {
+                        "nombre": "Carmen Delgado Romero",
+                        "cif_nif": "28841593F"
+                    }
+                ],
+                "fecha_inicio": {
+                    "any_of": [
+                        "2026-09-23",
+                        "2026-10-01"
+                    ]
+                },
+                "fecha_fin": {
+                    "any_of": [
+                        "2027-09-30",
+                        "2027-10-01",
+                        null
+                    ]
+                },
+                "importe": {
+                    "any_of": [
+                        "95",
+                        "114.95"
+                    ]
+                }
+            }
+        }
+    ]
+}
