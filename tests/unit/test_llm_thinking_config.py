@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from app.llm.chat_loop import _gemini_token_usage as _chat_gemini_token_usage
 from app.llm.client import LLMClient, TaskType, _extract_token_usage, _google_thinking_config
 
 
@@ -40,6 +41,21 @@ def test_gemini_usage_counts_thinking_as_output() -> None:
         )
     )
     assert _extract_token_usage(raw) == (3000, 3000)
+
+
+def test_chat_loop_usage_counts_thinking_as_output() -> None:
+    raw = SimpleNamespace(
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=6900,
+            candidates_token_count=80,
+            thoughts_token_count=40,
+        )
+    )
+    assert _chat_gemini_token_usage(raw) == (6900, 120)
+
+
+def test_chat_loop_usage_without_metadata() -> None:
+    assert _chat_gemini_token_usage(SimpleNamespace()) == (0, 0)
 
 
 def test_gemini_usage_without_thinking_field() -> None:

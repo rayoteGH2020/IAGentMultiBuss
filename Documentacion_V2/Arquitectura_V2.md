@@ -211,7 +211,7 @@ Punto unico: `app/llm/client.py`.
 
 Tareas (`TaskType`): `extraction`, `classify`, `chat`, `embedding`, `transcription`, `translate`. `sql` tipado pero **muerto** (D011 — sin modulo Analytics).
 
-Defaults (`DEFAULT_MODELS`): extraction `gemini-3.8-flash` con thinking bajo (D014); chat Gemini Flash; classify Haiku; embedding `voyage-3-lite`; transcription Gemini audio. Entrada `sql` tipada pero sin producto (D011).
+Defaults (`DEFAULT_MODELS`): extraction `gemini-3.8-flash` con thinking bajo (D014); chat `gemini-3.5-flash-lite` con thinking por defecto (D015); classify Haiku; embedding `voyage-3-lite`; transcription Gemini audio. Entrada `sql` tipada pero sin producto (D011).
 
 Reglas:
 
@@ -296,7 +296,7 @@ Codigo de Pasos 02–07 y 09 (Stripe) esta en el repo. Lo que queda:
 
 ## 18. Decisiones cerradas
 
-Ver `Decision_Log.md` (D001–D014): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
+Ver `Decision_Log.md` (D001–D015): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
 
 ## 19. Docs V2 a no usar como snapshot de codigo sin revisar
 

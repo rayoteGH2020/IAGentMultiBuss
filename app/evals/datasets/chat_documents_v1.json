@@ -1,7 +1,7 @@
 {
     "_comment": "Dataset stub de evals del chat documental (módulo 1.5). Casos con skip_live_llm=true no llaman al LLM.",
     "version": "v1",
-    "model_target": "gemini-2.5-flash",
+    "model_target": "gemini-3.5-flash-lite",
     "notes": "Rellenar expected_tools y grounded_keywords tras validar comportamiento en staging. El runner calcula tool_selection_accuracy y answer_grounded_in_data.",
     "cases": [
         {

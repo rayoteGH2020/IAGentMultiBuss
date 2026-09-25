@@ -205,7 +205,10 @@ DEFAULT_MODELS: dict[str, str] = {
     # 15,6 s / 96,7 % de gemini-2.5-flash con thinking dinámico.
     "extraction": "gemini-3.8-flash",
     "classify": "claude-haiku-4-5-20251001",
-    "chat": "gemini-2.5-flash",
+    # gemini-3.5-flash-lite (D015): knowledge_qa_v1 al 100 % como 2.5-flash y
+    # 3.8-flash, mismo coste que 2.5-flash y familia 3.x. El chat conserva el
+    # thinking por defecto: con thinking bajo el modelo se salta tools.
+    "chat": "gemini-3.5-flash-lite",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
     "sql": "claude-sonnet-4-6",  # D011: muerto a efectos de producto (ver comentario arriba).
     # "embedding" usa Voyage vía embed(); model_override en settings.knowledge_embedding_model.

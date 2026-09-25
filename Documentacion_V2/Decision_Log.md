@@ -240,3 +240,30 @@ Consecuencia:
 - `pricing.py` registra ya la tarifa 2027 de 3.8-flash: sobreestima el coste hasta 2026-12-31 para que el budget del plan no se quede corto.
 - Infisical: `LLM_MODEL_EXTRACTION` debe eliminarse o valer `gemini-3.8-flash` en cada entorno (el override tiene prioridad sobre el default).
 - Deuda: schemas ambiguos detectados en la medicion (contrato `fecha_inicio` firma/inicio e `importe` periodico/total; poliza `tipo_seguro` texto libre) y evals permanentes de tickets/contratos/polizas.
+
+## D015 - Chat con gemini-3.5-flash-lite y thinking por defecto
+
+Decision (cerrada 2026-09-25): la tarea `chat` (chat web unificado y canales WhatsApp/Telegram) usa `gemini-3.5-flash-lite` en todos los entornos, con el thinking por defecto del modelo.
+
+Motivo (medido 2026-09-25 con `knowledge_qa_v1 --with-llm`, 22 preguntas, tenant de eval):
+
+| Modelo | Grounded / citas | p50 | $ / 1.000 preguntas |
+| --- | --- | --- | --- |
+| gemini-2.5-flash (default anterior, prod) | 100 % / 100 % | 2,9 s | 2,34 |
+| gemini-3.1-flash-lite (override dev) | 100 % / 100 % | 3,0 s | 1,90 |
+| gemini-3.5-flash-lite | 100 % / 100 % | 3,0 s | 2,35 |
+| gemini-3.8-flash | 100 % / 100 % | 3,1 s | 5,62 (11,23 desde 2027) |
+| gemini-3.8-flash thinking low | 95 % / 91 % | 3,5 s | 6,04 |
+
+- Dev (3.1-flash-lite) y prod (2.5-flash) usaban modelos distintos; dev ademas contabilizaba 0 EUR (sin tarifa).
+- 3.5-flash-lite iguala calidad a mismo coste que 2.5-flash y pertenece a la familia 3.x (menor riesgo de retirada).
+- 3.8-flash no aporta mejora medible y cuesta 2,4-4,8x.
+- Con thinking bajo el modelo se salta tools (respuesta sin consultar la base) o elige la tool equivocada: el chat NO entra en `_LOW_THINKING_TASKS`.
+
+Limitacion: `knowledge_qa_v1` esta saturado (todos al 100 %) y solo cubre preguntas de knowledge; `chat_documents_v1` tiene sus 4 casos con `skip_live_llm`. Pendiente un eval de chat documental no saturado (agregaciones sobre facturas).
+
+Consecuencia:
+
+- `DEFAULT_MODELS["chat"] = "gemini-3.5-flash-lite"`; tarifa en `pricing.py` ($0,30 / $2,50).
+- `chat_loop._gemini_token_usage` suma `thoughts_token_count` a output (mismo fallo que D014 en extraccion).
+- Infisical: `LLM_MODEL_CHAT` debe eliminarse o valer `gemini-3.5-flash-lite` en cada entorno.

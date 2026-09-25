@@ -646,7 +646,9 @@ def _gemini_token_usage(raw: Any) -> tuple[int, int]:
     um = getattr(raw, "usage_metadata", None)
     if um is None:
         return 0, 0
-    return (
-        int(getattr(um, "prompt_token_count", None) or 0),
-        int(getattr(um, "candidates_token_count", None) or 0),
+    # Google factura el razonamiento como output pero no lo incluye en
+    # candidates_token_count (mismo criterio que client._extract_token_usage).
+    output = int(getattr(um, "candidates_token_count", None) or 0) + int(
+        getattr(um, "thoughts_token_count", None) or 0
     )
+    return int(getattr(um, "prompt_token_count", None) or 0), output

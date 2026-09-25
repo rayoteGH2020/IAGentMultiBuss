@@ -18,6 +18,8 @@ PRICING: dict[str, dict[str, Decimal]] = {
     # cobra la introductoria ($0.75 / $3.75): se sobreestima a propósito para
     # que el budget LLM del plan no se quede corto al cambiar la tarifa.
     "gemini-3.8-flash": {"input": Decimal("1.38"), "output": Decimal("6.90")},
+    # $0.30 / $2.50, misma tarifa que gemini-2.5-flash.
+    "gemini-3.5-flash-lite": {"input": Decimal("0.28"), "output": Decimal("2.30")},
     # voyage-3-lite: modelo de embeddings; no tiene tokens de output.
     "voyage-3-lite": {"input": Decimal("0.018"), "output": Decimal("0")},
 }

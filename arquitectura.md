@@ -530,7 +530,7 @@ class Factura(BaseModel):
 
 **Decisiones técnicas:**
 
-- Modelo por defecto: `claude-sonnet-4-6` (task `chat` del router LLM en §8). Override por entorno con `LLM_MODEL_CHAT`.
+- Modelo por defecto: `gemini-3.5-flash-lite` (task `chat` del router LLM en §8; D015). Override por entorno con `LLM_MODEL_CHAT`. El chat conserva el thinking por defecto del modelo: con thinking bajo se salta tools.
 - Loop de tool-calling con tope **`max_iters = 6`**; si se agotan sin respuesta final, devolver mensaje de error al usuario.
 - Cada iteración (LLM call + tool exec) deja registro en `llm_calls` y span anidado en Langfuse.
 - Memoria de contexto: últimos **N=20** mensajes del thread (configurable). Para historiales largos, considerar resumen vía modelo `classify` (no en MVP).
@@ -567,7 +567,7 @@ class Factura(BaseModel):
 
 **Consulta WhatsApp (y análogo Telegram):** webhook JSON (p.ej. `POST` bajo `routes/api/`) → identificar **tenant** (p.ej. número de destino / configuración de integración) y **usuario externo** por origen → buscar o crear `conversation` → misma tubería RAG que en web → respuesta por API del proveedor. Si la **confianza** queda por debajo del umbral o hay **escalado a humano**, notificar al negocio por el canal configurado.
 
-**Decisiones técnicas:** embeddings por defecto `voyage-3-lite`; modelo de respuesta `claude-sonnet-4-6` (calidad) o `gemini-2.5-flash` (coste / planes inferiores).
+**Decisiones técnicas:** embeddings por defecto `voyage-3-lite`; modelo de respuesta `gemini-3.5-flash-lite` (task `chat`, D015); `claude-sonnet-4-6` queda como alternativa vía `LLM_MODEL_CHAT`.
 
 ### Módulo 3 — Analista conversacional — **NO IMPLEMENTAR (D011, 2026-09-23)**
 
@@ -651,7 +651,7 @@ class LLMClient:
 |---|---|
 | `extraction` | `gemini-3.8-flash` (thinking bajo) |
 | `classify` | `claude-haiku-4-5-20251001` |
-| `chat` | `claude-sonnet-4-6` |
+| `chat` | `gemini-3.5-flash-lite` |
 | `sql` | `claude-sonnet-4-6` |
 | `embedding` | `voyage-3-lite` |
 
@@ -661,7 +661,7 @@ Equivalente en código para referencia:
 DEFAULT_MODELS = {
     "extraction": "gemini-3.8-flash",
     "classify":   "claude-haiku-4-5-20251001",
-    "chat":       "claude-sonnet-4-6",
+    "chat":       "gemini-3.5-flash-lite",
     "sql":        "claude-sonnet-4-6",
     "embedding":  "voyage-3-lite",
 }
