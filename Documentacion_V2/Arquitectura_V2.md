@@ -265,7 +265,7 @@ No SPA.
 - Integration: `tests/integration/` (Postgres real; marker `integration`; excluir `real_llm` en CI local tipico).
 - BD de tests: **siempre `saas_test`** (`tests/db_target.py` reescribe `DATABASE_URL` y `RLS_TEST_DATABASE_URL` en `tests/conftest.py`). La app usa `saas`. Crear/migrar tras cada migracion nueva: `infisical run -- bash scripts/test_db_setup.sh`.
 - E2E: Playwright.
-- Evals: `app/evals/` (extraccion, chat documental, knowledge).
+- Evals: `app/evals/` (extraccion de facturas, tickets, contratos y polizas; chat documental `chat_documents_v2` sobre datos sembrados; knowledge). CI (`.github/workflows/evals.yml`) ejecuta extraccion y chat documental con umbrales de `app/evals/thresholds.py` y `targets` del dataset.
 - Politica: todo cambio de codigo crea/actualiza tests y se ejecuta antes de dar por cerrado.
 
 Nota: `-m "integration and not real_llm"` sobre `tests/unit` deselecciona casi todos los unitarios. Ejecutar unit e integration por separado.

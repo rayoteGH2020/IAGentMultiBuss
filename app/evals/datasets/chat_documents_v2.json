@@ -1,0 +1,428 @@
+{
+    "_comment": "Eval del chat sobre documentos (tools document_*). Datos sembrados por app/evals/seed_documents_eval.py en el tenant de evals. Puntuación en app/evals/runners/chat_documents.py.",
+    "version": "v2",
+    "_version_comment": "v1 era un stub sin casos ejecutables (todos skip_live_llm). v2 pregunta sobre datos sembrados conocidos y puntúa la respuesta final.",
+    "model_target": "gemini-3.5-flash-lite",
+    "notes": "expected_all: todos deben aparecer en la respuesta; expected_any: al menos uno. Valores numéricos ('873.75') se comparan como número (acepta '873,75 €' o '1.703,95'); el resto como texto sin tildes ni mayúsculas (los códigos también sin separadores). check: especificación que tests/unit/test_chat_documents_eval.py recalcula sobre el seed para que el dataset no se desalinee de los datos.",
+    "targets": {
+        "answer_correct_min": 0.8,
+        "document_tool_used_min": 0.9,
+        "latency_p50_ms_max": 8000
+    },
+    "cases": [
+        {
+            "id": "doc_001",
+            "difficulty": "easy",
+            "question": "¿Cuántas facturas tengo registradas?",
+            "expected_all": [
+                "17"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "count",
+                "expect": "17"
+            }
+        },
+        {
+            "id": "doc_002",
+            "difficulty": "easy",
+            "question": "¿Cuánto suman en total todas mis facturas?",
+            "expected_all": [
+                "1703.95"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "expect": "1703.95"
+            }
+        },
+        {
+            "id": "doc_003",
+            "difficulty": "easy",
+            "question": "¿Cuánto gasté en tickets de ALDI?",
+            "expected_all": [
+                "27.65"
+            ],
+            "check": {
+                "doc_type": "ticket",
+                "metric": "sum",
+                "filters": {
+                    "name_contains": "aldi"
+                },
+                "expect": "27.65"
+            }
+        },
+        {
+            "id": "doc_004",
+            "difficulty": "easy",
+            "question": "¿Cuál es el número de póliza de mi seguro de hogar?",
+            "expected_all": [
+                "HG-46-2026-112095"
+            ]
+        },
+        {
+            "id": "doc_005",
+            "difficulty": "easy",
+            "question": "¿Cuándo vence la póliza de salud?",
+            "expected_any": [
+                "01/10/2027",
+                "1/10/2027",
+                "2027-10-01",
+                "1 de octubre de 2027",
+                "01-10-2027"
+            ]
+        },
+        {
+            "id": "doc_006",
+            "difficulty": "easy",
+            "question": "¿Cuál es el CIF de Conforama según mis facturas?",
+            "expected_all": [
+                "A79103222"
+            ]
+        },
+        {
+            "id": "doc_007",
+            "difficulty": "medium",
+            "question": "¿Cuánto gasté en facturas durante 2024?",
+            "expected_all": [
+                "873.75"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "filters": {
+                    "year": 2024
+                },
+                "expect": "873.75"
+            }
+        },
+        {
+            "id": "doc_008",
+            "difficulty": "medium",
+            "question": "¿Cuántas facturas tengo de 2023 y cuánto suman?",
+            "expected_all": [
+                "5",
+                "469.11"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "filters": {
+                    "year": 2023
+                },
+                "expect": "469.11"
+            }
+        },
+        {
+            "id": "doc_009",
+            "difficulty": "medium",
+            "question": "¿Cuánto me ha facturado en total Alquiler Seguro Energía?",
+            "expected_any": [
+                "578.19",
+                "618.95"
+            ],
+            "_note": "578.19 = 9 facturas con ese nombre; 618.95 = 10 con su CIF (una aparece como ASENERGY). Ambas son defendibles.",
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "filters": {
+                    "name_contains": "alquiler seguro"
+                },
+                "expect": "578.19"
+            }
+        },
+        {
+            "id": "doc_010",
+            "difficulty": "medium",
+            "question": "¿Qué proveedor me ha facturado más dinero?",
+            "expected_all": [
+                "Alquiler Seguro"
+            ],
+            "expected_any": [
+                "578.19",
+                "618.95"
+            ]
+        },
+        {
+            "id": "doc_011",
+            "difficulty": "medium",
+            "question": "¿Cuál es mi factura más cara?",
+            "expected_all": [
+                "PC Componentes",
+                "448.98"
+            ]
+        },
+        {
+            "id": "doc_012",
+            "difficulty": "medium",
+            "question": "¿Cuánto IVA pagué en la factura de PC Componentes?",
+            "expected_all": [
+                "77.92"
+            ]
+        },
+        {
+            "id": "doc_013",
+            "difficulty": "medium",
+            "question": "¿Cuánto pago al año en total por todos mis seguros?",
+            "expected_all": [
+                "8052.10"
+            ],
+            "check": {
+                "doc_type": "seguro",
+                "metric": "sum",
+                "expect": "8052.10"
+            }
+        },
+        {
+            "id": "doc_014",
+            "difficulty": "medium",
+            "question": "¿Cuántas pólizas tengo con Iberia Mutual y de qué tipo son?",
+            "expected_all": [
+                "3",
+                "decesos",
+                "responsabilidad civil"
+            ],
+            "check": {
+                "doc_type": "seguro",
+                "metric": "count",
+                "filters": {
+                    "name_contains": "iberia mutual"
+                },
+                "expect": "3"
+            }
+        },
+        {
+            "id": "doc_015",
+            "difficulty": "medium",
+            "question": "¿Con qué aseguradora me gasto más dinero en primas?",
+            "expected_all": [
+                "Iberia Mutual",
+                "4349.08"
+            ],
+            "check": {
+                "doc_type": "seguro",
+                "metric": "sum",
+                "filters": {
+                    "name_contains": "iberia mutual"
+                },
+                "expect": "4349.08"
+            }
+        },
+        {
+            "id": "doc_016",
+            "difficulty": "medium",
+            "question": "¿Qué contratos terminan antes de abril de 2027?",
+            "expected_any": [
+                "PS-NXR-2026-031",
+                "Nexora",
+                "prestación de servicios"
+            ]
+        },
+        {
+            "id": "doc_017",
+            "difficulty": "medium",
+            "question": "¿Cuánto pago por el alquiler de la plaza de garaje?",
+            "expected_all": [
+                "95"
+            ]
+        },
+        {
+            "id": "doc_018",
+            "difficulty": "hard",
+            "question": "¿Cuánto gasté en facturas entre julio y septiembre de 2023?",
+            "expected_all": [
+                "331.82"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "filters": {
+                    "date_from": "2023-07-01",
+                    "date_to": "2023-09-30"
+                },
+                "expect": "331.82"
+            }
+        },
+        {
+            "id": "doc_019",
+            "difficulty": "hard",
+            "question": "¿Tengo alguna factura de Amazon?",
+            "expected_any": [
+                "no tienes",
+                "no hay",
+                "ninguna",
+                "no he encontrado",
+                "no se han encontrado",
+                "no encuentro",
+                "no aparece",
+                "no consta",
+                "no existe"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "count",
+                "filters": {
+                    "name_contains": "amazon"
+                },
+                "expect": "0"
+            }
+        },
+        {
+            "id": "doc_020",
+            "difficulty": "hard",
+            "question": "¿Cuántos documentos tengo de cada tipo?",
+            "expected_all": [
+                "17",
+                "3",
+                "6",
+                "8"
+            ]
+        },
+        {
+            "id": "doc_021",
+            "difficulty": "hard",
+            "question": "¿Qué pólizas vencen en noviembre de 2027?",
+            "expected_any": [
+                "AC-50-2026-002981",
+                "accidentes"
+            ]
+        },
+        {
+            "id": "doc_022",
+            "difficulty": "hard",
+            "question": "¿Cuánto he gastado en La Mata?",
+            "expected_all": [
+                "231.20"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "filters": {
+                    "name_contains": "la mata"
+                },
+                "expect": "231.20"
+            }
+        },
+        {
+            "id": "doc_023",
+            "difficulty": "hard",
+            "question": "Suma todo lo que he pagado en IKEA, sea con factura o con ticket.",
+            "expected_all": [
+                "39.44"
+            ],
+            "check": {
+                "doc_type": "ticket",
+                "metric": "sum",
+                "filters": {
+                    "name_contains": "ikea"
+                },
+                "expect": "39.44"
+            }
+        },
+        {
+            "id": "doc_024",
+            "difficulty": "hard",
+            "question": "¿Cuál es la prima del seguro de vida y quién es el tomador?",
+            "expected_all": [
+                "172.05",
+                "Goikoetxea"
+            ]
+        },
+        {
+            "id": "doc_025",
+            "difficulty": "hard",
+            "question": "¿En qué año gasté más en facturas y cuánto fue?",
+            "expected_all": [
+                "2024",
+                "873.75"
+            ]
+        },
+        {
+            "id": "doc_026",
+            "difficulty": "hard",
+            "question": "¿Cuál es el importe medio de mis facturas de 2024?",
+            "expected_any": [
+                "145.63",
+                "145.62"
+            ],
+            "_note": "873.75 / 6 = 145.625: se acepta redondeo hacia arriba o hacia abajo."
+        },
+        {
+            "id": "doc_027",
+            "difficulty": "hard",
+            "question": "¿Cuánto más gasté en facturas en 2024 que en 2023?",
+            "expected_all": [
+                "404.64"
+            ]
+        },
+        {
+            "id": "doc_028",
+            "difficulty": "hard",
+            "question": "¿Qué porcentaje de mi gasto total en facturas corresponde a PC Componentes?",
+            "expected_any": [
+                "26.35",
+                "26.4"
+            ]
+        },
+        {
+            "id": "doc_029",
+            "difficulty": "hard",
+            "question": "¿Cuántas facturas de más de 100 euros tengo?",
+            "expected_all": [
+                "6"
+            ],
+            "check": {
+                "doc_type": "factura",
+                "metric": "count",
+                "filters": {
+                    "total_gt": "100"
+                },
+                "expect": "6"
+            }
+        },
+        {
+            "id": "doc_030",
+            "difficulty": "hard",
+            "question": "¿Cuánto IVA pagué en total en las facturas de 2023?",
+            "expected_all": [
+                "41.36"
+            ],
+            "_note": "aggregate_documents solo suma total: el modelo debe buscar las facturas y sumar iva_amount.",
+            "check": {
+                "doc_type": "factura",
+                "metric": "sum",
+                "field": "iva_amount",
+                "filters": {
+                    "year": 2023
+                },
+                "expect": "41.36"
+            }
+        },
+        {
+            "id": "doc_031",
+            "difficulty": "hard",
+            "question": "¿Cuántas de mis pólizas vencen en octubre de 2027?",
+            "expected_all": [
+                "7"
+            ],
+            "check": {
+                "doc_type": "seguro",
+                "metric": "count",
+                "filters": {
+                    "end_month": "2027-10"
+                },
+                "expect": "7"
+            }
+        },
+        {
+            "id": "doc_032",
+            "difficulty": "hard",
+            "question": "¿Cuánto me cuesta al mes el seguro de salud?",
+            "expected_any": [
+                "156.18",
+                "156.19"
+            ],
+            "_note": "Solo se guarda la prima anual (1874.21): el modelo debe dividir entre 12."
+        }
+    ]
+}

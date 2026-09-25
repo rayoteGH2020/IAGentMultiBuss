@@ -38,7 +38,7 @@ Objetivo: endurecer todas las superficies conversacionales antes de ampliar alca
 - [x] Revisar que citations apuntan a datos existentes.
 - [x] Confirmar RLS entre tenants.
 - [x] Confirmar hide thread no borra datos ni cruza usuario.
-- [x] Evals `chat_documents_v1`.
+- [x] Evals `chat_documents_v1` (stub; sustituido por `chat_documents_v2` el 2026-09-25, datos sembrados y respuestas exactas).
 
 ### Knowledge/RAG
 

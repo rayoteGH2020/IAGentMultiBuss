@@ -260,7 +260,7 @@ Motivo (medido 2026-09-25 con `knowledge_qa_v1 --with-llm`, 22 preguntas, tenant
 - 3.8-flash no aporta mejora medible y cuesta 2,4-4,8x.
 - Con thinking bajo el modelo se salta tools (respuesta sin consultar la base) o elige la tool equivocada: el chat NO entra en `_LOW_THINKING_TASKS`.
 
-Limitacion: `knowledge_qa_v1` esta saturado (todos al 100 %) y solo cubre preguntas de knowledge; `chat_documents_v1` tiene sus 4 casos con `skip_live_llm`. Pendiente un eval de chat documental no saturado (agregaciones sobre facturas).
+Limitacion: `knowledge_qa_v1` esta saturado (todos al 100 %) y solo cubre preguntas de knowledge. Resuelto el mismo dia con `chat_documents_v2`: 32 preguntas sobre documentos sembrados (`seed_documents_eval`), con respuestas exactas (sumas, recuentos, medias, porcentajes, vencimientos); `gemini-3.5-flash-lite` acierta 31/32 (falla doc_031 por falta de filtro de vencimiento en las tools, backlog P2b-5).
 
 Consecuencia:
 
