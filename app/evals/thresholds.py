@@ -4,9 +4,9 @@ from __future__ import annotations
 
 JSON_VALIDITY_MIN = 0.99
 FIELD_ACCURACY_MIN = 0.95
-# Calibrado con el dataset actual, de facturas de una página. Al incorporar
-# documentos de 2-3 páginas (el máximo que se envía al LLM) hay que revisarlo:
-# la latencia crece con las páginas del documento, no con el número de casos.
+# El dataset incluye PDFs de 2-3 páginas (el máximo que se envía al LLM). Con
+# thinking bajo (D014) la latencia apenas depende de las páginas: p50 ~2,8 s.
+# Si el eval supera el umbral, revisar primero la config de thinking del modelo.
 LATENCY_P50_MAX_MS = 8000
 
 
@@ -27,5 +27,10 @@ def metrics_pass(summary: dict[str, object]) -> tuple[bool, list[str]]:
     if isinstance(latency, int | float) and latency > LATENCY_P50_MAX_MS:
         failures.append(
             f"latency_p50_ms {latency} > {LATENCY_P50_MAX_MS}",
+        )
+    rejection_failures = summary.get("rejection_failures")
+    if isinstance(rejection_failures, int) and rejection_failures > 0:
+        failures.append(
+            f"rejection_failures {rejection_failures} > 0 (límite no aplicado)",
         )
     return (not failures, failures)

@@ -28,6 +28,8 @@ from typing import Any
 import structlog
 
 from app.core.db import session_factory_for_worker
+from app.core.document_processing_errors import DocumentErrorCode
+from app.core.media_limits import MediaLimitExceeded
 from app.evals.eval_tenant import ensure_eval_tenant
 from app.evals.field_compare import compare_factura, ground_truth_is_usable
 from app.evals.thresholds import metrics_pass
@@ -61,6 +63,9 @@ class CaseResult:
     field_results: list[FieldResult] = field(default_factory=list)
     error: str | None = None
     skipped: bool = False
+    # Casos que deben rechazarse antes del LLM (p. ej. PDF por encima del tope
+    # de páginas). `success` indica aquí que el rechazo ocurrió con ese código.
+    expected_rejection: str | None = None
 
     @property
     def field_accuracy(self) -> float:
@@ -90,8 +95,68 @@ def _mime_for(path: Path) -> str:
     raise ValueError(msg)
 
 
+async def _run_rejection_case(
+    case: dict[str, Any],
+    path: Path,
+    tenant_id: uuid.UUID,
+) -> CaseResult:
+    """Comprueba que el fichero se rechaza con el código esperado.
+
+    El rechazo ocurre en `_prepare_media`, antes de la llamada al LLM, así que
+    estos casos no consumen tokens salvo que el límite deje de aplicarse.
+    """
+    expected = case["expected_rejection"]
+    result = CaseResult(
+        case_id=case["id"],
+        success=False,
+        latency_ms=0,
+        confidence=0.0,
+        expected_rejection=expected,
+    )
+    try:
+        expected_code = DocumentErrorCode(expected)
+    except ValueError:
+        result.error = f"unknown expected_rejection: {expected}"
+        return result
+
+    async with session_factory_for_worker(tenant_id) as db:
+        try:
+            await extract_invoice(
+                file_bytes=await asyncio.to_thread(path.read_bytes),
+                mime_type=_mime_for(path),
+                tenant_id=tenant_id,
+                db=db,
+            )
+        except MediaLimitExceeded as exc:
+            result.success = exc.error_code == expected_code
+            if not result.success:
+                result.error = f"rejected with {exc.error_code.value}, expected {expected}"
+            return result
+        except Exception as exc:
+            await db.rollback()
+            result.error = f"unexpected error: {type(exc).__name__}"
+            return result
+        # Sin rechazo el LLM llegó a ejecutarse: se persiste su `llm_calls`.
+        await db.commit()
+    result.error = f"not rejected, expected {expected}"
+    return result
+
+
 async def _run_case(case: dict[str, Any], tenant_id: uuid.UUID) -> CaseResult:
     case_id = case["id"]
+    if case.get("expected_rejection"):
+        path = FIXTURES / case["file"]
+        if not path.exists():
+            return CaseResult(
+                case_id=case_id,
+                success=False,
+                latency_ms=0,
+                confidence=0.0,
+                error=f"fixture not found: {path.name}",
+                expected_rejection=case["expected_rejection"],
+            )
+        return await _run_rejection_case(case, path, tenant_id)
+
     gt = case.get("ground_truth")
     if not ground_truth_is_usable(gt):
         logger.info("evals.case.skip", case_id=case_id, reason="missing ground_truth")
@@ -165,7 +230,10 @@ async def _run_case(case: dict[str, Any], tenant_id: uuid.UUID) -> CaseResult:
 def _summary(results: list[CaseResult]) -> dict[str, Any]:
     # Los casos skipped se excluyen de todas las métricas para no distorsionar
     # los porcentajes; se reportan por separado para visibilidad.
-    valid = [r for r in results if not r.skipped]
+    # Los rechazos esperados tampoco cuentan: no llegan al LLM, así que no
+    # dicen nada de la validez del JSON ni de la latencia de extracción.
+    rejections = [r for r in results if r.expected_rejection]
+    valid = [r for r in results if not r.skipped and not r.expected_rejection]
     # Solo los casos exitosos contribuyen a latencia y accuracy: los fallos
     # (error de red, timeout, schema inválido) tienen latencias atípicas que
     # contaminarían los percentiles.
@@ -184,6 +252,8 @@ def _summary(results: list[CaseResult]) -> dict[str, Any]:
         "total_cases": len(results),
         "evaluated_cases": len(valid),
         "skipped_cases": sum(1 for r in results if r.skipped),
+        "rejection_cases": len(rejections),
+        "rejection_failures": sum(1 for r in rejections if not r.success),
         # json_validity_rate mide si el LLM generó JSON válido que pasa el
         # schema Instructor; es distinto de field_accuracy (JSON válido pero
         # con campos incorrectos). Objetivo: ≥99% según arquitectura.md §6.
@@ -198,6 +268,7 @@ def _summary(results: list[CaseResult]) -> dict[str, Any]:
                 "id": r.case_id,
                 "success": r.success,
                 "skipped": r.skipped,
+                "expected_rejection": r.expected_rejection,
                 "latency_ms": r.latency_ms,
                 "confidence": r.confidence,
                 "field_accuracy": r.field_accuracy,
@@ -253,6 +324,8 @@ def _format_summary_for_stdout(summary: dict[str, Any]) -> str:
         "total_cases",
         "evaluated_cases",
         "skipped_cases",
+        "rejection_cases",
+        "rejection_failures",
         "json_validity_rate",
         "field_accuracy_avg",
         "latency_p50_ms",
