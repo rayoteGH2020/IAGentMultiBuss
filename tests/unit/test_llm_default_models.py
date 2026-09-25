@@ -20,4 +20,4 @@ def test_default_model_has_pricing(task: str, model: str) -> None:
 
 
 def test_extraction_default_matches_validated_model() -> None:
-    assert DEFAULT_MODELS["extraction"] == "gemini-2.5-flash"
+    assert DEFAULT_MODELS["extraction"] == "gemini-3.8-flash"

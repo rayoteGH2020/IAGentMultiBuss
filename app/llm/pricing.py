@@ -14,6 +14,10 @@ PRICING: dict[str, dict[str, Decimal]] = {
     "gemini-2.0-flash": {"input": Decimal("0.10"), "output": Decimal("0.40")},
     "gemini-2.5-flash": {"input": Decimal("0.28"), "output": Decimal("2.30")},
     "gemini-2.5-pro": {"input": Decimal("1.10"), "output": Decimal("4.40")},
+    # Tarifa estándar desde 2027-01-01 ($1.50 / $7.50). Hasta 2026-12-31 Google
+    # cobra la introductoria ($0.75 / $3.75): se sobreestima a propósito para
+    # que el budget LLM del plan no se quede corto al cambiar la tarifa.
+    "gemini-3.8-flash": {"input": Decimal("1.38"), "output": Decimal("6.90")},
     # voyage-3-lite: modelo de embeddings; no tiene tokens de output.
     "voyage-3-lite": {"input": Decimal("0.018"), "output": Decimal("0")},
 }

@@ -210,3 +210,33 @@ Consecuencia:
 - Unico secreto fuera de Infisical: Machine Identity de la VPS en `/etc/iagent/infisical-identity.conf` (600).
 - La app conecta como `saas_app` (NOBYPASSRLS); migraciones con `MIGRATIONS_DATABASE_URL` (propietario).
 - Redis de prod con `noeviction` (cola ARQ y anti-replay no se expulsan).
+
+## D014 - Extraccion con gemini-3.8-flash, thinking bajo y resolucion por defecto
+
+Decision (cerrada 2026-09-25): la tarea `extraction` (facturas, tickets, contratos, polizas y OCR de knowledge) usa `gemini-3.8-flash` con `thinking_level=low` y `media_resolution` por defecto. Chat, transcripcion y traduccion no cambian (sin medir).
+
+Motivo (medido 2026-09-25, scripts desechables sobre `invoices_v1` + 17 documentos de muestra):
+
+| Tipo | Casos | 2.5-flash + thinking dinamico | 3.8-flash thinking low |
+| --- | --- | --- | --- |
+| Facturas | 20 | p50 15,6 s / 96,7 % | p50 2,8 s / 98,3 % |
+| Contratos | 6 | p50 7,0 s / 94,4 % | p50 2,0 s / 100 % |
+| Tickets | 3 | p50 3,9 s / 100 % | p50 1,6 s / 100 % |
+| Polizas | 8 | p50 5,8 s / 100 % | p50 1,8 s / 100 % |
+
+- El thinking dinamico causaba la latencia (eval CI rojo: p50 16,2 s / p95 50,7 s) sin mejorar la extraccion.
+- `gemini-2.5-flash` sin thinking cumple, pero queda al limite (95,8 % en facturas) y la familia 2.x se esta retirando (2.0-flash y 2.5-flash-lite ya devuelven 404).
+- Coste por factura ~$0,0033 hoy / ~$0,0066 desde 2027-01-01 (tarifa estandar $1,50 / $7,50); ~2,5-5x mas que 2.5-flash sin thinking, pero por debajo del coste real anterior con thinking (~$0,0087). Gemini 3 tokeniza la entrada 1,5-2,7x mas que 2.5 por documento.
+
+Descartado:
+
+- `media_resolution=low`: misma precision y 33-63 % menos tokens de entrada, pero solo 13-35 % de ahorro total (el coste lo domina la salida) y requiere saltarse Instructor (1.15.1 no propaga el parametro), contrario a `Agents.md` §1. Revisar si Instructor lo soporta.
+- `gemini-2.5-flash-lite`: retirado (404).
+
+Consecuencia:
+
+- `DEFAULT_MODELS["extraction"] = "gemini-3.8-flash"`; `_google_thinking_config` baja el thinking por familia (3.x Flash `thinking_level=low`, 2.5 Flash `thinking_budget=0`, Pro sin tocar).
+- `_extract_token_usage` suma `thoughts_token_count` a output: Google lo factura como salida y antes no se contaba (coste de extraccion infravalorado ~7x).
+- `pricing.py` registra ya la tarifa 2027 de 3.8-flash: sobreestima el coste hasta 2026-12-31 para que el budget del plan no se quede corto.
+- Infisical: `LLM_MODEL_EXTRACTION` debe eliminarse o valer `gemini-3.8-flash` en cada entorno (el override tiene prioridad sobre el default).
+- Deuda: schemas ambiguos detectados en la medicion (contrato `fecha_inicio` firma/inicio e `importe` periodico/total; poliza `tipo_seguro` texto libre) y evals permanentes de tickets/contratos/polizas.

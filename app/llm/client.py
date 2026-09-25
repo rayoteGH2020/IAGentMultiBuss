@@ -200,8 +200,10 @@ def _log_transient_retry(
 #   la entrada permanece para no romper TaskType/overrides historicos, pero no
 #   hay rutas ni runners que la usen. No reactivar sin decision de producto.
 DEFAULT_MODELS: dict[str, str] = {
-    # gemini-2.0-flash devuelve 404 en generateContent (retirado por Google, 2026-09).
-    "extraction": "gemini-2.5-flash",
+    # gemini-3.8-flash con thinking_level=low (ver _google_thinking_config):
+    # medido en invoices_v1 (2026-09) p50 2,5 s y 98,3 % de precisión frente a
+    # 15,6 s / 96,7 % de gemini-2.5-flash con thinking dinámico.
+    "extraction": "gemini-3.8-flash",
     "classify": "claude-haiku-4-5-20251001",
     "chat": "gemini-2.5-flash",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
@@ -250,14 +252,43 @@ def _extract_token_usage(raw: Any) -> tuple[int, int]:
         if p_t is not None or c_t is not None:
             return int(p_t or 0), int(c_t or 0)
 
-    # Formato Google Gemini: usage_metadata con prompt_token_count / candidates_token_count
+    # Formato Google Gemini: usage_metadata. Google factura el razonamiento
+    # (`thoughts_token_count`) como output, pero no lo incluye en
+    # `candidates_token_count`: sin sumarlo, el coste y el budget del plan se
+    # quedan cortos (~7x en extracción con thinking dinámico).
     um = getattr(raw, "usage_metadata", None)
     if um is not None:
-        return int(getattr(um, "prompt_token_count", None) or 0), int(
-            getattr(um, "candidates_token_count", None) or 0
+        output = int(getattr(um, "candidates_token_count", None) or 0) + int(
+            getattr(um, "thoughts_token_count", None) or 0
         )
+        return int(getattr(um, "prompt_token_count", None) or 0), output
 
     return 0, 0
+
+
+# Tareas que no ganan calidad con el razonamiento del modelo y sí pagan su
+# latencia y coste. Medido en extracción (invoices_v1): con thinking dinámico
+# p50 15,6 s; con thinking mínimo ~2,5 s sin perder precisión.
+_LOW_THINKING_TASKS: frozenset[TaskType] = frozenset({"extraction"})
+
+
+def _google_thinking_config(task: TaskType, model: str) -> dict[str, Any] | None:
+    """Configuración de thinking para Gemini según tarea y familia de modelo.
+
+    Cada familia usa un parámetro distinto: Gemini 3.x `thinking_level` y
+    Gemini 2.5 Flash `thinking_budget` (0 lo desactiva). Los modelos Pro no
+    admiten desactivarlo, así que se dejan con su valor por defecto.
+
+    Returns:
+        Kwargs de `thinking_config` para Instructor, o None si no se toca.
+    """
+    if task not in _LOW_THINKING_TASKS:
+        return None
+    if model.startswith("gemini-3") and "-pro" not in model:
+        return {"thinking_level": "low"}
+    if model.startswith("gemini-2.5-flash"):
+        return {"thinking_budget": 0}
+    return None
 
 
 class LLMClient:
@@ -327,6 +358,7 @@ class LLMClient:
     async def _call_sdk_once(
         self,
         *,
+        task: TaskType,
         provider: str,
         model: str,
         typed_messages: list[ChatCompletionMessageParam],
@@ -355,6 +387,10 @@ class LLMClient:
                     max_tokens=4096,
                 ),
             )
+        extra: dict[str, Any] = {}
+        thinking_config = _google_thinking_config(task, model)
+        if thinking_config is not None:
+            extra["thinking_config"] = thinking_config
         return cast(
             tuple[T, Any],
             await self._google.chat.completions.create_with_completion(
@@ -362,12 +398,14 @@ class LLMClient:
                 messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                **extra,
             ),
         )
 
     async def _invoke_sdk(
         self,
         *,
+        task: TaskType,
         provider: str,
         model: str,
         typed_messages: list[ChatCompletionMessageParam],
@@ -383,6 +421,7 @@ class LLMClient:
         """
         if not self._settings.llm_retry_transient_errors:
             return await self._call_sdk_once(
+                task=task,
                 provider=provider,
                 model=model,
                 typed_messages=typed_messages,
@@ -405,6 +444,7 @@ class LLMClient:
         ):
             with attempt:
                 return await self._call_sdk_once(
+                    task=task,
                     provider=provider,
                     model=model,
                     typed_messages=typed_messages,
@@ -496,6 +536,7 @@ class LLMClient:
             else:
                 try:
                     result, raw = await self._invoke_sdk(
+                        task=task,
                         provider=provider,
                         model=model,
                         typed_messages=typed_messages,

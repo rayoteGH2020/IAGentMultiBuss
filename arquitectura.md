@@ -467,7 +467,7 @@ Especificación de dominio (flujos, decisiones técnicas y guardrails). La imple
 **Decisiones técnicas:**
 
 - Sin pipeline OCR dedicado: **entrada multimodal directa al LLM** salvo decisión explícita futura.
-- Modelos por defecto alineados con la §8 (router): extracción principalmente `gemini-2.5-flash`; escalado a `gemini-2.5-pro` si flash no completa; fallback `claude-haiku-4-5` cuando aplique.
+- Modelos por defecto alineados con la §8 (router): extracción principalmente `gemini-3.8-flash` con `thinking_level=low` (el razonamiento no mejora la extracción y multiplica latencia y coste; medido 2026-09: p50 2,5 s / 98,3 % frente a 15,6 s / 96,7 % con `gemini-2.5-flash` y thinking dinámico); escalado a `gemini-2.5-pro` si flash no completa; fallback `claude-haiku-4-5` cuando aplique.
 - **Structured output** con Instructor sobre un schema tipo `Factura` / líneas (ver `app/schemas/`); reintentos acotados en cliente Instructor.
 - **Concurrencia:** hasta **5** extracciones en curso por tenant (semáforo); el resto en cola.
 - Cada llamada facturable queda en **`llm_calls`** para coste por tenant.
@@ -649,7 +649,7 @@ class LLMClient:
 
 | Tarea | Modelo |
 |---|---|
-| `extraction` | `gemini-2.5-flash` |
+| `extraction` | `gemini-3.8-flash` (thinking bajo) |
 | `classify` | `claude-haiku-4-5-20251001` |
 | `chat` | `claude-sonnet-4-6` |
 | `sql` | `claude-sonnet-4-6` |
@@ -659,7 +659,7 @@ Equivalente en código para referencia:
 
 ```python
 DEFAULT_MODELS = {
-    "extraction": "gemini-2.5-flash",
+    "extraction": "gemini-3.8-flash",
     "classify":   "claude-haiku-4-5-20251001",
     "chat":       "claude-sonnet-4-6",
     "sql":        "claude-sonnet-4-6",

@@ -211,7 +211,7 @@ Punto unico: `app/llm/client.py`.
 
 Tareas (`TaskType`): `extraction`, `classify`, `chat`, `embedding`, `transcription`, `translate`. `sql` tipado pero **muerto** (D011 — sin modulo Analytics).
 
-Defaults (`DEFAULT_MODELS`): extraction/chat Gemini Flash; classify Haiku; embedding `voyage-3-lite`; transcription Gemini audio. Entrada `sql` tipada pero sin producto (D011).
+Defaults (`DEFAULT_MODELS`): extraction `gemini-3.8-flash` con thinking bajo (D014); chat Gemini Flash; classify Haiku; embedding `voyage-3-lite`; transcription Gemini audio. Entrada `sql` tipada pero sin producto (D011).
 
 Reglas:
 
@@ -221,7 +221,8 @@ Reglas:
 - Sin SQL libre para chat documental.
 - Sin Analytics SQL sobre BD externa (D011 — no se implementa).
 - Observabilidad: `llm_calls` + Langfuse metadata-only (`app/llm/observability.py`).
-- Coste: `app/llm/pricing.py` + enforcement de budget de plan.
+- Coste: `app/llm/pricing.py` + enforcement de budget de plan. Los tokens de thinking de Gemini cuentan como output (D014).
+- Thinking: tareas sin beneficio de razonamiento (hoy `extraction`) lo bajan al minimo via `_google_thinking_config` (D014).
 
 ## 12. Jobs ARQ
 
@@ -295,7 +296,7 @@ Codigo de Pasos 02–07 y 09 (Stripe) esta en el repo. Lo que queda:
 
 ## 18. Decisiones cerradas
 
-Ver `Decision_Log.md` (D001–D011): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
+Ver `Decision_Log.md` (D001–D014): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
 
 ## 19. Docs V2 a no usar como snapshot de codigo sin revisar
 
