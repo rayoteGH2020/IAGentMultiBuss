@@ -1,6 +1,8 @@
 # Paso09 - Billing con Stripe
 
-Estado: **codigo cerrado / ops pendiente** (2026-09-23). Checkout, portal, webhook, `assign_tenant_plan`, `tenant_plan_changes`, `billing_status` (`p65`). Falta Price IDs + claves Infisical + webhook Dashboard.
+> **RETIRADO (2026-09-28, D016).** Toda la integracion Stripe se elimino del codigo (servicio, webhook, checkout/portal, settings `STRIPE_*`, dependencia) y la migracion `p68_drop_stripe_billing_01` borro sus columnas. El plan lo asigna solo el SADM; el metodo de cobro esta **pendiente de decidir** (Backlog P3-2). Este documento se conserva como historico: no seguir sus pasos operativos.
+
+Estado historico: **codigo cerrado / ops pendiente** (2026-09-23). Checkout, portal, webhook, `assign_tenant_plan`, `tenant_plan_changes`, `billing_status` (`p65`).
 
 Objetivo: conectar cobro real solo despues de tener planes funcionales.
 

@@ -823,130 +823,48 @@ function registerTenantSearchSelect() {
   }));
 }
 
-/** Modal de subida knowledge: adjunto de ficheros + cierre solo si el servidor crea docs. */
+/** Modal de subida knowledge: mismas 10 zonas que /documents, categoría por zona.
+ *  Cierre solo si el servidor crea algún documento (HX-Trigger knowledge-upload-result). */
 function registerKnowledgeUploadForm() {
-  Alpine.data("knowledgeUploadForm", () => ({
-    open: false,
-    files: [],
-    dragging: false,
-    kind: "",
-    uploadInputKey: 0,
-    formError: "",
-    optimizing: false,
-    isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
-
-    openModal() {
-      this.open = true;
-      this.files = [];
-      this.kind = "";
-      this.formError = "";
-      this.uploadInputKey += 1;
-    },
-
-    closeModal() {
-      this.open = false;
-    },
-
-    onUploadResult(detail) {
-      if (detail && detail.ok) {
-        this.open = false;
-        this.files = [];
-        this.kind = "";
-        this.formError = "";
-        this.uploadInputKey += 1;
-        return;
-      }
-      this.formError =
-        (detail && detail.message) || "No se pudo subir el documento. Revisa los datos.";
-    },
-
-    /** Reduce las fotos y deja el resultado en `files`. Devuelve si hubo alguna. */
-    async acceptFiles(fileList) {
-      // Array.from antes de cualquier await: los llamadores limpian
-      // input.value a continuación y el FileList vivo se quedaría vacío.
-      const incoming = Array.from(fileList || []);
-      if (incoming.length === 0) {
-        this.files = [];
-        this.formError = "";
-        return false;
-      }
-
-      this.optimizing = true;
-      try {
-        this.files = await optimizeUploadFiles(incoming);
-      } finally {
-        this.optimizing = false;
-      }
-      this.formError = "";
-      return true;
-    },
-
-    async onFilePick(event) {
-      await this.acceptFiles(event.target.files);
-    },
-
-    async onDrop(event) {
-      this.dragging = false;
-      if (await this.acceptFiles(event.dataTransfer.files)) {
-        this.syncInputFiles();
-      }
-    },
-
-    async onCameraCapture(event) {
-      const captured = Array.from(event.target.files || []);
-      event.target.value = "";
-      if (captured.length === 0) return;
-
-      this.kind = "";
-      this.uploadInputKey += 1;
-      this.open = true;
-      await this.acceptFiles(captured);
-    },
-
-    syncInputFiles() {
-      const dt = new DataTransfer();
-      this.files.forEach((f) => dt.items.add(f));
-      if (this.$refs.kinput) {
-        this.$refs.kinput.files = dt.files;
-      }
-    },
-
-    prepareRequest(event) {
-      if (this.files.length === 0 || !this.kind) {
-        event.preventDefault();
-        this.formError =
-          this.files.length === 0
-            ? "Selecciona al menos un fichero."
-            : "Selecciona una categoría para el documento.";
-        return;
-      }
-      this.formError = "";
-      const fd = event.detail.formData;
-      if (!fd) return;
-      fd.delete("files");
-      this.files.forEach((f) => fd.append("files", f, f.name));
-    },
-  }));
+  Alpine.data("knowledgeUploadForm", () =>
+    createSlotUploadForm({
+      typeField: "kinds",
+      missingTypeMessage: "Indica la categoría de cada fichero colocado antes de subir.",
+    }),
+  );
 }
 
 /** Subida de documentos administrativos: 10 zonas fijas, tipo por zona. */
 function registerDocumentUploadForm() {
-  const MAX_FILES = 10;
+  Alpine.data("documentUploadForm", () =>
+    createSlotUploadForm({
+      typeField: "doc_type_codes",
+      missingTypeMessage: "Indica el tipo de cada fichero colocado antes de procesar.",
+    }),
+  );
+}
 
-  function emptySlot(index, keyPrefix) {
-    return {
-      index,
-      file: null,
-      docType: "",
-      key: `${keyPrefix}-${index}`,
-    };
-  }
+// Zonas del modal de subida (templates/components/upload_slots_grid.html).
+const MAX_FILES = 10;
 
-  function emptySlots(keyPrefix) {
-    return Array.from({ length: MAX_FILES }, (_, index) => emptySlot(index, keyPrefix));
-  }
+function emptySlot(index, keyPrefix) {
+  return {
+    index,
+    file: null,
+    docType: "",
+    key: `${keyPrefix}-${index}`,
+  };
+}
 
-  Alpine.data("documentUploadForm", () => ({
+function emptySlots(keyPrefix) {
+  return Array.from({ length: MAX_FILES }, (_, index) => emptySlot(index, keyPrefix));
+}
+
+/** Estado común de los modales de subida por zonas (/documents y /knowledge).
+ *  `typeField`: nombre del campo multipart con el tipo/categoría de cada fichero,
+ *  enviado en el mismo orden que `files`. `slot.docType` guarda ese valor. */
+function createSlotUploadForm({ typeField, missingTypeMessage }) {
+  return {
     open: false,
     slots: emptySlots(0),
     dragging: false,
@@ -1099,29 +1017,39 @@ function registerDocumentUploadForm() {
       if (!this.canSubmit) {
         event.preventDefault();
         this.formError =
-          filled.length === 0
-            ? "Coloca al menos un fichero en una zona."
-            : "Indica el tipo de cada fichero colocado antes de procesar.";
+          filled.length === 0 ? "Coloca al menos un fichero en una zona." : missingTypeMessage;
         return;
       }
       this.formError = "";
       const fd = event.detail.formData;
       if (!fd) return;
       fd.delete("files");
-      fd.delete("doc_type_codes");
+      fd.delete(typeField);
       filled.forEach((slot) => {
         fd.append("files", slot.file, slot.file.name);
-        fd.append("doc_type_codes", slot.docType);
+        fd.append(typeField, slot.docType);
       });
     },
 
+    /** /documents: cierra el modal si la petición HTMX termina bien. */
     onAfterRequest(event) {
       if (event.detail.successful) {
         this.open = false;
         this.resetSlots();
       }
     },
-  }));
+
+    /** /knowledge: cierra solo si el servidor creó algún documento (HX-Trigger). */
+    onUploadResult(detail) {
+      if (detail && detail.ok) {
+        this.open = false;
+        this.resetSlots();
+        return;
+      }
+      this.formError =
+        (detail && detail.message) || "No se pudo subir el documento. Revisa los datos.";
+    },
+  };
 }
 
 /** Selector de color de profesional: trigger + panel fixed al viewport.

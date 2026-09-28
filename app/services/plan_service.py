@@ -34,7 +34,6 @@ ACTION_ENTITLEMENTS_OVERRIDE = "sadm.entitlements_override"
 RESOURCE_TENANT = "tenant"
 
 SOURCE_SADM = "sadm"
-SOURCE_STRIPE = "stripe"
 
 
 async def list_plans(
@@ -157,16 +156,6 @@ async def _require_tenant(db: AsyncSession, tenant_id: UUID) -> Tenant:
     return tenant
 
 
-async def get_plan_by_stripe_price_id(db: AsyncSession, stripe_price_id: str) -> Plan | None:
-    cleaned = stripe_price_id.strip()
-    if not cleaned:
-        return None
-    result = await db.execute(
-        select(Plan).where(Plan.stripe_price_id == cleaned).options(selectinload(Plan.entitlements))
-    )
-    return result.scalar_one_or_none()
-
-
 async def assign_tenant_plan(
     db: AsyncSession,
     *,
@@ -177,7 +166,7 @@ async def assign_tenant_plan(
     source: str = SOURCE_SADM,
     metadata: dict[str, Any] | None = None,
 ) -> Tenant:
-    """Asigna ``plan_code`` al tenant. Punto unico para SADM y Stripe (Paso09)."""
+    """Asigna ``plan_code`` al tenant. Punto unico de cambio de plan (solo SADM)."""
     code = normalize_plan_code(plan_code)
     if code not in PLAN_CODES:
         raise ValidationError(f"Plan code '{plan_code}' is not valid")

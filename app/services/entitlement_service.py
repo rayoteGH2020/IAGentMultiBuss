@@ -22,18 +22,81 @@ from app.core.entitlement_codes import (
     ENTITLEMENT_KIND_FEATURE,
     ENTITLEMENT_KIND_LIMIT,
     FEATURE_CODES,
+    FEATURE_UI_LABELS,
     LIMIT_CODES,
+    LIMIT_UI_LABELS,
     OVERRIDE_SETTINGS_KEY,
     normalize_plan_code,
+    plan_ui_name,
 )
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
 from app.models.plan import PlanEntitlement
 from app.models.tenant import Tenant
-from app.schemas.entitlements import Entitlements, EntitlementsOverride
+from app.schemas.entitlements import (
+    Entitlements,
+    EntitlementsOverride,
+    PlanLimitItem,
+    PlanSummary,
+    QuotaUsage,
+)
 from app.services import plan_service
 
 log = get_logger(__name__)
+
+
+def _format_limit(value: Decimal | int | None) -> str:
+    """``None`` → "Ilimitado"; enteros con separador de miles español (1.500)."""
+    if value is None:
+        return "Ilimitado"
+    return f"{int(value):,}".replace(",", ".")
+
+
+def _usage_percent(used: int, cap: int | None) -> int | None:
+    """% consumido (0-100); None si ilimitado. Se satura en 100 si hubo override a la baja."""
+    if cap is None or cap <= 0:
+        return None
+    return min(100, round(used * 100 / cap))
+
+
+def _limit_item(
+    code: str, label: str, ents: Entitlements, usage: QuotaUsage | None
+) -> PlanLimitItem:
+    if usage is None:
+        return PlanLimitItem(label=label, value=_format_limit(ents.limit(code)))
+    return PlanLimitItem(
+        label=label,
+        value=_format_limit(usage.cap),
+        used=usage.used,
+        percent=_usage_percent(usage.used, usage.cap),
+    )
+
+
+def build_plan_summary(
+    ents: Entitlements,
+    usage: dict[str, QuotaUsage] | None = None,
+) -> PlanSummary:
+    """Plan efectivo del tenant para el cliente: funciones, límites y consumo.
+
+    Usa las capacidades ya resueltas (catálogo + override SADM + kill-switch),
+    así el cliente ve lo que realmente tiene y no el catálogo genérico. Con
+    ``usage`` (plan_quota_service.get_limit_usage) el tope mostrado es el que
+    se aplica y se añade el consumo. Los límites a 0 no se listan: esa
+    prestación no está incluida.
+    """
+    usage = usage or {}
+    features = [label for code, label in FEATURE_UI_LABELS.items() if ents.has(code)]
+    limits = [
+        _limit_item(code, label, ents, usage.get(code))
+        for code, label in LIMIT_UI_LABELS.items()
+        if (usage[code].cap if code in usage else ents.limit(code)) != 0
+    ]
+    return PlanSummary(
+        code=ents.plan_code,
+        name=plan_ui_name(ents.plan_code),
+        features=features,
+        limits=limits,
+    )
 
 
 def fail_closed_entitlements(plan_code: str) -> Entitlements:

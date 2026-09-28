@@ -5,6 +5,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.config import get_settings
 from app.core.calendar_datetime import (
     calendar_event_date_chip,
     calendar_event_is_all_day,
@@ -13,15 +14,20 @@ from app.core.calendar_datetime import (
     google_iso_to_local_input,
 )
 from app.core.chat_content import chat_content_plain
+from app.core.clerk_frontend import clerk_browser_context
 from app.core.csrf import csrf_tenant_id_for_request, generate_csrf_token
 from app.core.currency_display import currency_symbol
 from app.core.datetime_display import local_datetime
 from app.core.document_processing_errors import format_user_processing_error
+from app.core.entitlement_codes import plan_ui_name
 from app.core.permissions import (
     home_path_for_role,
+    is_manager_role,
+    is_org_admin_role,
     membership_can_appointment,
     nav_items_for_access,
     nav_items_for_role,
+    role_label,
 )
 from app.core.scheduling_granularity import slot_minute_options
 from app.core.scheduling_ui import format_range_label
@@ -57,6 +63,11 @@ templates.env.globals["membership_can_appointment"] = membership_can_appointment
 templates.env.globals["nav_items_for_role"] = nav_items_for_role
 templates.env.globals["nav_items_for_access"] = nav_items_for_access
 templates.env.globals["home_path_for_role"] = home_path_for_role
+templates.env.globals["is_manager_role"] = is_manager_role
+templates.env.globals["is_org_admin_role"] = is_org_admin_role
+templates.env.filters["role_label"] = role_label
+# Nombre del plan en cualquier plantilla: {{ tenant.plan_code | plan_label }}.
+templates.env.filters["plan_label"] = plan_ui_name
 
 # Marca de tiempo del arranque del proceso: usada como query param de
 # cache-busting en /static (ver static_asset() más abajo).
@@ -93,13 +104,18 @@ def _inject_auth_context(request: Request) -> dict[str, Any]:
         )
         if tenant_for_csrf is not None:
             csrf_token = generate_csrf_token(user_id=user.id, tenant_id=tenant_for_csrf)
-    return {
+    ctx: dict[str, Any] = {
         "user": user,
         "tenant": tenant,
         "membership": getattr(request.state, "membership", None),
         "entitlements": getattr(request.state, "entitlements", None),
         "csrf_token": csrf_token,
     }
+    if user is not None:
+        # clerk-js en el panel para renovar la cookie __session (layouts/dashboard.html).
+        # Las páginas de auth pasan su propio contexto de Clerk y lo sobrescriben.
+        ctx.update(clerk_browser_context(get_settings()))
+    return ctx
 
 
 def render(

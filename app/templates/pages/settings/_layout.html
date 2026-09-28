@@ -5,14 +5,13 @@
   <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Ajustes">
     {% set tabs = [
       ("/settings/profile", "Mi cuenta"),
-      ("/settings/billing", "Facturación"),
     ] %}
     {% if entitlements and entitlements.has("calendar_google") %}
       {% set tabs = tabs + [("/settings/integrations", "Integraciones")] %}
     {% elif not entitlements %}
       {% set tabs = tabs + [("/settings/integrations", "Integraciones")] %}
     {% endif %}
-    {% if membership and membership.role == 'admin' %}
+    {% if membership and is_manager_role(membership.role) %}
       {% if entitlements and entitlements.has("appointments") %}
         {% set tabs = tabs + [
           ("/settings/business-hours", "Horario del centro"),
@@ -27,6 +26,9 @@
         ] %}
       {% endif %}
       {% set tabs = tabs + [("/settings/members", "Miembros")] %}
+    {% endif %}
+    {% if membership and is_org_admin_role(membership.role) %}
+      {% set tabs = tabs + [("/settings/support", "Soporte técnico")] %}
     {% endif %}
     {% for href, label in tabs %}
       {% set active = request.url.path == href %}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -9,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.scheduling_defaults import DEFAULT_MEMBERSHIP_PERMISSIONS
 
-AppRole = Literal["admin", "member", "viewer"]
+AppRole = Literal["admin", "co_admin", "member", "viewer"]
 
 
 class AppointmentPermissions(BaseModel):
@@ -73,3 +75,75 @@ class TenantMemberRead(BaseModel):
     role: str
     permissions: MembershipPermissions
     clerk_user_id: str | None = None
+    # Baja solicitada al SADM pendiente de ejecutar (None = sin solicitud).
+    removal_requested_at: datetime | None = None
+    removal_effective_date: date | None = None
+
+    @property
+    def removal_pending(self) -> bool:
+        return self.removal_effective_date is not None
+
+
+RequestableRole = Literal["co_admin", "member"]
+
+# Validación de forma, no de entregabilidad: Clerk verifica el email al invitar.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _single_line(value: str) -> str:
+    """Colapsa espacios y saltos de línea (los valores van a un email en texto plano)."""
+    return " ".join(value.split())
+
+
+class MemberCreationRequest(BaseModel):
+    """Datos del nuevo miembro que se solicita al SADM (no crea nada en Clerk)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=150)
+    alias: str | None = Field(default=None, max_length=100)
+    email: str = Field(min_length=3, max_length=255)
+    role: RequestableRole
+    start_date: date
+
+    @field_validator("first_name", "last_name", mode="before")
+    @classmethod
+    def _clean_name(cls, value: object) -> object:
+        return _single_line(value) if isinstance(value, str) else value
+
+    @field_validator("alias", mode="before")
+    @classmethod
+    def _clean_alias(cls, value: object) -> object:
+        if isinstance(value, str):
+            return _single_line(value) or None
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if not _EMAIL_RE.match(email):
+            raise ValueError("invalid email")
+        return email
+
+
+class MemberCreationForm(BaseModel):
+    """Contexto del modal de solicitud de alta (solicitante y rango de fechas)."""
+
+    actor_name: str | None
+    actor_email: str
+    actor_role: str
+    min_date: date
+    max_date: date
+
+
+class MemberRemovalForm(BaseModel):
+    """Contexto del modal de solicitud de baja (miembro, solicitante y rango de fechas)."""
+
+    member: TenantMemberRead
+    actor_name: str | None
+    actor_email: str
+    actor_role: str
+    min_date: date
+    max_date: date

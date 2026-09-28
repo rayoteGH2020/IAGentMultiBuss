@@ -15,20 +15,30 @@
        hx-select="#app-frame"
        hx-swap="outerHTML"
        hx-push-url="true">
-  <div class="h-16 flex items-center gap-3 px-4 border-b border-slate-200 min-w-0">
+  {# Cabecera, logo y separación +8 % (64→69, 40→43, 12→13 px); el texto no se
+     escala. px-4 se mantiene: alinea el logo con los iconos del menú. #}
+  <div class="h-[69px] flex items-center gap-[13px] px-4 border-b border-slate-200 min-w-0">
     <a href="{{ home_path_for_role(membership.role) if membership else '/' }}"
        class="inline-flex shrink-0 items-center cursor-pointer" aria-label="Inicio">
       <img
         src="{{ static_asset('/static/img/IAGenMultibuss.png') }}"
         alt="IAGen Multibuss"
-        class="h-10 w-10 object-contain"
-        width="40"
-        height="40"
+        class="h-[43px] w-[43px] object-contain"
+        width="43"
+        height="43"
       >
     </a>
     {% if tenant %}
-    <span class="min-w-0 truncate text-sm font-semibold text-slate-900"
-          title="{{ user.email if user and user.email else tenant.name }}">{{ tenant.name }}</span>
+    {# Organización, nombre y email del usuario conectado: tres líneas alineadas a la izquierda. #}
+    <div class="min-w-0 flex flex-col items-start leading-tight">
+      <span class="max-w-full truncate text-sm font-semibold text-slate-900" title="{{ tenant.name }}">{{ tenant.name }}</span>
+      {% if user and user.name %}
+      <span class="max-w-full truncate text-xs text-slate-500" title="{{ user.name }}">{{ user.name }}</span>
+      {% endif %}
+      {% if user and user.email %}
+      <span class="max-w-full truncate text-xs text-slate-500" title="{{ user.email }}">{{ user.email }}</span>
+      {% endif %}
+    </div>
     {% endif %}
   </div>
 

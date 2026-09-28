@@ -7,6 +7,7 @@ Todos los atributos son leídos como atributos de clase, no de instancia.
 
 from typing import ClassVar
 
+from arq import cron
 from arq import func as arq_func
 from arq.connections import RedisSettings
 
@@ -16,6 +17,7 @@ from app.jobs.contract_jobs import process_contract
 from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
+from app.jobs.membership_jobs import expire_member_removals
 from app.jobs.ticket_jobs import process_ticket
 
 
@@ -36,6 +38,18 @@ class WorkerSettings:
         process_insurance,
         arq_func(index_knowledge_document, timeout=600),
         arq_func(process_channel_message, timeout=120),
+    ]
+
+    # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el
+    # worker (recupera las pendientes si estuvo parado). El corte inmediato lo
+    # hace el middleware; esto lo persiste para quien no vuelve a entrar.
+    cron_jobs: ClassVar[list[object]] = [
+        cron(
+            expire_member_removals,
+            minute={0, 15, 30, 45},
+            run_at_startup=True,
+            unique=True,
+        ),
     ]
 
     # Máximo de jobs ejecutándose simultáneamente en ESTE proceso worker.

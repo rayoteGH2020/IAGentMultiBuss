@@ -21,6 +21,10 @@ MSG_CHAT_MESSAGES_USER_DAILY = "Has alcanzado tu limite personal de mensajes de 
 MSG_CHANNEL_MESSAGES_HOURLY = "Has alcanzado el limite horario de mensajes del canal de tu plan."
 MSG_VOICE_NOTES_HOURLY = "Has alcanzado el limite horario de notas de voz de tu plan."
 MSG_MEMBERS_MAX = "Has alcanzado el numero maximo de miembros de tu plan."
+MSG_CHANNEL_SLOTS = (
+    "El plan de esta organización no admite más canales de mensajería conectados. "
+    "Desconecta otro canal o amplía el límite (plan u override)."
+)
 MSG_LLM_BUDGET_MONTH = "Has alcanzado el presupuesto mensual de IA de tu plan."
 
 

@@ -945,7 +945,7 @@ Checklist histórico de alto nivel; el trabajo real se prioriza con **`PasoXX.md
 - Módulo 2 (RAG) — varias semanas adicionales.
 - Módulo 3 (analista SQL) — varias semanas adicionales.
 - Integración WhatsApp Business.
-- Billing con Stripe.
+- Cobro de planes: pendiente de decidir método (Stripe retirado; ver `Documentacion_V2/Decision_Log.md` D016).
 - Panel de administración interna.
 
 ---

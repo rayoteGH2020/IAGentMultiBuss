@@ -1,7 +1,7 @@
 # Documentacion_V2
 
 Fecha: 2026-08-04 · Actualizado: 2026-09-23
-Estado: fuente de planificacion V2. Codigo de Pasos 02–06, 09 (Stripe) y gran parte de 00/01/07 cerrado; queda ops (Infisical, QA manual, soft-launch). Paso08 Analytics: **no implementar** (D011).
+Estado: fuente de planificacion V2. Codigo de Pasos 02–06 y gran parte de 00/01/07 cerrado; queda ops (Infisical, QA manual, soft-launch). Paso08 Analytics: **no implementar** (D011). Paso09 Stripe: **retirado** (D016); metodo de cobro pendiente de decidir.
 
 ## Decision principal
 
@@ -36,7 +36,7 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Paso06_Documentos_Producto.md` | Mejora del modulo documental y validaciones de calidad. |
 | `Paso07_Chat_IA_Seguridad.md` | Endurecimiento de chats, tools, RAG y canales externos. |
 | `Paso08_Analytics_SQL_ReadOnly.md` | Historico: Analytics SQL — **NO IMPLEMENTAR** (D011). |
-| `Paso09_Billing_Stripe.md` | Billing real con Stripe cuando planes ya existan. |
+| `Paso09_Billing_Stripe.md` | Historico: Stripe — **RETIRADO** (D016). Cobro de planes pendiente de decidir. |
 | `Paso10_QA_Release_Produccion.md` | QA manual, release y operacion de produccion. |
 | `Paso11_Despliegue_VPS.md` | Despliegue en VPS con Docker Compose + Caddy (D013). |
 | `PasosParaProduccion.md` | Checklist consolidada de go-live (variables, Clerk, infra, QA, rollback). |
@@ -45,11 +45,12 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 
 Evidencias 2026-08-04 (base) + cierre codigo 2026-09-23:
 
-- Implementacion real en `app/`, `migrations/` (head planes `p64`, Stripe `p65`), `tests/`, CI.
+- Implementacion real en `app/`, `migrations/` (head `p68`: Stripe retirado), `tests/`, CI.
 - Capas LLM, observabilidad metadata-only, prompts versionados.
 - RLS + middleware Clerk/CSRF/headers + SADM con `/sadm/plans`.
-- Planes/gates/cuotas, documentos, chat/canales y Stripe en codigo.
-- Pendiente ops: Infisical staging/prod, rotacion secretos, QA Paso07, soft-launch Paso10, Price IDs Stripe.
+- Planes/gates/cuotas, documentos y chat/canales en codigo. Plan asignado solo por SADM (D016).
+- Pendiente ops: Infisical staging/prod, rotacion secretos, QA Paso07, soft-launch Paso10.
+- Pendiente de decision: metodo de cobro de los planes (Backlog P3-2).
 - Producto descartado: Paso08 Analytics SQL (D011 — no se vende BI sobre BD externa).
 - Documentacion antigua (`Documentacion/`) = historico; guia operativa = esta carpeta.
 

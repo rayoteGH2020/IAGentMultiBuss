@@ -205,7 +205,10 @@ async def test_save_whatsapp_stores_token_encrypted(
     from app.services import channel_integration_service
 
     suffix = uuid4().hex[:8]
-    tenant = Tenant(name=f"WA Enc Tenant {suffix}", plan="free", settings={})
+    # Avanzado: el Básico no incluye canales (channel_external_slots = 0).
+    tenant = Tenant(
+        name=f"WA Enc Tenant {suffix}", plan="advanced", plan_code="advanced", settings={}
+    )
     db_session.add(tenant)
     await db_session.flush()
     await set_tenant_context(db_session, str(tenant.id))
@@ -246,8 +249,9 @@ async def test_save_whatsapp_rejects_duplicate_phone_number_id_across_tenants(
 
     suffix = uuid4().hex[:8]
     shared_pnid = f"pnid-dup-{suffix}"
-    tenant_a = Tenant(name=f"WA Dup A {suffix}", plan="free", settings={})
-    tenant_b = Tenant(name=f"WA Dup B {suffix}", plan="free", settings={})
+    # Avanzado: el Básico no incluye canales (channel_external_slots = 0).
+    tenant_a = Tenant(name=f"WA Dup A {suffix}", plan="advanced", plan_code="advanced", settings={})
+    tenant_b = Tenant(name=f"WA Dup B {suffix}", plan="advanced", plan_code="advanced", settings={})
     db_session.add_all([tenant_a, tenant_b])
     await db_session.flush()
 

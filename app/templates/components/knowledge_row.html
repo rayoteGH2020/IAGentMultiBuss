@@ -40,10 +40,11 @@
 
     {# Nombre + fichero original #}
     <td class="knowledge-td knowledge-td--name">
-      <p class="truncate text-sm font-medium text-slate-900" title="{{ document.name }}">
+      {# Máximo 2 líneas cada uno; texto completo en el tooltip. #}
+      <p class="line-clamp-2 break-all text-sm font-medium text-slate-900" title="{{ document.name }}">
         {{ document.name }}
       </p>
-      <p class="truncate text-xs text-slate-400 mt-0.5" title="{{ document.original_filename }}">
+      <p class="line-clamp-2 break-all text-xs text-slate-400 mt-0.5" title="{{ document.original_filename }}">
         {{ document.original_filename }}
       </p>
     </td>

@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 
 from app.core.datetime_display import display_today, resolve_display_timezone
+from app.core.entitlement_codes import plan_ui_name
 from app.core.errors import NotFoundError
 from app.models import ChatMessage, ChatMessageRole, LLMCall, Tenant
 from app.services.document_override_service import enable_superadmin_lookup
@@ -308,7 +309,8 @@ async def list_active_tenants(db: AsyncSession) -> list[ChatUsageTenantItem]:
         ChatUsageTenantItem(
             id=tenant.id,
             name=tenant.name,
-            plan=tenant.plan,
+            # plan_code es el canónico; `plan` es el campo legacy.
+            plan=tenant.plan_code or tenant.plan,
             created_at=tenant.created_at,
         )
         for tenant in rows
@@ -316,8 +318,15 @@ async def list_active_tenants(db: AsyncSession) -> list[ChatUsageTenantItem]:
 
 
 def tenant_picker_options(tenants: list[ChatUsageTenantItem]) -> list[dict[str, str]]:
-    """Opciones serializables para el combobox Alpine de selección de tenant."""
-    return [{"id": str(tenant.id), "name": tenant.name, "plan": tenant.plan} for tenant in tenants]
+    """Opciones serializables para el combobox Alpine de selección de tenant.
+
+    ``plan`` va ya como nombre visible (Básico/Avanzado/Premium): el combobox
+    lo pinta y filtra en el cliente, sin acceso a los filtros Jinja.
+    """
+    return [
+        {"id": str(tenant.id), "name": tenant.name, "plan": plan_ui_name(tenant.plan)}
+        for tenant in tenants
+    ]
 
 
 async def get_tenant_chat_usage(

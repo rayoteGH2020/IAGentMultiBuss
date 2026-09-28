@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import get_redis
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError, ForbiddenError, PlanRequiredError, ValidationError
-from app.core.permissions import is_platform_superadmin
+from app.core.permissions import (
+    MANAGER_ROLES,
+    ORG_ADMIN_ROLE,
+    is_manager_role,
+    is_platform_superadmin,
+)
 from app.models import Membership, Tenant, User
 from app.schemas.entitlements import Entitlements
 from app.services import entitlement_service
@@ -161,21 +166,23 @@ def require_role(*roles: str) -> Callable[..., Coroutine[Any, Any, Membership]]:
     return _dep
 
 
-# Alias listo para usar en cualquier ruta que requiera rol admin.
+# Gestión del tenant (ajustes, miembros, agenda): admin (dueño) o co_admin.
 # Mismo patrón que CurrentUser/CurrentTenant: importar desde deps en lugar de
-# redeclarar RequireAdmin en cada módulo de rutas.
-RequireAdmin = Annotated[Membership, Depends(require_role("admin"))]
+# redeclarar la dependencia en cada módulo de rutas.
+RequireManager = Annotated[Membership, Depends(require_role(*sorted(MANAGER_ROLES)))]
+# Solo el admin (dueño del negocio); co_admin excluido (p. ej. soporte técnico al SADM).
+RequireOrgAdmin = Annotated[Membership, Depends(require_role(ORG_ADMIN_ROLE))]
 
 
 def require_appointment_permission(
     *actions: str,
 ) -> Callable[..., Coroutine[Any, Any, Membership]]:
-    """Factory: al menos uno de los permisos de citas (admin bypass)."""
+    """Factory: al menos uno de los permisos de citas (admin/co_admin bypass)."""
 
     from app.core.permissions import membership_can_appointment
 
     async def _dep(membership: Membership = Depends(current_membership)) -> Membership:
-        if membership.role == "admin":
+        if is_manager_role(membership.role):
             return membership
         for action in actions:
             if membership_can_appointment(membership, action):  # type: ignore[arg-type]

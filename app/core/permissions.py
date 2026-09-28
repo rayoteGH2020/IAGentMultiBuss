@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
+    from uuid import UUID
 
     from app.models.membership import Membership
     from app.models.tenant import Tenant
@@ -13,9 +14,24 @@ if TYPE_CHECKING:
 
 AppointmentAction = Literal["view", "create", "edit", "cancel"]
 
-SUPERADMIN_ORG_ROLE = "admin"
+# Roles de organización (claim Clerk sin prefijo "org:").
+# admin: dueño del negocio, único por tenant. co_admin: mismos accesos que
+# admin salvo que no puede solicitar la baja del admin.
+ORG_ADMIN_ROLE = "admin"
+ORG_CO_ADMIN_ROLE = "co_admin"
+MANAGER_ROLES: frozenset[str] = frozenset({ORG_ADMIN_ROLE, ORG_CO_ADMIN_ROLE})
 
-# Navegación principal por rol Clerk (admin / member|viewer).
+ROLE_LABELS: dict[str, str] = {
+    ORG_ADMIN_ROLE: "Administrador",
+    ORG_CO_ADMIN_ROLE: "Co-administrador",
+    "member": "Miembro",
+    "viewer": "Lector",
+}
+
+# Superadmin de plataforma: solo el admin de la org SADM, nunca un co_admin.
+SUPERADMIN_ORG_ROLE = ORG_ADMIN_ROLE
+
+# Navegación principal por rol Clerk (admin|co_admin / member|viewer).
 # Tupla: (href, label, icon_filename_sin_html).
 NavItem = tuple[str, str, str]
 
@@ -51,9 +67,42 @@ _MEMBER_ALLOWED_PREFIXES: tuple[str, ...] = (
 )
 
 
+def is_manager_role(role: str | None) -> bool:
+    """True para admin y co_admin: acceso completo a la app del tenant."""
+    return role in MANAGER_ROLES
+
+
+def is_org_admin_role(role: str | None) -> bool:
+    """True solo para el admin (dueño del negocio); co_admin no."""
+    return role == ORG_ADMIN_ROLE
+
+
+def role_label(role: str | None) -> str:
+    """Etiqueta en español del rol; el valor crudo si no se conoce."""
+    return ROLE_LABELS.get(role or "", role or "—")
+
+
+def can_request_member_removal(
+    *,
+    actor_role: str,
+    actor_membership_id: UUID,
+    target_role: str,
+    target_membership_id: UUID,
+) -> bool:
+    """Reglas de baja: nadie a sí mismo; co_admin tampoco al admin.
+
+    member / viewer no gestionan miembros.
+    """
+    if not is_manager_role(actor_role) or actor_membership_id == target_membership_id:
+        return False
+    if actor_role == ORG_CO_ADMIN_ROLE:
+        return target_role != ORG_ADMIN_ROLE
+    return True
+
+
 def nav_items_for_role(role: str) -> list[NavItem]:
     """Ítems de sidebar visibles según rol de organización (sin filtrar plan)."""
-    if role == "admin":
+    if is_manager_role(role):
         return list(ADMIN_NAV_ITEMS)
     return list(MEMBER_NAV_ITEMS)
 
@@ -89,8 +138,8 @@ def nav_items_for_access(
 
 
 def home_path_for_role(role: str) -> str:
-    """Destino tras login / al denegar una URL (admin → inicio; resto → chat)."""
-    return "/" if role == "admin" else "/chat"
+    """Destino tras login / al denegar una URL (admin|co_admin → inicio; resto → chat)."""
+    return "/" if is_manager_role(role) else "/chat"
 
 
 def role_can_access_path(role: str, path: str) -> bool:
@@ -99,7 +148,7 @@ def role_can_access_path(role: str, path: str) -> bool:
     Las rutas públicas, logout, onboarding, SADM, etc. se excluyen antes en
     el middleware; aquí solo se decide el acceso a áreas de la app.
     """
-    if role == "admin":
+    if is_manager_role(role):
         return True
     normalized = path.rstrip("/") or "/"
     if normalized == "/":
@@ -118,9 +167,9 @@ def membership_can(
 ) -> bool:
     """True si la membership puede ejecutar `action` en `module`.
 
-    Los admins tienen bypass implícito (decisión 13).
+    admin y co_admin tienen bypass implícito (decisión 13).
     """
-    if membership.role == "admin":
+    if is_manager_role(membership.role):
         return True
     raw_permissions = membership.permissions
     if not isinstance(raw_permissions, dict):

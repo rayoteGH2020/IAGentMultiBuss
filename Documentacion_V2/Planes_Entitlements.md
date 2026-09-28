@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-23 (D012)
 Estado: **implementado en codigo** — catalogo comercial `basic` | `advanced` | `premium`
-(Pasos 02–04 + SADM + Stripe). Seed: `app/core/entitlement_codes.py`; migracion `p67`.
+(Pasos 02–04 + SADM). Seed: `app/core/entitlement_codes.py`; migracion `p67`.
 
 ## 1. Objetivo
 
@@ -11,7 +11,7 @@ Convertir la aplicacion modular en un producto gobernado por planes:
 - activar/desactivar modulos,
 - limitar volumen y coste con **limites duros**,
 - mostrar solo lo contratado,
-- permitir upgrades (SADM y Stripe),
+- permitir upgrades (solo SADM, D016),
 - evitar `if tenant.plan == ...` dispersos.
 
 ## 2. Estado actual (2026-09-23) — D012
@@ -39,7 +39,7 @@ Alias legacy: `free`/`medium` → `basic`; `high` → `advanced`; `total` → `p
 
 Pendiente / ops:
 
-- Rellenar `plans.stripe_price_id` (basic/advanced/premium) + secretos Stripe Infisical.
+- Metodo de cobro de los planes: **pendiente de decidir** (D016, Backlog P3-2). Stripe retirado.
 
 ## 3. Features
 
@@ -90,10 +90,11 @@ Anual: ~2 meses de descuento. Setup WA/TG: 99–299 EUR opcional.
 - Resolucion: `entitlement_service` + gates `require_feature`.
 - Cuotas Redis + budget: `plan_quota_service` (duro: bloquea al techo).
 - SADM `/sadm/plans`: assign + override.
-- Stripe: `price_id` → `plan_code` via `assign_tenant_plan`.
+- Unico punto de cambio de plan: `assign_tenant_plan` desde SADM (ningun rol de tenant, D016).
 - Historial: `tenant_plan_changes`.
 
 ## 7. Decisiones
 
 - D011: Analytics no se implementa.
 - D012: catalogo Basico / Avanzado / Premium; calendar fuera de oferta; limites duros escalonados.
+- D016: plan asignado solo por SADM; Stripe retirado; cobro pendiente de decidir.

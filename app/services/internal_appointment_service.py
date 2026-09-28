@@ -15,7 +15,7 @@ from app.core.business_hours_validation import (
 )
 from app.core.datetime_display import display_today, resolve_display_timezone
 from app.core.errors import ForbiddenError, NotFoundError, ValidationError
-from app.core.permissions import membership_can_appointment
+from app.core.permissions import is_manager_role, membership_can_appointment
 from app.core.scheduling_granularity import validate_datetime_granularity
 from app.models.appointment import Appointment
 from app.models.membership import Membership
@@ -415,13 +415,15 @@ async def update_appointment_status(
 
     if new_status == AppointmentStatus.confirmed:
         if not (
-            membership.role == "admin"
+            is_manager_role(membership.role)
             or membership_can_appointment(membership, "create")
             or membership_can_appointment(membership, "edit")
         ):
             raise ForbiddenError("Requires create or edit permission to confirm")
     else:
-        if membership.role != "admin" and not membership_can_appointment(membership, "view"):
+        if not is_manager_role(membership.role) and not membership_can_appointment(
+            membership, "view"
+        ):
             raise ForbiddenError("Requires view permission to change status")
 
     appointment.status = new_status

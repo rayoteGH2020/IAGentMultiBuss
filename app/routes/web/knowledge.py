@@ -4,7 +4,8 @@ Patrón página/fragmento en todos los endpoints:
   - render(..., full="pages/knowledge/index.html", partial="components/knowledge_rows.html")
   - Los endpoints de detalle y acciones devuelven siempre fragmento.
 
-Upload: multipart (files[] + kind global para el batch). Validación MIME/tamaño
+Upload: multipart (files[] + kinds[], una categoría por fichero y en el mismo
+orden, como /documents/upload). Validación MIME/tamaño
 delegada en knowledge_document_service.create_from_upload, que llama a
 validate_knowledge_upload internamente.
 """
@@ -41,9 +42,6 @@ router = APIRouter(
     tags=["knowledge"],
     dependencies=[Depends(require_feature("knowledge"))],
 )
-
-# Número máximo de ficheros por subida: igual que el límite de /documents/upload.
-_MAX_FILES_PER_UPLOAD = 20
 
 
 async def _list_ctx(
@@ -145,7 +143,7 @@ async def upload_knowledge(
     user: CurrentUser,
     tenant: CurrentTenant,
     redis: RedisDep,
-    kind: Annotated[str | None, Form()] = None,
+    kinds: Annotated[list[str] | str | None, Form()] = None,
     files: Annotated[list[UploadFile] | None, File(description="Knowledge documents")] = None,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -157,18 +155,18 @@ async def upload_knowledge(
         ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
         return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
-    if len(named_files) > _MAX_FILES_PER_UPLOAD:
-        batch_errors = [
-            {"filename": "—", "error": f"Máximo {_MAX_FILES_PER_UPLOAD} ficheros por subida."}
-        ]
+    max_files = knowledge_document_service.MAX_FILES_PER_UPLOAD
+    if len(named_files) > max_files:
+        batch_errors = [{"filename": "—", "error": f"Máximo {max_files} ficheros por subida."}]
         ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
         return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
-    doc_kind = _parse_kind(kind)
-    if doc_kind is None:
-        batch_errors = [
-            {"filename": "—", "error": "Debes seleccionar una categoría para el documento."}
-        ]
+    try:
+        per_file_kinds = knowledge_document_service.resolve_per_file_kinds(
+            file_count=len(named_files), kinds=kinds
+        )
+    except ValidationError:
+        batch_errors = [{"filename": "—", "error": "Debes indicar la categoría de cada documento."}]
         ctx = await _list_ctx(db, tenant.id, upload_errors=batch_errors)
         return _knowledge_upload_response(request, ctx, created=0, errors=batch_errors)
 
@@ -191,7 +189,7 @@ async def upload_knowledge(
     created = 0
     settings = get_settings()
 
-    for upload in named_files:
+    for upload, doc_kind in zip(named_files, per_file_kinds, strict=True):
         display_name = upload.filename or "file"
         try:
             data = await read_upload_limited(

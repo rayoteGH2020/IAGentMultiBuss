@@ -267,3 +267,21 @@ Consecuencia:
 - `DEFAULT_MODELS["chat"] = "gemini-3.5-flash-lite"`; tarifa en `pricing.py` ($0,30 / $2,50).
 - `chat_loop._gemini_token_usage` suma `thoughts_token_count` a output (mismo fallo que D014 en extraccion).
 - Infisical: `LLM_MODEL_CHAT` debe eliminarse o valer `gemini-3.5-flash-lite` en cada entorno.
+
+## D016 - Plan asignado solo por SADM; integracion Stripe retirada
+
+Decision (cerrada 2026-09-28): ningun rol de tenant (`admin`, `co_admin`, `member`, `viewer`) asigna ni cambia el plan; solo el SADM desde `/sadm/plans`. Se elimina toda la integracion con Stripe (Paso09). El metodo de cobro de los planes **queda pendiente de decidir** (Backlog P3-2).
+
+Motivo:
+
+- El plan es una decision comercial del SADM, no autoservicio.
+- El webhook de Stripe cambiaba el plan (alta/cambio de suscripcion, downgrade a `basic` al cancelar): segunda via de cambio de plan fuera del SADM.
+- Sin metodo de cobro decidido, mantener la integracion era codigo, secretos (`STRIPE_*`) y un endpoint publico sin uso.
+
+Consecuencia:
+
+- Borrados `stripe_billing_service.py`, `/api/webhooks/stripe`, checkout/portal de `/settings/billing` (queda solo lectura: plan y consumo), settings `STRIPE_*` y la dependencia `stripe`.
+- Migracion `p68_drop_stripe_billing_01`: elimina `tenants.stripe_customer_id`, `stripe_subscription_id`, `billing_status` y `plans.stripe_price_id` (vacias en dev al retirarlas). Se conserva `tenant_plan_changes` como historial de asignaciones SADM.
+- Supersede D006 en lo relativo a Stripe (planes y entitlements siguen vigentes). `Paso09_Billing_Stripe.md` queda como historico.
+- Infisical: borrar `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` de todos los entornos.
+- Si se reintroduce un proveedor de pago: nueva decision en este log; el pago nunca asigna plan sin pasar por la regla que se decida.

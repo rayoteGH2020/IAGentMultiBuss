@@ -122,16 +122,17 @@ async () => {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
 
   const component = registry.knowledgeUploadForm();
-  const pending = component.acceptFiles([new File([blob], "apuntes.jpeg", { type: "image/jpeg" })]);
+  const pending = component.placeFiles([new File([blob], "apuntes.jpeg", { type: "image/jpeg" })]);
   const optimizingWhileWorking = component.optimizing;
   await pending;
 
+  const files = component.filledSlots.map((slot) => slot.file);
   return {
     optimizingWhileWorking,
     optimizingAfter: component.optimizing,
-    names: component.files.map((f) => f.name),
-    types: component.files.map((f) => f.type),
-    shrank: component.files.every((f) => f.size < blob.size),
+    names: files.map((f) => f.name),
+    types: files.map((f) => f.type),
+    shrank: files.every((f) => f.size < blob.size),
   };
 }
 """

@@ -136,6 +136,12 @@ async def save_integration(
         webhook_secret_enc = encrypt_token(plain_webhook_secret, enc_key)
 
     integration = await get_integration(db, tenant_id, channel)
+    if integration is None or integration.status != ChannelIntegrationStatus.active.value:
+        # Alta o reconexión: ocupa una plaza del plan. Editar un canal activo no.
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_channel_slot(db, ents, tenant_id)
     if integration is None:
         integration = ChannelIntegration(tenant_id=tenant_id, channel=channel)
         db.add(integration)

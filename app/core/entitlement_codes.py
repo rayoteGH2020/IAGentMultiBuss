@@ -131,6 +131,38 @@ def feature_ui_label(code: str) -> str:
     return FEATURE_UI_LABELS.get(code, code)
 
 
+# Resumen del plan para el cliente (/settings/profile), en este orden.
+# Fuera a propósito: voice_notes_per_hour (no se ofrece, D012) y
+# llm_budget_eur_month (tope interno de coste, no es una prestación).
+LIMIT_UI_LABELS: Final[dict[str, str]] = {
+    LIMIT_DOCUMENTS_PER_DAY: "Documentos procesados al día",
+    LIMIT_DOCUMENT_RETRIES_PER_DAY: "Reintentos de procesado al día",
+    LIMIT_KNOWLEDGE_DOCS_MAX: "Documentos en la base de conocimiento",
+    LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: "Subidas a la base de conocimiento al día",
+    LIMIT_CHAT_MESSAGES_PER_DAY: "Mensajes de chat al día",
+    LIMIT_CHANNEL_EXTERNAL_SLOTS: "Canales de mensajería conectados",
+    LIMIT_CHANNEL_MESSAGES_PER_HOUR: "Mensajes por cliente y hora en canales",
+    LIMIT_MEMBERS_MAX: "Miembros del equipo",
+}
+
+# Única fuente del nombre visible del plan (UI cliente, SADM y seed de `plans.name`).
+PLAN_UI_NAMES: Final[dict[str, str]] = {
+    PLAN_CODE_BASIC: "Básico",
+    PLAN_CODE_ADVANCED: "Avanzado",
+    PLAN_CODE_PREMIUM: "Premium",
+}
+
+
+def plan_ui_name(raw: str | None) -> str:
+    """Nombre visible del plan desde su código (incluye alias legacy: free, medium...).
+
+    Código desconocido → se muestra tal cual (fail-visible, no se inventa nombre).
+    """
+    if raw is None or not raw.strip():
+        return "—"
+    return PLAN_UI_NAMES.get(normalize_plan_code(raw), raw)
+
+
 # Matriz comercial (Planes_Entitlements.md). calendar_* ausente a proposito (D012).
 PLAN_FEATURES: Final[dict[str, frozenset[str]]] = {
     PLAN_CODE_BASIC: _BASE_PRODUCT,
@@ -180,17 +212,17 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
 
 PLAN_META: Final[dict[str, tuple[str, str, int]]] = {
     PLAN_CODE_BASIC: (
-        "Basico",
+        PLAN_UI_NAMES[PLAN_CODE_BASIC],
         "Documentos, chat documental, knowledge/RAG y chat sobre knowledge.",
         10,
     ),
     PLAN_CODE_ADVANCED: (
-        "Avanzado",
-        "Basico + citas internas (BBDD saas) + WhatsApp/Telegram (chat knowledge).",
+        PLAN_UI_NAMES[PLAN_CODE_ADVANCED],
+        "Básico + citas internas (BBDD saas) + WhatsApp/Telegram (chat knowledge).",
         20,
     ),
     PLAN_CODE_PREMIUM: (
-        "Premium",
+        PLAN_UI_NAMES[PLAN_CODE_PREMIUM],
         "Mismas capacidades que Avanzado con limites superiores (duros).",
         30,
     ),

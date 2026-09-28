@@ -20,7 +20,7 @@
           {{ t.name }}
           <span class="block text-[10px] font-normal text-slate-400 font-mono">{{ t.id }}</span>
         </td>
-        <td class="px-4 py-3 text-slate-600 capitalize">{{ t.plan }}</td>
+        <td class="px-4 py-3 text-slate-600">{{ t.plan | plan_label }}</td>
         <td class="px-4 py-3 text-xs text-slate-500">{{ t.created_at | local_datetime }}</td>
         <td class="px-4 py-3 text-right">
           <a href="/sadm/chat-usage/{{ t.id }}"

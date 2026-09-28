@@ -35,6 +35,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | 19 | Verificacion de **seguridad operativa** | VPS + app | Tu | 12 |
 | 20 | **Firma Go/No-Go** y documento de release | `Paso10` | Tu | 13 |
 | 21 | Vigilar logs y coste las primeras 48–72 h | VPS + SADM | Tu | 14 |
+| 22 | Vigilar la **memoria de Redis** y programar alerta al 80 % (`noeviction`: si se llena, fallan cola, webhooks y cuotas) | VPS | Tu | 14.6 |
 
 ---
 
@@ -53,7 +54,7 @@ Alcance del primer go-live:
 | Alcance | Implicacion |
 | --- | --- |
 | **Soft launch / invitados (recomendado)** | Documentos + knowledge + chat. Planes asignados a mano en `/sadm/plans`. Sin Stripe, WhatsApp, Telegram, Google Calendar ni voz. Langfuse aplazable. |
-| Produccion comercial | Todo lo anterior + Stripe operativo (Price IDs, webhook, claves) + canales activos con QA real. |
+| Produccion comercial | Todo lo anterior + metodo de cobro de planes decidido e implementado (D016, pendiente) + canales activos con QA real. |
 
 - [ ] Alcance decidido y anotado aqui: ______________________
 
@@ -320,7 +321,6 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 ### 5.8 Opcionales segun alcance (vacias en soft launch)
 
 - SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS`/`SMTP_SSL`) y `EMAIL_SADM` para avisos de usuarios sin org.
-- Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` (vacio = checkout/portal deshabilitados).
 - WhatsApp: `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`.
 - Google Calendar: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` (redirect URI de prod en Google Cloud).
 - `METRICS_TOKEN` (Caddy bloquea `/metrics` desde Internet igualmente).
@@ -495,7 +495,7 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 
 - [ ] Google OAuth con callback de prod; voz → evento.
 - [ ] WhatsApp / Telegram con firma real y replay = no-op (`Paso01` §4).
-- [ ] Stripe checkout/portal con Price IDs de los tres planes.
+- [ ] Cobro de planes: pendiente de decidir metodo (D016, Backlog P3-2). Stripe retirado; no configurar `STRIPE_*`.
 
 ---
 
@@ -570,6 +570,33 @@ Antes: CI verde, migraciones revisadas a mano, tag. `deploy.sh` siempre hace bac
 - [ ] Revisar mensualmente imagenes base (`python:3.12-slim-bookworm`, `pgvector/pgvector:pg16`, `redis:7-alpine`, `caddy:2.10-alpine`).
 - [ ] Contacto/canal de incidencias definido.
 
+### 14.6 Memoria de Redis llena (riesgo detectado 2026-09-28)
+
+Redis de prod arranca con `--maxmemory 512mb --maxmemory-policy noeviction` (`deploy/docker-compose.prod.yml`). Es a proposito: **no** expulsa claves, porque guarda la cola ARQ, el anti-replay de webhooks y los contadores de cuotas. La contrapartida: si llega a 512 MB, **toda escritura falla** (`OOM command not allowed`) y la app empieza a dar errores:
+
+- no se encolan jobs (documentos y conocimiento se quedan sin procesar);
+- los webhooks (Clerk, WhatsApp, Telegram) fallan al registrar el anti-replay;
+- las cuotas diarias no pueden contar (subidas y chat devuelven error).
+
+Con el trafico previsto es improbable, pero no hay aviso previo: hay que vigilarlo.
+
+- [ ] Comprobar el uso de memoria tras el primer despliegue y en la revision semanal. `used_memory_human` debe quedar muy por debajo de `maxmemory_human`:
+
+```bash
+docker compose -f /opt/iagent/deploy/docker-compose.prod.yml exec redis \
+  redis-cli INFO memory | grep -E 'used_memory_human|maxmemory_human|maxmemory_policy'
+```
+
+- [ ] Programar una alerta por encima del 80 % (cron cada 15 min en la VPS, aviso a `EMAIL_SADM` o al canal de incidencias). Comando base para el script de alerta (imprime el % usado):
+
+```bash
+docker compose -f /opt/iagent/deploy/docker-compose.prod.yml exec -T redis \
+  sh -c 'redis-cli INFO memory | awk -F: "/^used_memory:/{u=\$2} /^maxmemory:/{m=\$2} END{printf \"%d\n\", u*100/m}"'
+```
+
+- [ ] Si se acerca al limite, **antes** de subir `--maxmemory`, ver que ocupa (`redis-cli --bigkeys`, `redis-cli INFO keyspace`): una cola ARQ atascada (worker parado) o claves sin TTL crecen sin fin. Subir `maxmemory` en el compose solo si el crecimiento es trafico real, y comprobar que la VPS tiene RAM libre.
+- [ ] **No** cambiar la politica a `allkeys-lru` (la de dev): expulsaria jobs de la cola y claves anti-replay sin avisar.
+
 ---
 
 ## Aplazado (fuera del soft launch)
@@ -577,7 +604,7 @@ Antes: CI verde, migraciones revisadas a mano, tag. `deploy.sh` siempre hace bac
 | Tema | Que hace falta |
 | --- | --- |
 | Langfuse prod | Instancia self-hosted (web, worker, ClickHouse, Redis, S3) o decision alternativa en `Decision_Log`; claves en Infisical |
-| Stripe | Price IDs de `basic`/`advanced`/`premium` en `plans.stripe_price_id`, webhook `/api/webhooks/stripe`, claves (Paso09) |
+| Cobro de planes | Decidir metodo de cobro (D016, Backlog P3-2). Stripe retirado del codigo; el plan lo asigna el SADM en `/sadm/plans` |
 | WhatsApp / Telegram | Credenciales, webhook a URL prod, QA real + replay |
 | Google Calendar / voz | OAuth client de prod con redirect URI; no se publicita (D012) |
 | CSP estricta | Migrar a `@alpinejs/csp` y quitar `unsafe-inline`/`unsafe-eval` (Paso01 §6) |

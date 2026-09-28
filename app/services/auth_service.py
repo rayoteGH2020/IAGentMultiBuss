@@ -1,15 +1,20 @@
 from typing import Any
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.db import set_tenant_context
 from app.core.errors import AuthError
+from app.core.permissions import ORG_ADMIN_ROLE, ORG_CO_ADMIN_ROLE
 from app.core.security import fetch_clerk_org, fetch_clerk_user
 from app.models import Membership, Tenant, User
 
-_VALID_ORG_ROLES = frozenset({"admin", "member", "viewer"})
+log = structlog.get_logger(__name__)
+
+_VALID_ORG_ROLES = frozenset({ORG_ADMIN_ROLE, ORG_CO_ADMIN_ROLE, "member", "viewer"})
 
 
 async def get_user_by_id(db: AsyncSession, user_id: UUID) -> User:
@@ -84,6 +89,45 @@ async def resolve_tenant(db: AsyncSession, clerk_org_id: str) -> Tenant:
     return tenant
 
 
+async def _enforce_single_admin(
+    db: AsyncSession,
+    tenant_id: UUID,
+    user_id: UUID,
+    role: str,
+) -> str:
+    """Un solo admin (dueño) por tenant: un segundo admin de Clerk queda como co_admin.
+
+    Degradar es fail-safe (mínimo privilegio) y se corrige solo: cuando el SADM
+    quita el rol admin al dueño anterior, el siguiente JWT del nuevo lo sincroniza.
+    La org SADM queda exenta: sus admins son los superadmins de plataforma.
+    """
+    if role != ORG_ADMIN_ROLE:
+        return role
+    tenant = await db.get(Tenant, tenant_id)
+    admin_org = get_settings().admin_clerk_org_id.strip()
+    if tenant is not None and admin_org and tenant.clerk_org_id == admin_org:
+        return role
+    other_admin = await db.scalar(
+        select(Membership.id)
+        .where(
+            Membership.tenant_id == tenant_id,
+            Membership.user_id != user_id,
+            Membership.role == ORG_ADMIN_ROLE,
+            Membership.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    if other_admin is None:
+        return role
+    log.error(
+        "membership.duplicate_admin_downgraded",
+        tenant_id=str(tenant_id),
+        user_id=str(user_id),
+        hint="Ya hay un admin activo; asigna org:co_admin en Clerk o retira el admin anterior.",
+    )
+    return ORG_CO_ADMIN_ROLE
+
+
 async def ensure_membership(
     db: AsyncSession,
     user_id: UUID,
@@ -100,7 +144,7 @@ async def ensure_membership(
       no reactiva ni cambia el rol. Solo ``allow_reactivation=True``
       (eventos firmados created/updated) puede reactivar.
     """
-    normalized_role = normalize_org_role(role)
+    normalized_role = await _enforce_single_admin(db, tenant_id, user_id, normalize_org_role(role))
     result = await db.execute(
         select(Membership).where(
             Membership.user_id == user_id,
@@ -112,6 +156,9 @@ async def ensure_membership(
         if membership.is_active or allow_reactivation:
             membership.role = normalized_role
         if allow_reactivation:
+            if not membership.is_active:
+                # Vuelve tras una baja: la solicitud anterior ya no aplica.
+                membership.clear_removal_request()
             membership.is_active = True
         await db.flush()
         return membership
@@ -127,8 +174,14 @@ async def sync_clerk_membership(
     clerk_user_id: str,
     clerk_org_id: str,
     role: str,
+    *,
+    allow_reactivation: bool = True,
 ) -> Membership:
-    """Sincroniza y reactiva una membresía desde un evento firmado de Clerk."""
+    """Sincroniza una membresía desde un evento firmado de Clerk.
+
+    ``allow_reactivation`` debe ser True solo para ``organizationMembership.created``
+    (alta real en Clerk); en ``updated`` una membership inactiva sigue inactiva.
+    """
     user = await resolve_user(db, clerk_user_id)
     tenant = await resolve_tenant(db, clerk_org_id)
     await set_tenant_context(db, str(tenant.id))
@@ -137,7 +190,7 @@ async def sync_clerk_membership(
         user.id,
         tenant.id,
         role=role,
-        allow_reactivation=True,
+        allow_reactivation=allow_reactivation,
     )
 
 

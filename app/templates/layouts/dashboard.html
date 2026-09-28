@@ -41,4 +41,10 @@
     </main>
   </div>
 </div>
+{# Fuera de #app-frame: hx-boost no lo re-ejecuta al navegar. Renueva el JWT
+   de Clerk antes de cada petición HTMX (ver static/js/clerk-session.js). #}
+{% if clerk_js_script_url %}
+  {% include "components/clerk_browser_script.html" %}
+  <script src="{{ static_asset('/static/js/clerk-session.js') }}" defer></script>
+{% endif %}
 {% endblock %}

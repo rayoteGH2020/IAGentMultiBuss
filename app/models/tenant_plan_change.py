@@ -1,4 +1,4 @@
-"""Historial de cambios de plan por tenant (SADM y Stripe)."""
+"""Historial de cambios de plan por tenant (asignados por el SADM)."""
 
 from __future__ import annotations
 

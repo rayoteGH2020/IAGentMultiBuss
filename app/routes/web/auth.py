@@ -1,12 +1,11 @@
-from urllib.parse import urlparse
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.core.clerk_frontend import clerk_browser_script_url
+from app.core.clerk_frontend import clerk_browser_context
 from app.core.errors import AppError, AuthError, ForbiddenError, RateLimitError
+from app.core.safe_redirect import safe_internal_path
 from app.core.session_cookies import clear_clerk_session_cookie
 from app.core.templating import render
 from app.deps import CurrentUser, RedisDep, get_db_no_tenant
@@ -34,20 +33,8 @@ def _notify_error_message(exc: AppError) -> str:
     return "No se pudo enviar el aviso. Inténtalo de nuevo."
 
 
-def _extract_host(jwks_url: str) -> str:
-    return urlparse(jwks_url).netloc
-
-
 def _clerk_page_ctx(settings: Settings) -> dict[str, str]:
-    frontend_host = _extract_host(settings.clerk_jwks_url)
-    return {
-        "clerk_pub_key": settings.clerk_publishable_key,
-        "clerk_frontend_host": frontend_host,
-        "clerk_js_script_url": clerk_browser_script_url(
-            frontend_host,
-            settings.clerk_js_version,
-        ),
-    }
+    return clerk_browser_context(settings)
 
 
 def _cache_control_no_store(resp: Response) -> Response:
@@ -59,10 +46,13 @@ def _cache_control_no_store(resp: Response) -> Response:
 @router.get("/login")
 async def login_page(request: Request) -> Response:
     settings = get_settings()
+    # Tras sesión caducada el middleware pasa la página de origen: volver a ella
+    # en vez de a inicio. Solo rutas internas validadas (sin open redirect).
+    after_login_url = safe_internal_path(request.query_params.get("redirect_url")) or "/"
     resp = render(
         request,
         full="pages/auth/login.html",
-        ctx=_clerk_page_ctx(settings),
+        ctx={**_clerk_page_ctx(settings), "after_login_url": after_login_url},
     )
     return _cache_control_no_store(resp)
 

@@ -1,24 +1,41 @@
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from markupsafe import escape
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ValidationError
+from app.core.email import EmailAttachment
+from app.core.errors import AppError, ExternalServiceError, RateLimitError, ValidationError
+from app.core.support_uploads import (
+    ERR_CONTENT,
+    ERR_EMPTY,
+    ERR_EXTENSION,
+    ERR_TOO_LARGE,
+    SUPPORT_ATTACHMENT_ACCEPT,
+    SUPPORT_ATTACHMENT_MAX_BYTES,
+    SupportAttachmentError,
+    validate_support_attachment,
+)
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db
-from app.services import entitlement_service, plan_quota_service, stripe_billing_service
-
-
-def _billing_error_fragment(message: str) -> HTMLResponse:
-    safe = escape(message)
-    return HTMLResponse(
-        content=(
-            '<p class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 '
-            f'text-sm text-red-800">{safe}</p>'
-        ),
-        status_code=400,
-    )
-
+from app.core.uploads import UploadValidationError, read_upload_limited
+from app.deps import (
+    CurrentTenant,
+    CurrentUser,
+    EntitlementsDep,
+    RedisDep,
+    RequireOrgAdmin,
+    get_db,
+)
+from app.schemas.support import (
+    SUPPORT_KIND_LABELS,
+    SUPPORT_MESSAGE_MAX_LENGTH,
+    SUPPORT_SEVERITY_LABELS,
+    SUPPORT_TITLE_MAX_LENGTH,
+    SupportRequestCreate,
+)
+from app.services import entitlement_service, plan_quota_service, support_service
+from app.services.audit_service import AuditRequestContext
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -33,11 +50,21 @@ async def settings_profile(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
+    ents: EntitlementsDep,
+    redis: RedisDep,
+    db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
+    """Mi cuenta: datos personales + organización (plan, límites y consumo del mes)."""
+    usage = await plan_quota_service.get_limit_usage(db, redis, ents, tenant.id)
     return render(
         request,
         full="pages/settings/profile.html",
-        ctx={"user": user, "tenant": tenant},
+        ctx={
+            "user": user,
+            "tenant": tenant,
+            "plan": entitlement_service.build_plan_summary(ents, usage),
+            "usage": await plan_quota_service.get_usage_snapshot(db, ents, tenant.id),
+        },
     )
 
 
@@ -48,111 +75,128 @@ async def settings_organization() -> RedirectResponse:
 
 
 @router.get("/billing")
-async def settings_billing(
+async def settings_billing() -> RedirectResponse:
+    # Plan y consumo unificados en «Mi cuenta» (enlaces antiguos siguen funcionando).
+    return RedirectResponse(url="/settings/profile", status_code=302)
+
+
+_SUPPORT_PAGE = "pages/settings/support.html"
+_SUPPORT_FORM = "components/support/support_form.html"
+
+_SUPPORT_FIELD_LABELS: dict[str, str] = {
+    "title": "Título",
+    "message": "Mensaje",
+    "kind": "Tipo",
+    "severity": "Gravedad",
+}
+
+_SUPPORT_ERRORS: dict[str, str] = {
+    ERR_EMPTY: "El adjunto está vacío.",
+    ERR_TOO_LARGE: "El adjunto supera el máximo de 2 MB.",
+    ERR_EXTENSION: "Formato de adjunto no admitido. Usa Word (.docx), texto (.txt) o JPG.",
+    ERR_CONTENT: "El contenido del adjunto no corresponde a su formato.",
+    "email_sadm_missing": "Falta configurar EMAIL_SADM. Avisa al superadmin por otro canal.",
+    "smtp_not_configured": "Falta configurar SMTP. Avisa al superadmin por otro canal.",
+}
+_SUPPORT_RATE_LIMITED = "Has alcanzado el máximo de mensajes de soporte por hoy."
+_SUPPORT_SEND_FAILED = "No se pudo enviar el mensaje. Inténtalo de nuevo en unos minutos."
+
+
+def _render_support(
     request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    db: AsyncSession = Depends(get_db),
+    *,
+    values: dict[str, str] | None = None,
+    error: str | None = None,
+    sent: bool = False,
 ) -> HTMLResponse:
-    ents = await entitlement_service.resolve_entitlements(db, tenant)
-    usage = await plan_quota_service.get_usage_snapshot(db, ents, tenant.id)
-    purchasable = await stripe_billing_service.list_purchasable_plans(db)
-    return render(
-        request,
-        full="pages/settings/billing.html",
-        ctx={
-            "user": user,
-            "tenant": tenant,
-            "usage": usage,
-            "ents": ents,
-            "stripe_configured": stripe_billing_service.is_stripe_configured(),
-            "purchasable_plans": purchasable,
-            "checkout": request.query_params.get("checkout"),
-        },
+    ctx: dict[str, Any] = {
+        "kinds": SUPPORT_KIND_LABELS,
+        "severities": SUPPORT_SEVERITY_LABELS,
+        "title_max": SUPPORT_TITLE_MAX_LENGTH,
+        "message_max": SUPPORT_MESSAGE_MAX_LENGTH,
+        "attachment_accept": SUPPORT_ATTACHMENT_ACCEPT,
+        "values": values or {},
+        "error": error,
+        "sent": sent,
+    }
+    return render(request, full=_SUPPORT_PAGE, partial=_SUPPORT_FORM, ctx=ctx)
+
+
+def _support_error(exc: AppError) -> str:
+    if isinstance(exc, RateLimitError):
+        return _SUPPORT_RATE_LIMITED
+    code = exc.details.get("code") if isinstance(exc.details, dict) else None
+    return _SUPPORT_ERRORS.get(str(code), _SUPPORT_SEND_FAILED)
+
+
+def _support_validation_error(exc: PydanticValidationError) -> str:
+    fields = sorted(
+        {_SUPPORT_FIELD_LABELS.get(str(err["loc"][0]), str(err["loc"][0])) for err in exc.errors()}
+    )
+    return f"Revisa estos campos: {', '.join(fields)}."
+
+
+def _audit_ctx(request: Request) -> AuditRequestContext:
+    client = request.client
+    return AuditRequestContext(
+        ip=client.host if client else None, user_agent=request.headers.get("user-agent")
     )
 
 
-def _hx_redirect(url: str) -> Response:
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": url},
-        media_type="text/plain",
-        content=b"",
-    )
+async def _read_attachment(upload: UploadFile | None) -> EmailAttachment | None:
+    """None si no se adjuntó nada (el input vacío llega con filename vacío)."""
+    if upload is None or not upload.filename:
+        return None
+    try:
+        data = await read_upload_limited(upload, max_bytes=SUPPORT_ATTACHMENT_MAX_BYTES)
+    except UploadValidationError as exc:
+        raise SupportAttachmentError(ERR_TOO_LARGE) from exc
+    return validate_support_attachment(upload.filename, data)
 
 
-@router.post("/billing/checkout")
-async def settings_billing_checkout(
+@router.get("/support")
+async def settings_support(request: Request, _: RequireOrgAdmin) -> HTMLResponse:
+    """Soporte técnico: formulario del admin del negocio para escribir al SADM."""
+    return _render_support(request)
+
+
+@router.post("/support")
+async def settings_support_send(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _admin: RequireAdmin,
-    plan_code: str = Form(...),
+    membership: RequireOrgAdmin,
+    redis: RedisDep,
     db: AsyncSession = Depends(get_db),
-) -> Response:
+    title: str = Form(""),
+    message: str = Form(""),
+    kind: str = Form(""),
+    severity: str = Form(""),
+    attachment: UploadFile | None = File(None),
+) -> HTMLResponse:
+    """Envía la incidencia por email al SADM. Errores: 200 con el formulario y el mensaje."""
+    values = {"title": title, "message": message, "kind": kind, "severity": severity}
     try:
-        url = await stripe_billing_service.create_checkout_session(
+        payload = SupportRequestCreate.model_validate(
+            {"title": title, "message": message, "kind": kind, "severity": severity}
+        )
+    except PydanticValidationError as exc:
+        return _render_support(request, values=values, error=_support_validation_error(exc))
+    try:
+        email_attachment = await _read_attachment(attachment)
+    except SupportAttachmentError as exc:
+        return _render_support(request, values=values, error=_SUPPORT_ERRORS[exc.code])
+    try:
+        await support_service.send_support_request(
             db,
             tenant=tenant,
-            plan_code=plan_code,
-            actor_user_id=user.id,
-            actor_email=user.email,
+            user=user,
+            actor_role=membership.role,
+            payload=payload,
+            attachment=email_attachment,
+            redis=redis,
+            request_ctx=_audit_ctx(request),
         )
-    except ValidationError as exc:
-        if request.headers.get("HX-Request") == "true":
-            return _billing_error_fragment(exc.message)
-        ents = await entitlement_service.resolve_entitlements(db, tenant)
-        usage = await plan_quota_service.get_usage_snapshot(db, ents, tenant.id)
-        purchasable = await stripe_billing_service.list_purchasable_plans(db)
-        return render(
-            request,
-            full="pages/settings/billing.html",
-            ctx={
-                "user": user,
-                "tenant": tenant,
-                "usage": usage,
-                "ents": ents,
-                "stripe_configured": stripe_billing_service.is_stripe_configured(),
-                "purchasable_plans": purchasable,
-                "billing_error": exc.message,
-            },
-            status_code=400,
-        )
-    if request.headers.get("HX-Request") == "true":
-        return _hx_redirect(url)
-    return RedirectResponse(url=url, status_code=303)
-
-
-@router.post("/billing/portal")
-async def settings_billing_portal(
-    request: Request,
-    user: CurrentUser,
-    tenant: CurrentTenant,
-    _admin: RequireAdmin,
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    try:
-        url = await stripe_billing_service.create_billing_portal_session(db, tenant=tenant)
-    except ValidationError as exc:
-        if request.headers.get("HX-Request") == "true":
-            return _billing_error_fragment(exc.message)
-        ents = await entitlement_service.resolve_entitlements(db, tenant)
-        usage = await plan_quota_service.get_usage_snapshot(db, ents, tenant.id)
-        purchasable = await stripe_billing_service.list_purchasable_plans(db)
-        return render(
-            request,
-            full="pages/settings/billing.html",
-            ctx={
-                "user": user,
-                "tenant": tenant,
-                "usage": usage,
-                "ents": ents,
-                "stripe_configured": stripe_billing_service.is_stripe_configured(),
-                "purchasable_plans": purchasable,
-                "billing_error": exc.message,
-            },
-            status_code=400,
-        )
-    if request.headers.get("HX-Request") == "true":
-        return _hx_redirect(url)
-    return RedirectResponse(url=url, status_code=303)
+    except (ValidationError, ExternalServiceError, RateLimitError) as exc:
+        return _render_support(request, values=values, error=_support_error(exc))
+    return _render_support(request, sent=True)

@@ -11,7 +11,15 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, NotFoundError, ValidationError, public_error_message
+from app.core.errors import (
+    AppError,
+    ExternalServiceError,
+    ForbiddenError,
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+    public_error_message,
+)
 from app.core.professional_hours_grid import (
     allowed_center_slot_keys,
     build_center_period_slot_grids,
@@ -22,8 +30,20 @@ from app.core.scheduling_form_parsers import parse_business_hours_form
 from app.core.scheduling_granularity import DEFAULT_SLOT_GRANULARITY_MINUTES
 from app.core.scheduling_ui import WEEKDAY_LABELS
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RequireAdmin, get_db, require_feature
-from app.schemas.membership import TenantMemberUpdate
+from app.deps import (
+    CurrentTenant,
+    CurrentUser,
+    RedisDep,
+    RequireManager,
+    get_db,
+    require_feature,
+)
+from app.schemas.membership import (
+    MemberCreationForm,
+    MemberCreationRequest,
+    TenantMemberRead,
+    TenantMemberUpdate,
+)
 from app.schemas.scheduling import (
     PROFESSIONAL_COLOR_PALETTE,
     ProfessionalCreate,
@@ -134,7 +154,7 @@ async def business_hours_page(
     request: Request,
     _user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     ctx = await _scheduling_settings_ctx(db, tenant.id)
@@ -146,7 +166,7 @@ async def business_hours_save(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
     timezone: str = Form("Europe/Madrid"),
     search_horizon_days: int = Form(14),
@@ -229,7 +249,7 @@ async def schedule_exception_create(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
     exception_date: date = Form(...),
     label: str | None = Form(None),
@@ -255,7 +275,7 @@ async def schedule_exception_delete(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     exception_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -273,7 +293,7 @@ async def professionals_page(
     request: Request,
     _user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     professionals = await professional_service.list_professionals(db, tenant.id)
@@ -288,7 +308,7 @@ async def professionals_page(
 async def professional_new_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     return render(
@@ -303,7 +323,7 @@ async def professional_new_form(
 async def professional_edit_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     professional_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -320,7 +340,7 @@ async def professional_create(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
     display_name: str = Form(...),
     color: str = Form("#6366f1"),
@@ -372,7 +392,7 @@ async def professional_update(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     professional_id: UUID,
     db: AsyncSession = Depends(get_db),
     display_name: str = Form(...),
@@ -456,7 +476,7 @@ async def professional_update(
 async def professional_reassign_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     professional_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -480,7 +500,7 @@ async def professional_reassign_submit(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     professional_id: UUID,
     db: AsyncSession = Depends(get_db),
     target_professional_id: UUID = Form(...),
@@ -518,7 +538,7 @@ async def services_page(
     request: Request,
     _user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     services = await service_catalog_service.list_services(db, tenant.id)
@@ -530,7 +550,7 @@ async def service_create(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     db: AsyncSession = Depends(get_db),
     name: str = Form(...),
     duration_minutes: int = Form(...),
@@ -558,7 +578,7 @@ async def service_create(
 async def service_edit_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     service_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -576,7 +596,7 @@ async def service_update(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     service_id: UUID,
     db: AsyncSession = Depends(get_db),
     name: str = Form(...),
@@ -609,7 +629,7 @@ async def service_update(
 async def service_delete(
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     service_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -622,30 +642,37 @@ async def service_delete(
     return HTMLResponse(content="", status_code=200)
 
 
+def _removable_ids(members: list[TenantMemberRead], manager: RequireManager) -> set[UUID]:
+    return membership_service.removable_membership_ids(
+        members, actor_membership_id=manager.id, actor_role=manager.role
+    )
+
+
 @router.get("/members")
 async def members_page(
     request: Request,
     _user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    manager: RequireManager,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     members = await membership_service.list_tenant_members(db, tenant.id)
-    return render(request, full="pages/settings/members.html", ctx={"members": members})
+    return render(
+        request,
+        full="pages/settings/members.html",
+        ctx={"members": members, "removable_ids": _removable_ids(members, manager)},
+    )
 
 
 @router.get("/members/{membership_id}/edit")
 async def member_edit_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    members = await membership_service.list_tenant_members(db, tenant.id)
-    member = next((m for m in members if m.membership_id == membership_id), None)
-    if member is None:
-        raise NotFoundError("Membership not found")
+    member = await membership_service.get_editable_member(db, tenant.id, membership_id)
     return render(
         request,
         full="components/scheduling/member_form.html",
@@ -659,7 +686,7 @@ async def member_update(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    manager: RequireManager,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
     perm_view: bool = Form(False),
@@ -689,22 +716,186 @@ async def member_update(
         request,
         full="components/scheduling/member_row.html",
         partial="components/scheduling/member_row.html",
-        ctx={"member": row},
+        ctx={"member": row, "removable_ids": _removable_ids([row], manager)},
     )
 
 
-@router.delete("/members/{membership_id}")
-async def member_delete(
+_SADM_REQUEST_ERRORS: dict[str, str] = {
+    "email_sadm_missing": "Falta configurar EMAIL_SADM. Avisa al superadmin por otro canal.",
+    "smtp_not_configured": "Falta configurar SMTP. Avisa al superadmin por otro canal.",
+    "removal_request_rate_limited": "La baja ya se solicitó en las últimas 24 h.",
+    "removal_date_invalid": "La fecha de baja efectiva debe ser hoy o posterior (máx. 1 año).",
+    "removal_not_allowed": "No puedes solicitar la baja de este usuario.",
+    "removal_already_requested": "La baja de este usuario ya está solicitada y pendiente.",
+    "creation_request_rate_limited": "El alta de este email ya se solicitó en las últimas 24 h.",
+    "creation_date_invalid": "La fecha de alta debe ser hoy o posterior (máx. 1 año).",
+    "creation_not_allowed": "No puedes solicitar altas de miembros.",
+    "member_already_exists": "Ese email ya es miembro de la organización.",
+    "members_max_reached": (
+        "Tu plan no admite más miembros. Pide al superadmin un cambio de plan o da de baja a otro."
+    ),
+}
+
+_CREATION_FIELD_LABELS: dict[str, str] = {
+    "first_name": "nombre",
+    "last_name": "apellidos",
+    "alias": "alias",
+    "email": "email",
+    "role": "rol",
+    "start_date": "fecha de alta",
+}
+
+
+def _removal_request_error(exc: AppError) -> str:
+    code = exc.details.get("code") if isinstance(exc.details, dict) else None
+    if isinstance(code, str) and code in _SADM_REQUEST_ERRORS:
+        return _SADM_REQUEST_ERRORS[code]
+    return "No se pudo enviar la solicitud. Inténtalo de nuevo en unos minutos."
+
+
+def _creation_validation_error(exc: PydanticValidationError) -> str:
+    fields = sorted(
+        {_CREATION_FIELD_LABELS.get(str(err["loc"][0]), str(err["loc"][0])) for err in exc.errors()}
+    )
+    return f"Revisa estos campos: {', '.join(fields)}."
+
+
+def _render_creation_form(
+    request: Request,
+    form: MemberCreationForm,
+    *,
+    values: dict[str, str] | None = None,
+    error: str | None = None,
+) -> HTMLResponse:
+    return render(
+        request,
+        full="components/scheduling/member_creation_form.html",
+        partial="components/scheduling/member_creation_form.html",
+        ctx={"form": form, "values": values or {}, "error": error},
+    )
+
+
+# Tres segmentos a propósito: "/members/<algo>" chocaría con POST /members/{membership_id}.
+@router.get("/members/requests/new")
+async def member_creation_form(
+    request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
-    _: RequireAdmin,
+    _: RequireManager,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Modal de solicitud de alta de un nuevo miembro al SADM."""
+    form = await membership_service.get_creation_form(db, tenant.id, actor_user_id=user.id)
+    return _render_creation_form(request, form)
+
+
+@router.post("/members/requests/new")
+async def member_creation_request(
+    request: Request,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    _: RequireManager,
+    redis: RedisDep,
+    db: AsyncSession = Depends(get_db),
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+    alias: str = Form(""),
+    email: str = Form(""),
+    role: str = Form(""),
+    start_date: str = Form(""),
+) -> HTMLResponse:
+    """Envía al SADM el alta solicitada. Errores: 200 con el modal y el mensaje."""
+    values = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "alias": alias,
+        "email": email,
+        "role": role,
+        "start_date": start_date,
+    }
+    form = await membership_service.get_creation_form(db, tenant.id, actor_user_id=user.id)
+    try:
+        payload = MemberCreationRequest.model_validate(values)
+    except PydanticValidationError as exc:
+        return _render_creation_form(
+            request, form, values=values, error=_creation_validation_error(exc)
+        )
+    try:
+        await membership_service.request_member_creation(
+            db, tenant.id, payload, actor_user_id=user.id, redis=redis
+        )
+    except (ValidationError, ExternalServiceError, RateLimitError, ForbiddenError) as exc:
+        return _render_creation_form(
+            request, form, values=values, error=_removal_request_error(exc)
+        )
+    return render(
+        request,
+        full="components/scheduling/member_creation_done.html",
+        partial="components/scheduling/member_creation_done.html",
+        ctx={"payload": payload},
+    )
+
+
+@router.get("/members/{membership_id}/removal-request")
+async def member_removal_form(
+    request: Request,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    _: RequireManager,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    await membership_service.remove_tenant_member(
-        db,
-        tenant.id,
-        membership_id,
-        actor_user_id=user.id,
+    """Modal de confirmación con solicitante y fecha de baja efectiva."""
+    form = await membership_service.get_removal_form(
+        db, tenant.id, membership_id, actor_user_id=user.id
     )
-    return HTMLResponse(content="", status_code=200)
+    return render(
+        request,
+        full="components/scheduling/member_removal_form.html",
+        partial="components/scheduling/member_removal_form.html",
+        ctx={"form": form},
+    )
+
+
+@router.post("/members/{membership_id}/removal-request")
+async def member_removal_request(
+    request: Request,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    manager: RequireManager,
+    membership_id: UUID,
+    redis: RedisDep,
+    effective_date: date = Form(...),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Notifica al SADM la baja del miembro; la membership sigue activa hasta Clerk."""
+    try:
+        await membership_service.request_member_removal(
+            db,
+            tenant.id,
+            membership_id,
+            actor_user_id=user.id,
+            effective_date=effective_date,
+            redis=redis,
+        )
+        notice = f"Baja solicitada al superadmin (efectiva {effective_date:%d/%m/%Y})."
+        notice_ok = True
+    except (ValidationError, ExternalServiceError, RateLimitError, ForbiddenError) as exc:
+        notice, notice_ok = _removal_request_error(exc), False
+
+    members = await membership_service.list_tenant_members(db, tenant.id)
+    member = next((m for m in members if m.membership_id == membership_id), None)
+    if member is None:
+        raise NotFoundError("Membership not found")
+    # 200 también en error: HTMX no hace swap en 4xx y el aviso no se vería.
+    return render(
+        request,
+        full="components/scheduling/member_row.html",
+        partial="components/scheduling/member_row.html",
+        ctx={
+            "member": member,
+            "removable_ids": _removable_ids([member], manager),
+            "removal_notice": notice,
+            "removal_notice_ok": notice_ok,
+        },
+    )

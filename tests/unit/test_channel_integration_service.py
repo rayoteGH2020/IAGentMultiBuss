@@ -87,6 +87,9 @@ async def test_save_whatsapp_rejects_phone_number_id_in_use(
             "app.services.channel_integration_service.get_integration",
             AsyncMock(return_value=None),
         ),
+        # Canal nuevo: pasa el control de plazas del plan antes de validar el PNID.
+        patch("app.services.entitlement_service.resolve_tenant", AsyncMock()),
+        patch("app.services.plan_quota_service.ensure_channel_slot", AsyncMock()),
         patch(
             "app.services.channel_integration_service._assert_whatsapp_phone_number_id_available",
             AsyncMock(

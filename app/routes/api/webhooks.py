@@ -93,7 +93,15 @@ async def clerk_webhook(
             role = raw_role if isinstance(raw_role, str) else "org:member"
             if membership_ids is not None:
                 clerk_org_id, clerk_user_id = membership_ids
-                await sync_clerk_membership(db, clerk_user_id, clerk_org_id, role)
+                # Solo "created" reactiva: un "updated" (p. ej. cambio de rol) sobre
+                # una membership cortada por baja vencida no debe devolver el acceso.
+                await sync_clerk_membership(
+                    db,
+                    clerk_user_id,
+                    clerk_org_id,
+                    role,
+                    allow_reactivation=event_type == "organizationMembership.created",
+                )
 
         elif event_type == "organizationMembership.deleted":
             membership_ids = _membership_event_ids(data)

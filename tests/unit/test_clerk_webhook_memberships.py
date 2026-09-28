@@ -75,15 +75,17 @@ async def test_membership_created_synchronizes_role(monkeypatch: pytest.MonkeyPa
         "type": "organizationMembership.created",
         "data": _membership_data("org:member"),
     }
-    calls: list[tuple[str, str, str]] = []
+    calls: list[tuple[str, str, str, bool]] = []
 
     async def sync(
         _db: object,
         clerk_user_id: str,
         clerk_org_id: str,
         role: str,
+        *,
+        allow_reactivation: bool,
     ) -> None:
-        calls.append((clerk_user_id, clerk_org_id, role))
+        calls.append((clerk_user_id, clerk_org_id, role, allow_reactivation))
 
     _patch_clerk_common(monkeypatch)
     monkeypatch.setattr(webhooks, "sync_clerk_membership", sync)
@@ -91,7 +93,8 @@ async def test_membership_created_synchronizes_role(monkeypatch: pytest.MonkeyPa
     result = await webhooks.clerk_webhook(_request(), "id", "timestamp", "signature")
 
     assert result == {"received": True}
-    assert calls == [("user_test", "org_test", "org:member")]
+    # Alta real en Clerk: puede reactivar una membership dada de baja.
+    assert calls == [("user_test", "org_test", "org:member", True)]
 
 
 @pytest.mark.asyncio
@@ -100,15 +103,17 @@ async def test_membership_updated_synchronizes_role(monkeypatch: pytest.MonkeyPa
         "type": "organizationMembership.updated",
         "data": _membership_data("org:admin"),
     }
-    calls: list[tuple[str, str, str]] = []
+    calls: list[tuple[str, str, str, bool]] = []
 
     async def sync(
         _db: object,
         clerk_user_id: str,
         clerk_org_id: str,
         role: str,
+        *,
+        allow_reactivation: bool,
     ) -> None:
-        calls.append((clerk_user_id, clerk_org_id, role))
+        calls.append((clerk_user_id, clerk_org_id, role, allow_reactivation))
 
     _patch_clerk_common(monkeypatch)
     monkeypatch.setattr(webhooks, "sync_clerk_membership", sync)
@@ -116,7 +121,8 @@ async def test_membership_updated_synchronizes_role(monkeypatch: pytest.MonkeyPa
     result = await webhooks.clerk_webhook(_request(), "id", "timestamp", "signature")
 
     assert result == {"received": True}
-    assert calls == [("user_test", "org_test", "org:admin")]
+    # Un cambio de rol nunca devuelve el acceso a una membership cortada por baja.
+    assert calls == [("user_test", "org_test", "org:admin", False)]
 
 
 @pytest.mark.asyncio

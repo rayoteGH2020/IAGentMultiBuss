@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from sqlalchemy import func, select
 
 from app.config import Settings, get_settings
 from app.core.entitlement_codes import (
+    LIMIT_CHANNEL_EXTERNAL_SLOTS,
     LIMIT_CHANNEL_MESSAGES_PER_HOUR,
     LIMIT_CHAT_MESSAGES_PER_DAY,
     LIMIT_DOCUMENT_RETRIES_PER_DAY,
@@ -22,6 +23,7 @@ from app.core.entitlement_codes import (
 )
 from app.core.errors import RateLimitError, ValidationError
 from app.core.plan_limits import (
+    MSG_CHANNEL_SLOTS,
     MSG_KNOWLEDGE_DOCS_MAX,
     MSG_LLM_BUDGET_MONTH,
     MSG_MEMBERS_MAX,
@@ -29,16 +31,25 @@ from app.core.plan_limits import (
     resolve_quota_cap,
 )
 from app.core.rate_limiter import (
+    chat_messages_tenant_key,
     check_channel_messages_rate,
     check_chat_messages_rate,
     check_documents_upload_rate,
     check_knowledge_upload_rate,
     check_voice_notes_rate,
+    document_retries_key,
+    documents_upload_key,
+    knowledge_upload_key,
 )
+from app.models.channel_integration import ChannelIntegration
 from app.models.knowledge import KnowledgeDocument
 from app.models.membership import Membership
+from app.schemas.channel import ChannelIntegrationStatus
+from app.schemas.entitlements import QuotaUsage
 from app.schemas.knowledge import KnowledgeDocumentStatus
 from app.services import usage_meter_service
+
+logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -50,6 +61,25 @@ if TYPE_CHECKING:
 
 def _settings() -> Settings:
     return get_settings()
+
+
+def _platform_cap(code: str, settings: Settings) -> int | None:
+    """Tope global de plataforma (kill-switch) que puede rebajar el del plan."""
+    caps: dict[str, int | None] = {
+        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: settings.knowledge_max_uploads_per_day,
+        LIMIT_CHAT_MESSAGES_PER_DAY: settings.chat_daily_message_limit,
+        LIMIT_CHANNEL_MESSAGES_PER_HOUR: settings.channel_rate_limit_msg_per_hour,
+        LIMIT_VOICE_NOTES_PER_HOUR: settings.voice_rate_limit_per_hour,
+    }
+    return caps.get(code)
+
+
+def effective_quota_cap(ents: Entitlements, code: str) -> int | None:
+    """Tope que realmente se aplica (plan + override + tope de plataforma).
+
+    Única fuente para el enforcement y para lo que ve el cliente en Mi cuenta.
+    """
+    return resolve_quota_cap(ents, code, platform_cap=_platform_cap(code, _settings()))
 
 
 async def ensure_documents_upload(
@@ -83,9 +113,10 @@ async def ensure_document_retry(
         LIMIT_DOCUMENT_RETRIES_PER_DAY,
         platform_cap=None,
     )
-    key = f"rate:document_retries:{tenant_id}:{datetime.now(UTC).strftime('%Y-%m-%d')}"
     from app.core.plan_limits import MSG_DOCUMENT_RETRIES_DAILY
-    from app.core.rate_limiter import assert_quota_headroom
+    from app.core.rate_limiter import assert_quota_headroom, document_retries_key
+
+    key = document_retries_key(tenant_id)
 
     await assert_quota_headroom(
         redis,
@@ -103,10 +134,11 @@ async def record_document_retry(
     tenant_id: UUID,
 ) -> None:
     """Registra un reintento consumido tras encolar con exito."""
-    from app.core.rate_limiter import record_quota_usage
+    from app.core.rate_limiter import daily_ttl_seconds, document_retries_key, record_quota_usage
 
-    key = f"rate:document_retries:{tenant_id}:{datetime.now(UTC).strftime('%Y-%m-%d')}"
-    await record_quota_usage(redis, key=key, delta=1, ttl_seconds=86400)
+    await record_quota_usage(
+        redis, key=document_retries_key(tenant_id), delta=1, ttl_seconds=daily_ttl_seconds()
+    )
 
 
 async def ensure_knowledge_upload(
@@ -116,11 +148,7 @@ async def ensure_knowledge_upload(
     *,
     n_files: int = 1,
 ) -> None:
-    cap = resolve_quota_cap(
-        ents,
-        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY,
-        platform_cap=_settings().knowledge_max_uploads_per_day,
-    )
+    cap = effective_quota_cap(ents, LIMIT_KNOWLEDGE_UPLOADS_PER_DAY)
     await check_knowledge_upload_rate(
         redis,
         tenant_id=tenant_id,
@@ -135,13 +163,8 @@ async def ensure_chat_message(
     tenant_id: UUID,
     user_id: UUID,
 ) -> None:
-    settings = _settings()
-    cap = resolve_quota_cap(
-        ents,
-        LIMIT_CHAT_MESSAGES_PER_DAY,
-        platform_cap=settings.chat_daily_message_limit,
-    )
-    user_cap = settings.chat_user_daily_message_limit
+    cap = effective_quota_cap(ents, LIMIT_CHAT_MESSAGES_PER_DAY)
+    user_cap = _settings().chat_user_daily_message_limit
     await check_chat_messages_rate(
         redis,
         tenant_id=tenant_id,
@@ -157,11 +180,7 @@ async def ensure_channel_message_allowed(
     tenant_id: UUID,
     customer_identifier: str,
 ) -> bool:
-    cap = resolve_quota_cap(
-        ents,
-        LIMIT_CHANNEL_MESSAGES_PER_HOUR,
-        platform_cap=_settings().channel_rate_limit_msg_per_hour,
-    )
+    cap = effective_quota_cap(ents, LIMIT_CHANNEL_MESSAGES_PER_HOUR)
     return await check_channel_messages_rate(
         redis,
         tenant_id=tenant_id,
@@ -176,11 +195,7 @@ async def ensure_voice_note(
     tenant_id: UUID,
     user_id: UUID,
 ) -> None:
-    cap = resolve_quota_cap(
-        ents,
-        LIMIT_VOICE_NOTES_PER_HOUR,
-        platform_cap=_settings().voice_rate_limit_per_hour,
-    )
+    cap = effective_quota_cap(ents, LIMIT_VOICE_NOTES_PER_HOUR)
     await check_voice_notes_rate(
         redis,
         tenant_id=tenant_id,
@@ -245,6 +260,72 @@ async def ensure_knowledge_docs_capacity(
     current = await _count_knowledge_docs(db, tenant_id)
     if current + adding > cap:
         raise ValidationError(MSG_KNOWLEDGE_DOCS_MAX)
+
+
+async def _count_active_channels(db: AsyncSession, tenant_id: UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ChannelIntegration)
+        .where(
+            ChannelIntegration.tenant_id == tenant_id,
+            ChannelIntegration.status == ChannelIntegrationStatus.active.value,
+        )
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def ensure_channel_slot(
+    db: AsyncSession,
+    ents: Entitlements,
+    tenant_id: UUID,
+) -> None:
+    """Rechaza conectar un canal nuevo si el plan no tiene plazas libres.
+
+    Solo para altas: actualizar o reconectar un canal ya activo no ocupa plaza.
+    """
+    cap = effective_quota_cap(ents, LIMIT_CHANNEL_EXTERNAL_SLOTS)
+    if cap is None:
+        return
+    if cap <= 0 or await _count_active_channels(db, tenant_id) >= cap:
+        raise ValidationError(MSG_CHANNEL_SLOTS, details={"code": "channel_slots_max"})
+
+
+async def _redis_count(redis: Any, key: str) -> int | None:
+    """Valor de un contador diario; None si Redis no responde (la página no cae)."""
+    try:
+        raw = await redis.get(key)
+    except Exception:
+        logger.warning("quota.usage_redis_unavailable", key_prefix=key.rsplit(":", 2)[0])
+        return None
+    return int(raw) if raw is not None else 0
+
+
+async def get_limit_usage(
+    db: AsyncSession,
+    redis: Any,
+    ents: Entitlements,
+    tenant_id: UUID,
+) -> dict[str, QuotaUsage]:
+    """Consumo actual de cada límite medible, con el tope que realmente se aplica.
+
+    Lee las mismas claves Redis (día local) y recuentos que el enforcement.
+    Fuera: mensajes por cliente y hora en canales (no hay total del tenant) y
+    los límites cuyo consumo no se pudo leer.
+    """
+    counts: dict[str, int | None] = {
+        LIMIT_DOCUMENTS_PER_DAY: await _redis_count(redis, documents_upload_key(tenant_id)),
+        LIMIT_DOCUMENT_RETRIES_PER_DAY: await _redis_count(redis, document_retries_key(tenant_id)),
+        LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: await _redis_count(redis, knowledge_upload_key(tenant_id)),
+        LIMIT_CHAT_MESSAGES_PER_DAY: await _redis_count(redis, chat_messages_tenant_key(tenant_id)),
+        LIMIT_KNOWLEDGE_DOCS_MAX: await _count_knowledge_docs(db, tenant_id),
+        LIMIT_MEMBERS_MAX: await _count_active_members(db, tenant_id),
+        LIMIT_CHANNEL_EXTERNAL_SLOTS: await _count_active_channels(db, tenant_id),
+    }
+    return {
+        code: QuotaUsage(used=used, cap=effective_quota_cap(ents, code))
+        for code, used in counts.items()
+        if used is not None
+    }
 
 
 async def ensure_llm_budget(

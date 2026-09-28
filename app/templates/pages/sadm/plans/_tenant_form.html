@@ -7,7 +7,7 @@
 
   <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
     <h2 class="text-sm font-semibold text-slate-900">Asignar plan</h2>
-    <p class="text-xs text-slate-500">Plan actual: <span class="font-mono">{{ tenant.plan_code or tenant.plan }}</span></p>
+    <p class="text-xs text-slate-500">Plan actual: <span class="font-medium">{{ (tenant.plan_code or tenant.plan) | plan_label }}</span></p>
     <form hx-post="/sadm/plans/tenants/{{ tenant.id }}"
           hx-target="#tenant-plan-form"
           hx-swap="outerHTML"
@@ -19,7 +19,7 @@
           {% for plan in plans %}
           <option value="{{ plan.code }}"
                   {% if (tenant.plan_code or tenant.plan) == plan.code %}selected{% endif %}>
-            {{ plan.name }} ({{ plan.code }})
+            {{ plan.code | plan_label }}
           </option>
           {% endfor %}
         </select>

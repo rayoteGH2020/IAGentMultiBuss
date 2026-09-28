@@ -24,13 +24,18 @@
       if (errorEl) errorEl.classList.remove("hidden");
       return;
     }
-    await C.load(window.MiSaaSClerkAuth.loadOptions());
+    {# Validada en el servidor (safe_internal_path): siempre una ruta interna. #}
+    const afterLoginUrl = {{ (after_login_url or "/") | tojson }};
+    await C.load(window.MiSaaSClerkAuth.loadOptions({
+      afterSignInUrl: afterLoginUrl,
+      signInForceRedirectUrl: afterLoginUrl,
+    }));
     if (await window.MiSaaSClerkAuth.ensureOrgOrRedirect(C)) return;
     window.MiSaaSClerkAuth.watchNoOrgRedirect(C);
     const el = document.getElementById("clerk-sign-in");
     if (el) {
       C.mountSignIn(el, {
-        forceRedirectUrl: "/",
+        forceRedirectUrl: afterLoginUrl,
         signUpUrl: "/signup",
       });
     }

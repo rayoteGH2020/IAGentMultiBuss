@@ -18,7 +18,7 @@ from app.core.business_hours_validation import (
 )
 from app.core.datetime_display import resolve_display_timezone
 from app.core.errors import AppError, public_error_message
-from app.core.permissions import membership_can_appointment
+from app.core.permissions import is_manager_role, membership_can_appointment
 from app.core.scheduling_ui import (
     DayAppointmentBlock,
     build_day_calendar_grid,
@@ -77,7 +77,7 @@ DEFAULT_APPOINTMENTS_VIEW = "day"
 
 def _can(membership: object, action: str) -> bool:
     role = getattr(membership, "role", None)
-    if role == "admin":
+    if is_manager_role(role):
         return True
     if not hasattr(membership, "permissions"):
         return False

@@ -1,0 +1,14 @@
+{# Confirmación dentro del modal tras enviar la solicitud de alta al SADM. #}
+<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" role="status">
+  <h3 class="text-lg font-semibold mb-2">Solicitud enviada</h3>
+  <p class="text-sm text-slate-700">
+    Se ha comunicado al superadmin el alta de {{ payload.first_name }} {{ payload.last_name }}
+    ({{ payload.email }}) como {{ payload.role | role_label }},
+    con fecha {{ payload.start_date.strftime("%d/%m/%Y") }}.
+    Aparecerá en la lista cuando el superadmin complete el alta.
+  </p>
+  <div class="mt-4 flex justify-end">
+    <button type="button" @click="window.dispatchEvent(new CustomEvent('close-member-modal'))"
+            class="btn-primary cursor-pointer">Cerrar</button>
+  </div>
+</div>

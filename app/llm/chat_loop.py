@@ -23,6 +23,7 @@ from app.core.document_processing_errors import (
 )
 from app.llm.observability import trace_messages, trace_status_message, trace_text
 from app.llm.pricing import compute_cost_eur
+from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
 from app.llm.tracing import get_langfuse
 from app.models import LLMCall
@@ -50,6 +51,13 @@ _EXHAUSTED_MESSAGE = (
     "No pude completar la consulta en el número máximo de pasos. "
     "Intenta reformular la pregunta o acotar el periodo."
 )
+_GENERIC_ERROR_MESSAGE = "Ha ocurrido un error al procesar la consulta. Inténtalo de nuevo."
+
+# Topes de reintento del chat, más cortos que los de extracción (LLM_RETRY_*):
+# hay un usuario esperando. 3 intentos con esperas ~1 s y ~2 s (+ jitter,
+# techo 4 s) dan ≲ 8 s extra en el peor caso por iteración.
+_CHAT_RETRY_MAX_ATTEMPTS = 3
+_CHAT_RETRY_MAX_WAIT_SECONDS = 4.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,20 +160,15 @@ async def run_tool_loop(
         tools_this_turn: list[tuple[str, ToolResult]] = []
 
         try:
-            if provider == "anthropic":
-                turn = await _anthropic_turn(
-                    anthropic_client=anthropic_client,
-                    model=model,
-                    messages=conversation,
-                    registry=registry,
-                )
-            else:
-                turn = await _gemini_turn(
-                    google_client=google_client,
-                    model=model,
-                    messages=conversation,
-                    registry=registry,
-                )
+            turn = await _run_turn(
+                provider=provider,
+                model=model,
+                conversation=conversation,
+                registry=registry,
+                settings=settings,
+                anthropic_client=anthropic_client,
+                google_client=google_client,
+            )
             input_tokens = turn.input_tokens
             output_tokens = turn.output_tokens
             conversation.append(turn.assistant_message)
@@ -233,7 +236,12 @@ async def run_tool_loop(
                 provider=provider,
                 model=model,
             )
-            final_text = "Ha ocurrido un error al procesar la consulta. Inténtalo de nuevo."
+            # Sobrecarga del proveedor (tras reintentos): mensaje específico, no genérico.
+            final_text = (
+                PROVIDER_OVERLOAD_USER_MESSAGE
+                if is_provider_overload_error(error)
+                else _GENERIC_ERROR_MESSAGE
+            )
             pending_records = [TurnMessageRecord(role="assistant", content=final_text)]
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -372,6 +380,48 @@ async def run_tool_loop(
         turn_messages=tuple(turn_messages),
         citations=tuple(final_citations),
         knowledge_tools_used=knowledge_tools_used,
+    )
+
+
+async def _run_turn(
+    *,
+    provider: str,
+    model: str,
+    conversation: list[dict[str, Any]],
+    registry: ToolRegistry,
+    settings: Settings,
+    anthropic_client: AsyncAnthropic,
+    google_client: genai.Client,
+) -> _TurnOutcome:
+    """Una llamada al modelo del turno, con reintentos si LLM_RETRY_TRANSIENT_ERRORS.
+
+    Solo se reintenta la llamada al proveedor (sin efectos laterales): las
+    tools se ejecutan después, así que un reintento no las duplica.
+    """
+
+    async def call() -> _TurnOutcome:
+        if provider == "anthropic":
+            return await _anthropic_turn(
+                anthropic_client=anthropic_client,
+                model=model,
+                messages=conversation,
+                registry=registry,
+            )
+        return await _gemini_turn(
+            google_client=google_client,
+            model=model,
+            messages=conversation,
+            registry=registry,
+        )
+
+    if settings.llm_retry_transient_errors is not True:
+        return await call()
+    return await call_with_transient_retry(
+        call,
+        max_attempts=min(settings.llm_retry_max_attempts, _CHAT_RETRY_MAX_ATTEMPTS),
+        max_wait_seconds=min(settings.llm_retry_max_wait_seconds, _CHAT_RETRY_MAX_WAIT_SECONDS),
+        provider=provider,
+        model=model,
     )
 
 

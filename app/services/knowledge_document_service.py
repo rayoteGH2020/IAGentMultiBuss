@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
 from app.core.faq_serializer import FaqPair, deserialize_faq, serialize_faq
 from app.core.keys import document_key, knowledge_faq_key
 from app.core.knowledge_uploads import validate_knowledge_upload
@@ -40,6 +40,30 @@ ACTION_KNOWLEDGE_FAQ_EDIT = "knowledge.faq_edit"
 ACTION_KNOWLEDGE_DELETE = "knowledge.delete"
 ACTION_KNOWLEDGE_REINDEX = "knowledge.reindex"
 RESOURCE_KNOWLEDGE_DOCUMENT = "knowledge_document"
+
+# Zonas del modal de subida: igual que /documents/upload.
+MAX_FILES_PER_UPLOAD = 10
+
+
+def resolve_per_file_kinds(
+    *,
+    file_count: int,
+    kinds: list[str] | str | None,
+) -> list[KnowledgeDocumentKind]:
+    """Exige una categoría válida por fichero, en el mismo orden que los ficheros.
+
+    Raises:
+        ValidationError: número de categorías distinto al de ficheros o valor
+            fuera de ``KnowledgeDocumentKind``.
+    """
+    # Multipart repetido: FastAPI entrega str (un valor) o list (varios).
+    values = [kinds] if isinstance(kinds, str) else list(kinds or [])
+    if len(values) != file_count:
+        raise ValidationError("Cada fichero debe tener una categoría.")
+    try:
+        return [KnowledgeDocumentKind(value) for value in values]
+    except ValueError as exc:
+        raise ValidationError("Categoría de documento no válida.") from exc
 
 
 async def create_from_upload(

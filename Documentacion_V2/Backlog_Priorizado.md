@@ -1,7 +1,7 @@
 # Backlog_Priorizado
 
 Fecha actualizacion: 2026-09-28
-Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67` + Stripe `p65`).
+Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67`; Stripe retirado D016 `p68`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
 
@@ -11,7 +11,7 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 | --- | --- | --- |
 | 1 | Rotar y sanear secretos de documentacion historica | **Ops** (repo saneado; rotacion en proveedores pendiente) |
 | 2 | Sync roles/memberships Clerk | **Hecho** (+ QA retry real en Dashboard: ops) |
-| 3 | Dedupe anti-replay webhooks | **Hecho** (Clerk/WA/TG/Stripe) |
+| 3 | Dedupe anti-replay webhooks | **Hecho** (Clerk/WA/TG) |
 | 4 | Limite de body webhooks | **Hecho** |
 | 5 | OCR knowledge + `media_limits` | **Hecho** |
 | 6 | Catalogo de planes | **Hecho** (D012: `basic`/`advanced`/`premium`, `p67`) |
@@ -24,7 +24,7 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 | --- | --- | --- |
 | 1 | Consolidar SADM V2 | **Hecho** (Paso05) |
 | 2 | Asignar planes desde SADM | **Hecho** (`/sadm/plans`) |
-| 3 | `/settings/billing` plan/uso + Stripe | **Hecho** en codigo (Paso09); Price IDs + Infisical: **Ops** |
+| 3 | `/settings/billing` plan/uso (solo lectura; plan lo asigna SADM, D016) | **Hecho** |
 | 4 | UX documentos procesando/rechazados | **Hecho** (Paso06) |
 | 5 | Verificacion de tipo antes de extraccion | **Hecho** (Paso06) |
 | 6 | UI multi-IVA | **Hecho** (Paso06) |
@@ -93,7 +93,7 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 | # | Item | Estado |
 | --- | --- | --- |
 | 1 | Analytics SQL read-only | **No implementar** (D011 / Paso08 archivado; no se vende BI) |
-| 2 | Stripe billing | **Hecho** en codigo (Paso09 / F1); operativa Stripe Dashboard: **Ops** |
+| 2 | **Metodo de cobro de los planes** (2026-09-28) | **Pendiente de decision** (D016). Stripe retirado. Decidir: proveedor (Stripe, Redsys, GoCardless/SEPA...) o cobro fuera de la app (transferencia/factura manual); quien cambia el plan ante impago; si el cobro debe reflejarse en la app. Nueva decision en `Decision_Log.md` antes de implementar |
 | 3 | Resenas/marketing | **Pendiente** (no priorizado) |
 | 4 | MCP/tooling externo | **Pendiente** (no priorizado) |
 
@@ -109,8 +109,8 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 
 ## Orden recomendado restante
 
-1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07.
-2. Ops Stripe: Price IDs + webhook + claves Infisical.
+1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07. Borrar `STRIPE_*` de Infisical (D016).
+2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
 3. Soft-launch Paso10 cuando staging este vivo.
 
 No roadmap: Paso08 Analytics / modulo 3 (D011).

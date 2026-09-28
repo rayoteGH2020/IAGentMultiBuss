@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from email.message import EmailMessage
+from typing import TYPE_CHECKING
 
 import aiosmtplib
 import structlog
 
 from app.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = structlog.get_logger(__name__)
 
@@ -22,8 +27,24 @@ def smtp_tls_flags(settings: Settings) -> tuple[bool, bool]:
     return use_tls, start_tls
 
 
-async def send_email(*, to: str, subject: str, body: str) -> None:
-    """Send a plain-text email via SMTP.
+@dataclass(frozen=True, slots=True)
+class EmailAttachment:
+    """Fichero adjunto ya validado; se envía desde memoria, nunca se escribe a disco."""
+
+    filename: str
+    content_type: str
+    data: bytes
+
+
+async def send_email(
+    *,
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    attachments: Sequence[EmailAttachment] = (),
+) -> None:
+    """Send an email via SMTP: plain text, optional HTML alternative and attachments.
 
     Skips silently if smtp_host is not configured (development without email).
     """
@@ -37,6 +58,13 @@ async def send_email(*, to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if html is not None:
+        msg.add_alternative(html, subtype="html")
+    for attachment in attachments:
+        maintype, _, subtype = attachment.content_type.partition("/")
+        msg.add_attachment(
+            attachment.data, maintype=maintype, subtype=subtype, filename=attachment.filename
+        )
 
     use_tls, start_tls = smtp_tls_flags(settings)
     await aiosmtplib.send(

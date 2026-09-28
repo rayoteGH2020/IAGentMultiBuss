@@ -97,84 +97,14 @@
             x-text="formError"></div>
         </div>
 
-        <div
-          class="px-5 py-3 min-h-0 flex-1 overflow-y-auto"
-          @dragover.prevent="dragging = true"
-          @dragleave.prevent="dragging = false"
-          @drop.prevent="onGridDrop($event)">
-
-          <div
-            class="grid grid-cols-2 sm:grid-cols-5 gap-2.5"
-            :class="dragging ? 'ring-2 ring-blue-400 ring-offset-2 rounded-lg' : ''">
-
-            <template x-for="slot in slots" :key="slot.key">
-              <div
-                class="relative flex flex-col rounded-lg border-2 border-dashed p-2 min-h-[7.5rem] transition-colors"
-                :class="{
-                  'border-blue-500 bg-blue-50': dragOverSlot === slot.index,
-                  'border-emerald-400 bg-emerald-50/40': slot.file && dragOverSlot !== slot.index,
-                  'border-slate-300 bg-slate-50/50 hover:border-slate-400': !slot.file && dragOverSlot !== slot.index
-                }"
-                @dragover.prevent.stop="dragging = true; dragOverSlot = slot.index"
-                @dragleave.prevent.stop="dragOverSlot = null"
-                @drop.prevent.stop="onSlotDrop($event, slot.index)">
-
-                <div class="flex items-center justify-between gap-1 mb-1.5">
-                  <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-400"
-                        x-text="'Fichero ' + (slot.index + 1)"></span>
-                  <button
-                    type="button"
-                    x-show="slot.file"
-                    x-cloak
-                    @click.stop="clearSlot(slot.index)"
-                    class="text-slate-400 hover:text-slate-700 text-sm leading-none cursor-pointer"
-                    :aria-label="'Quitar fichero ' + (slot.index + 1)">✕</button>
-                </div>
-
-                <button
-                  type="button"
-                  class="flex-1 w-full text-left cursor-pointer rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                  @click="onSlotClick()"
-                  aria-label="Elegir ficheros para las primeras zonas libres">
-                  <template x-if="!slot.file">
-                    <div class="flex flex-col items-center justify-center gap-1 py-2 text-center">
-                      <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                              d="M12 4v16m8-8H4"/>
-                      </svg>
-                      <span class="text-[11px] text-slate-500 leading-tight">Arrastra o haz clic</span>
-                    </div>
-                  </template>
-                  <template x-if="slot.file">
-                    <div class="min-w-0">
-                      <p class="text-xs font-medium text-slate-800 truncate" x-text="slot.file.name"></p>
-                      <p class="text-[10px] text-slate-400 mt-0.5"
-                         x-text="(slot.file.size / 1024).toFixed(0) + ' KB'"></p>
-                    </div>
-                  </template>
-                </button>
-
-                <div class="mt-auto pt-1.5">
-                  <label class="sr-only" :for="'doc-type-slot-' + slot.index">
-                    Tipo de documento <span x-text="slot.index + 1"></span>
-                  </label>
-                  <select
-                    :id="'doc-type-slot-' + slot.index"
-                    name="doc_type_codes"
-                    x-model="slot.docType"
-                    :disabled="!slot.file"
-                    :required="Boolean(slot.file)"
-                    class="w-full rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">
-                    <option value="" disabled x-text="slot.file ? 'Tipo…' : '—'"></option>
-                    {% for doc_type in doc_types|default([], true) %}
-                    <option value="{{ doc_type.code }}">{{ doc_type.name }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
+        {% set slot_type_field = "doc_type_codes" %}
+        {% set slot_type_label = "Tipo de documento" %}
+        {% set slot_type_placeholder = "Tipo…" %}
+        {% set slot_type_options = [] %}
+        {% for doc_type in doc_types|default([], true) %}
+          {% set _ = slot_type_options.append((doc_type.code, doc_type.name)) %}
+        {% endfor %}
+        {% include "components/upload_slots_grid.html" %}
 
         <div class="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 shrink-0 bg-white rounded-b-lg">
           <p class="text-xs text-slate-500">

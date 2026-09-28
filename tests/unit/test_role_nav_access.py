@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from app.core.permissions import (
     ADMIN_NAV_ITEMS,
     MEMBER_NAV_ITEMS,
+    can_request_member_removal,
     home_path_for_role,
+    is_manager_role,
     nav_items_for_role,
     role_can_access_path,
+    role_label,
 )
 
 
@@ -65,6 +70,45 @@ def test_member_path_matrix() -> None:
     assert role_can_access_path("member", "/appointments") is True
     assert role_can_access_path("member", "/appointments/new") is True
     assert role_can_access_path("member", "/api/v1/scheduling/find-slots") is True
+
+
+def test_co_admin_sees_and_accesses_same_as_admin() -> None:
+    assert nav_items_for_role("co_admin") == nav_items_for_role("admin")
+    assert home_path_for_role("co_admin") == "/"
+    for path in ("/", "/documents", "/knowledge", "/settings", "/settings/members"):
+        assert role_can_access_path("co_admin", path) is True
+
+
+def test_manager_roles_and_labels() -> None:
+    assert is_manager_role("admin") and is_manager_role("co_admin")
+    assert not is_manager_role("member") and not is_manager_role(None)
+    assert role_label("co_admin") == "Co-administrador"
+    assert role_label("custom") == "custom"
+
+
+def _can_remove(actor_role: str, target_role: str, *, same: bool = False) -> bool:
+    actor_id = uuid4()
+    return can_request_member_removal(
+        actor_role=actor_role,
+        actor_membership_id=actor_id,
+        target_role=target_role,
+        target_membership_id=actor_id if same else uuid4(),
+    )
+
+
+def test_member_removal_rules() -> None:
+    # admin: cualquiera salvo a sí mismo.
+    for target in ("co_admin", "member", "viewer"):
+        assert _can_remove("admin", target) is True
+    assert _can_remove("admin", "admin", same=True) is False
+    # co_admin: cualquiera salvo a sí mismo y al admin.
+    assert _can_remove("co_admin", "admin") is False
+    assert _can_remove("co_admin", "co_admin") is True
+    assert _can_remove("co_admin", "member") is True
+    assert _can_remove("co_admin", "co_admin", same=True) is False
+    # member / viewer: nunca.
+    assert _can_remove("member", "viewer") is False
+    assert _can_remove("viewer", "member") is False
 
 
 def test_sidebar_uses_role_nav_helper() -> None:

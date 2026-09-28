@@ -14,7 +14,7 @@
       {% for tenant in tenants %}
       <tr class="hover:bg-slate-50/60">
         <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
-        <td class="px-4 py-3 text-slate-500">{{ tenant.plan_code or tenant.plan }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ (tenant.plan_code or tenant.plan) | plan_label }}</td>
         <td class="px-4 py-3 text-slate-500 text-xs">{{ tenant.created_at | local_datetime }}</td>
         <td class="px-4 py-3 text-right space-x-3">
           <a href="/sadm/organizations/{{ tenant.id }}/members"

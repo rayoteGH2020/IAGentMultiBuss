@@ -82,7 +82,8 @@ async def test_expired_jwt_on_get_documents_redirects_to_login() -> None:
 
     call_next.assert_not_awaited()
     assert resp.status_code == 302
-    assert resp.headers.get("location") == "/login"
+    # Vuelve a la página tras reautenticar (test_session_return_path.py).
+    assert resp.headers.get("location") == "/login?redirect_url=%2Fdocuments"
 
 
 @pytest.mark.asyncio
@@ -170,6 +171,48 @@ async def test_revoked_membership_redirects_to_login_clearing_session() -> None:
         assert "__session" in raw
     else:
         assert any("__session" in c for c in set_cookie)
+
+
+@pytest.mark.asyncio
+async def test_due_removal_cuts_access_on_same_request() -> None:
+    """Baja con fecha efectiva vencida: acceso revocado sin esperar al cron ni a Clerk."""
+    from datetime import date
+
+    from app.core import middleware
+
+    req = _request(path="/documents", method="GET", htmx=False, csrf=None, cookie="ok.jwt")
+    membership = MagicMock(is_active=True, role="member")
+    membership.removal_effective_date = date(2020, 1, 1)
+    session = MagicMock(commit=AsyncMock(), rollback=AsyncMock())
+
+    class _SessionCtx:
+        async def __aenter__(self) -> MagicMock:
+            return session
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    async def _apply(_db: object, m: MagicMock, *, source: str) -> bool:
+        assert source == "request"
+        m.is_active = False
+        return True
+
+    with (
+        patch.object(
+            middleware, "verify_clerk_jwt", return_value={"sub": "user_1", "org_id": "org_1"}
+        ),
+        patch.object(middleware, "get_sessionmaker", return_value=lambda: _SessionCtx()),
+        patch.object(middleware, "resolve_user", AsyncMock(return_value=MagicMock(id="u"))),
+        patch.object(middleware, "resolve_tenant", AsyncMock(return_value=MagicMock(id="t"))),
+        patch.object(middleware, "set_tenant_context", AsyncMock()),
+        patch.object(middleware, "ensure_membership", AsyncMock(return_value=membership)),
+        patch.object(middleware, "apply_due_removal", side_effect=_apply) as apply_mock,
+    ):
+        await middleware.try_resolve_clerk_session(req)
+
+    apply_mock.assert_awaited_once()
+    assert req.state.auth_membership_revoked is True
+    assert getattr(req.state, "membership", None) is None
 
 
 @pytest.mark.asyncio

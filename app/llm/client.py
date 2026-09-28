@@ -21,13 +21,6 @@ from anthropic import AsyncAnthropic
 from google import genai
 from langfuse.types import TraceContext
 from pydantic import BaseModel
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential_jitter,
-)
 
 from app.config import Settings, get_settings
 from app.core.document_processing_errors import (
@@ -45,6 +38,7 @@ from app.llm.observability import (
     trace_status_message,
 )
 from app.llm.pricing import compute_cost_eur
+from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
 from app.models import LLMCall
@@ -67,24 +61,7 @@ TaskType = Literal[
     "extraction", "chat", "sql", "classify", "embedding", "transcription", "translate"
 ]
 
-# Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
-# 529 es específico de Anthropic ("overloaded"); el resto son estándar.
-# frozenset: inmutable y O(1) en lookup.
-_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504, 529})
-
-# Markers textuales para fallback cuando la excepción del SDK no expone .code
-# de forma estructurada. Se buscan en minúsculas en str(exc).
-_RETRYABLE_MARKERS: tuple[str, ...] = (
-    "503",
-    "504",
-    "529",
-    "unavailable",
-    "overloaded",
-    "rate limit",
-    "rate_limit_error",
-    "too many requests",
-    "internal server error",
-)
+# Política de reintentos (códigos/markers retryables): app/llm/retry.py.
 
 # Indicadores de sobrecarga del proveedor (tras agotar reintentos).
 # Cuando el error técnico coincide, se expone al usuario un mensaje amigable
@@ -110,32 +87,6 @@ def _langfuse_safe_status(raw_error: str | None) -> str | None:
     if raw_error and is_provider_overload_error(raw_error):
         return PROVIDER_OVERLOAD_USER_MESSAGE
     return None
-
-
-def _is_retryable_provider_error(exc: BaseException) -> bool:
-    """True si la excepción del SDK indica un fallo transitorio del proveedor.
-
-    No reintentamos ValidationError de Pydantic (lo hace Instructor) ni 4xx
-    distintos de 429 (un 400 / 401 / 403 no se arregla reintentando, sería
-    coste sin sentido).
-    """
-    # Distintos SDKs exponen el código HTTP con nombres distintos:
-    # - google-genai: ApiError.code
-    # - anthropic: APIStatusError.status_code
-    # - httpx en bruto: HTTPStatusError.response.status_code
-    code = getattr(exc, "code", None)
-    if not isinstance(code, int):
-        code = getattr(exc, "status_code", None)
-    if not isinstance(code, int):
-        response = getattr(exc, "response", None)
-        code = getattr(response, "status_code", None) if response is not None else None
-    if isinstance(code, int) and code in _RETRYABLE_STATUS:
-        return True
-
-    # Fallback: algunos SDKs envuelven el error en una excepción genérica con
-    # el código embebido en el mensaje. Es una red de seguridad, no la vía principal.
-    msg = str(exc).lower()
-    return any(marker in msg for marker in _RETRYABLE_MARKERS)
 
 
 def _anthropic_api_key_configured(settings: Settings) -> bool:
@@ -168,28 +119,6 @@ def _log_anthropic_failure(
         log.error(event, exc_type=type(exc).__name__, exc_info=exc)
     else:
         log.error(event)
-
-
-def _log_transient_retry(
-    retry_state: RetryCallState,
-    *,
-    provider: str,
-    model: str,
-) -> None:
-    """Callback de tenacity: loguea reintentos; Anthropic con evento dedicado."""
-    exc = retry_state.outcome.exception() if retry_state.outcome else None
-    next_sleep = getattr(retry_state.next_action, "sleep", None)
-    payload = {
-        "provider": provider,
-        "model": model,
-        "attempt": retry_state.attempt_number,
-        "next_sleep_s": next_sleep,
-        "error": str(exc)[:200] if exc else None,
-    }
-    if provider == "anthropic":
-        logger.warning("anthropic_llm_retry", **payload)
-    else:
-        logger.warning("llm.retry_transient_error", **payload)
 
 
 # Router de modelos por defecto (arquitectura.md §8). Se puede sobreescribir
@@ -432,32 +361,22 @@ class LLMClient:
                 max_retries=max_retries,
             )
 
-        # reraise=True: tras agotar reintentos, vuelve a lanzar la excepción
-        # original tal cual, no la RetryError de tenacity. Mantiene la semántica
-        # del except externo en complete() (que ya sabe formatear errores SDK).
-        async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(self._settings.llm_retry_max_attempts),
-            wait=wait_exponential_jitter(
-                initial=1.0,
-                max=self._settings.llm_retry_max_wait_seconds,
+        # Tras agotar reintentos relanza la excepción original (no RetryError):
+        # mantiene la semántica del except externo en complete().
+        return await call_with_transient_retry(
+            lambda: self._call_sdk_once(
+                task=task,
+                provider=provider,
+                model=model,
+                typed_messages=typed_messages,
+                response_model=response_model,
+                max_retries=max_retries,
             ),
-            retry=retry_if_exception(_is_retryable_provider_error),
-            before_sleep=lambda rs: _log_transient_retry(rs, provider=provider, model=model),
-            reraise=True,
-        ):
-            with attempt:
-                return await self._call_sdk_once(
-                    task=task,
-                    provider=provider,
-                    model=model,
-                    typed_messages=typed_messages,
-                    response_model=response_model,
-                    max_retries=max_retries,
-                )
-        # Unreachable: AsyncRetrying con reraise=True siempre devuelve dentro
-        # del `with attempt:` o re-lanza la excepción del último intento.
-        # Necesario para que mypy no se queje de "missing return".
-        raise RuntimeError("AsyncRetrying exited without yielding a result")
+            max_attempts=self._settings.llm_retry_max_attempts,
+            max_wait_seconds=self._settings.llm_retry_max_wait_seconds,
+            provider=provider,
+            model=model,
+        )
 
     async def complete(
         self,

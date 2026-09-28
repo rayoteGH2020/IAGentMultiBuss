@@ -15,7 +15,7 @@
             {% include "components/document_type_icon.html" %}
             <span class="font-medium text-slate-700">{{ document.doc_type_label }}</span>
             <span class="status-pill bg-sky-50 text-sky-800 ring-1 ring-sky-100">confirmar tipo</span>
-            <span class="text-slate-400 truncate max-w-[18rem]"
+            <span class="text-slate-400 line-clamp-2 break-all max-w-[18rem]"
                   title="{{ document.source_filename or '' }}">
               — {{ document.source_filename or "—" }}
             </span>
@@ -92,7 +92,7 @@
           <span class="font-medium text-slate-700">{{ document.doc_type_label }}</span>
           <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100">{{ document.status }}</span>
           <span class="text-slate-500">{% if document.can_retry %}Procesado interrumpido{% else %}Procesando{% endif %}</span>
-          <span class="text-slate-400 truncate max-w-[18rem]"
+          <span class="text-slate-400 line-clamp-2 break-all max-w-[18rem]"
                 title="{{ document.source_filename or '' }}">
             — {{ document.source_filename or "—" }}
           </span>
@@ -146,7 +146,7 @@
             {{ document.error_message | user_processing_error(document.source_filename) }}
           </p>
           {% if document.source_filename %}
-          <p class="mt-1 text-xs text-red-600/80 truncate" title="{{ document.source_filename }}">
+          <p class="mt-1 text-xs text-red-600/80 line-clamp-2 break-all" title="{{ document.source_filename }}">
             {{ document.source_filename }}
           </p>
           {% endif %}

@@ -95,7 +95,7 @@ Casos:
 - Clerk: Svix, idempotencia, sync de org/user/membership updated/deleted.
 - WhatsApp: HMAC `X-Hub-Signature-256`, dedupe por message id.
 - Telegram: secret token, dedupe por update id.
-- Stripe futuro: firma Stripe y eventos idempotentes.
+- Pagos: sin proveedor (D016, Stripe retirado). Si se integra uno: firma del proveedor, body limit y dedupe anti-replay como el resto de webhooks.
 
 ## 6. LLM y Langfuse
 

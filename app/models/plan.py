@@ -50,7 +50,6 @@ class Plan(Base, TimestampMixin):
         default=True,
         server_default=text("true"),
     )
-    stripe_price_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     entitlements: Mapped[list[PlanEntitlement]] = relationship(
         "PlanEntitlement",

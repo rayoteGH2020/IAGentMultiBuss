@@ -1,5 +1,6 @@
 import json
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlencode
 
 import structlog
 from fastapi import Request, Response
@@ -15,6 +16,7 @@ from app.core.permissions import (
     is_platform_superadmin,
     role_can_access_path,
 )
+from app.core.safe_redirect import path_from_url, safe_internal_path
 from app.core.security import verify_clerk_jwt
 from app.core.session_cookies import clear_clerk_session_cookie
 from app.services.auth_service import (
@@ -24,6 +26,7 @@ from app.services.auth_service import (
     resolve_tenant,
     resolve_user,
 )
+from app.services.membership_service import REMOVAL_SOURCE_REQUEST, apply_due_removal
 
 log = structlog.get_logger(__name__)
 
@@ -37,7 +40,6 @@ PUBLIC_PATHS = frozenset(
         "/health/db",
         "/health/redis",
         "/api/webhooks/clerk",
-        "/api/webhooks/stripe",
     }
 )
 PUBLIC_PREFIXES = ("/static/", "/docs", "/redoc", "/openapi.json", "/openapi", "/demo")
@@ -54,7 +56,6 @@ CSRF_EXEMPT_PATHS = frozenset(
     {
         "/api/webhooks/clerk",
         "/api/webhooks/whatsapp",
-        "/api/webhooks/stripe",
     }
 )
 CSRF_EXEMPT_PREFIXES = ("/api/webhooks/telegram/",)
@@ -124,9 +125,31 @@ def _htmx_aware_redirect(request: Request, url: str) -> Response:
     return RedirectResponse(url=url, status_code=302)
 
 
-def _login_redirect_clearing_session(request: Request) -> Response:
-    """Fuerza re-login y borra ``__session`` (p. ej. JWT expirado)."""
-    response = _htmx_aware_redirect(request, "/login")
+def _login_return_path(request: Request) -> str | None:
+    """Página en la que estaba el usuario, para volver a ella tras reautenticar.
+
+    HTMX: la página es ``HX-Current-URL`` (la petición puede ser un fragmento o
+    un POST). Navegación normal: solo GET, cuya URL es la propia página.
+    """
+    if request.headers.get("HX-Request") == "true":
+        return path_from_url(request.headers.get("HX-Current-URL"))
+    if request.method.upper() == "GET":
+        query = request.url.query
+        return safe_internal_path(f"{request.url.path}?{query}" if query else request.url.path)
+    return None
+
+
+def _login_redirect_clearing_session(request: Request, *, keep_return: bool = False) -> Response:
+    """Fuerza re-login y borra ``__session`` (p. ej. JWT expirado).
+
+    Con ``keep_return`` el login devuelve al usuario a la página donde estaba
+    (sesión caducada) en lugar de a inicio.
+    """
+    target = "/login"
+    return_path = _login_return_path(request) if keep_return else None
+    if return_path:
+        target = f"/login?{urlencode({'redirect_url': return_path})}"
+    response = _htmx_aware_redirect(request, target)
     clear_clerk_session_cookie(response, get_settings())
     return response
 
@@ -230,6 +253,9 @@ async def try_resolve_clerk_session(request: Request) -> None:
                 tenant.id,
                 role=org_role_from_claims(claims),
             )
+            # Baja con fecha efectiva vencida: corta el acceso ya, sin esperar a
+            # la tarea programada ni a que el SADM la quite en Clerk (RGPD).
+            await apply_due_removal(session, membership, source=REMOVAL_SOURCE_REQUEST)
             if not membership.is_active:
                 await session.commit()
                 request.state.auth_membership_revoked = True
@@ -312,7 +338,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     path=request.url.path,
                     method=request.method,
                 )
-                return _login_redirect_clearing_session(request)
+                return _login_redirect_clearing_session(request, keep_return=True)
 
             # Membership local revocada (p. ej. webhook deleted): denegar acceso
             # aunque el JWT aún lleve org_id/rol antiguos.

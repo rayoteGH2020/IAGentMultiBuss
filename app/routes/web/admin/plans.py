@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
+from app.core.entitlement_codes import plan_ui_name
 from app.core.errors import ValidationError
 from app.core.templating import render
 from app.deps import CurrentUser, SuperAdmin, get_db_no_tenant
@@ -95,7 +96,7 @@ async def assign_plan(
             "tenant": tenant,
             "plans": plans,
             "override_json": override_json,
-            "notice": f"Plan actualizado a «{tenant.plan_code}».",
+            "notice": f"Plan actualizado a «{plan_ui_name(tenant.plan_code)}».",
         },
     )
 

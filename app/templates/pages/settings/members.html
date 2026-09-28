@@ -7,8 +7,8 @@
 <div class="space-y-6">
   <div>
     <p class="text-sm text-slate-500">
-      Alta, baja y roles de organización se gestionan en Clerk (SADM).
-      Aquí solo puedes ajustar permisos de citas de la aplicación.
+      Las altas y bajas se solicitan aquí y las ejecuta el superadmin (SADM) en Clerk.
+      Los permisos de citas se ajustan directamente.
     </p>
   </div>
 
@@ -18,8 +18,17 @@
         <tr>
           <th>Email</th>
           <th>Nombre</th>
+          <th>Rol</th>
           <th>Permisos citas</th>
-          <th></th>
+          {# Cubre las columnas Editar y Baja: el botón queda en la esquina superior derecha de la tabla. #}
+          <th colspan="2" class="py-2 text-right">
+            <button type="button"
+                    hx-get="/settings/members/requests/new"
+                    hx-target="#member-modal-panel"
+                    hx-swap="innerHTML"
+                    hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-member-modal'))"
+                    class="btn-primary cursor-pointer whitespace-nowrap px-3 py-1.5 text-xs">Nuevo miembro</button>
+          </th>
         </tr>
       </thead>
       <tbody id="members-list">

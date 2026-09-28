@@ -31,7 +31,7 @@ async def plans_and_history_ready(db_session: AsyncSession) -> None:
         )
     )
     if history.scalar_one_or_none() is None:
-        pytest.skip("Run migration p65_stripe_billing_01.")
+        pytest.skip("Run migration p65_stripe_billing_01 (creates tenant_plan_changes).")
     await plan_service.seed_plan_catalog(db_session)
 
 
@@ -41,7 +41,7 @@ async def test_assign_plan_writes_history_row(
     plans_and_history_ready: None,
 ) -> None:
     tenant = Tenant(
-        name=f"Stripe hist {uuid4().hex[:8]}",
+        name=f"Plan hist {uuid4().hex[:8]}",
         plan="basic",
         plan_code="basic",
     )
@@ -55,8 +55,6 @@ async def test_assign_plan_writes_history_row(
         plan_code="advanced",
         actor_user_id=None,
         reason="test",
-        source=plan_service.SOURCE_STRIPE,
-        metadata={"stripe_event_id": "evt_test"},
     )
     await db_session.flush()
 
@@ -73,7 +71,7 @@ async def test_assign_plan_writes_history_row(
     assert rows[0].from_plan_code == "basic"
     assert rows[0].to_plan_code == "advanced"
     assert rows[0].metadata_ is not None
-    assert rows[0].metadata_["source"] == "stripe"
+    assert rows[0].metadata_["source"] == "sadm"
 
     # Idempotente: mismo plan no duplica historial.
     await plan_service.assign_tenant_plan(
@@ -82,7 +80,6 @@ async def test_assign_plan_writes_history_row(
         plan_code="advanced",
         actor_user_id=None,
         reason="noop",
-        source=plan_service.SOURCE_STRIPE,
     )
     await db_session.flush()
     rows2 = (

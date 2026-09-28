@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from app.config import Settings
 
 # Versión fijada de @clerk/clerk-js (no usar @latest en plantillas).
 # Actualizar de forma controlada tras probar login/signup/sign-out.
@@ -24,3 +29,13 @@ def clerk_browser_script_url(frontend_host: str, version: str) -> str:
     host = frontend_host.strip().removeprefix("https://").removeprefix("http://").strip("/")
     ver = normalize_clerk_js_version(version)
     return f"https://{host}/npm/@clerk/clerk-js@{ver}/dist/clerk.browser.js"
+
+
+def clerk_browser_context(settings: Settings) -> dict[str, str]:
+    """Variables de plantilla para cargar clerk-js (components/clerk_browser_script.html)."""
+    frontend_host = urlparse(settings.clerk_jwks_url).netloc
+    return {
+        "clerk_pub_key": settings.clerk_publishable_key,
+        "clerk_frontend_host": frontend_host,
+        "clerk_js_script_url": clerk_browser_script_url(frontend_host, settings.clerk_js_version),
+    }

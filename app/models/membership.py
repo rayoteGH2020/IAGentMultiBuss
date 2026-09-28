@@ -1,7 +1,8 @@
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +44,20 @@ class Membership(Base, IdMixin, TimestampMixin):
         default=lambda: dict(DEFAULT_MEMBERSHIP_PERMISSIONS),
         server_default=_MEMBERSHIP_PERMISSIONS_SERVER_DEFAULT,
     )
+    # Baja solicitada al SADM y aún no ejecutada en Clerk. Al ejecutarla, el
+    # webhook desactiva la fila; si se reactiva, estos campos se limpian.
+    removal_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    removal_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    @property
+    def removal_pending(self) -> bool:
+        return self.removal_effective_date is not None
+
+    def clear_removal_request(self) -> None:
+        self.removal_requested_at = None
+        self.removal_effective_date = None
 
     user: Mapped[User] = relationship(back_populates="memberships")
     tenant: Mapped[Tenant] = relationship(back_populates="memberships")

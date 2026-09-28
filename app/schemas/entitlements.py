@@ -49,6 +49,35 @@ class Entitlements(BaseModel):
         return self.limits[code]
 
 
+class QuotaUsage(BaseModel):
+    """Consumo actual de un límite: ``cap`` None = ilimitado."""
+
+    used: int
+    cap: int | None
+
+
+class PlanLimitItem(BaseModel):
+    """Límite del plan listo para mostrar ("Miembros del equipo", "15").
+
+    ``used`` / ``percent`` solo si el consumo es medible (None en los límites
+    por cliente final, como los mensajes por hora en canales).
+    """
+
+    label: str
+    value: str
+    used: int | None = None
+    percent: int | None = None
+
+
+class PlanSummary(BaseModel):
+    """Resumen del plan efectivo del tenant para el cliente (catálogo + override)."""
+
+    code: str
+    name: str
+    features: list[str]
+    limits: list[PlanLimitItem]
+
+
 class EntitlementsOverride(BaseModel):
     """Payload validado de ``tenants.settings['entitlements_override']``."""
 
@@ -84,4 +113,3 @@ class PlanRead(BaseModel):
     sort_order: int
     is_active: bool
     is_public: bool
-    stripe_price_id: str | None = None

@@ -7,6 +7,7 @@ def test_normalize_org_role_strips_prefix_and_validates() -> None:
     assert normalize_org_role("org:admin") == "admin"
     assert normalize_org_role("org:member") == "member"
     assert normalize_org_role("org:viewer") == "viewer"
+    assert normalize_org_role("org:co_admin") == "co_admin"
     assert normalize_org_role("admin") == "admin"
     assert normalize_org_role("org:unknown") == "member"
     assert normalize_org_role("billing") == "member"

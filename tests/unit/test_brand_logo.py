@@ -16,10 +16,11 @@ def test_brand_logo_file_exists() -> None:
     assert _LOGO.stat().st_size > 0
 
 
-def test_sidebar_org_name_tooltip_shows_login_email() -> None:
+def test_sidebar_shows_login_email() -> None:
+    # El email ya no va solo como tooltip del nombre de la organización: es una
+    # línea visible bajo el nombre del usuario (ver test_sidebar_user_label.py).
     html = _SIDEBAR.read_text(encoding="utf-8")
-    assert "user.email" in html
-    assert 'title="{{ user.email if user and user.email else tenant.name }}"' in html
+    assert "{{ user.email }}" in html
 
 
 def test_sidebar_uses_brand_logo_instead_of_text() -> None:

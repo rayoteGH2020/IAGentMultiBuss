@@ -2,21 +2,23 @@
 
 Patron INCRBY + TTL con incremento especulativo y rollback si se supera el tope.
 Ventanas cortas (dia/hora); agregados mensuales en ``usage_meter``.
+El "día" de las cuotas diarias es el día local de la app (España): se
+reinician a las 00:00 hora local (``local_day_key`` / ``daily_ttl_seconds``).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
 import structlog
 
+from app.core.datetime_display import resolve_display_timezone
 from app.core.errors import RateLimitError
 
 logger = structlog.get_logger(__name__)
 
-_DAY_SECONDS: int = 86400
 _HOUR_SECONDS: int = 3600
 
 
@@ -95,8 +97,54 @@ async def record_quota_usage(
         await redis.expire(key, ttl_seconds)
 
 
-def _utc_date_key() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%d")
+# Margen sobre la medianoche local: la clave lleva la fecha, así que el TTL solo
+# limpia Redis; nunca debe caducar antes de que termine el día (días de 23/25 h).
+_DAY_TTL_MARGIN_SECONDS: int = 3600
+
+
+def local_day_key(now: datetime | None = None) -> str:
+    """Fecha del día de cuota (YYYY-MM-DD) en la zona de la app (España).
+
+    Los límites diarios se reinician a las 00:00 hora local, no a las 00:00 UTC.
+    """
+    current = now or datetime.now(UTC)
+    return current.astimezone(resolve_display_timezone()).strftime("%Y-%m-%d")
+
+
+def daily_ttl_seconds(now: datetime | None = None) -> int:
+    """Segundos hasta la próxima medianoche local + margen (TTL de claves diarias).
+
+    Se calcula en UTC: restar dos datetimes con la misma ZoneInfo usa hora de
+    reloj e ignora el cambio de horario (el día de 25 h saldría 24 h).
+    """
+    tz = resolve_display_timezone()
+    current = (now or datetime.now(UTC)).astimezone(tz)
+    next_midnight = datetime.combine(current.date() + timedelta(days=1), time(0), tzinfo=tz)
+    remaining = next_midnight.astimezone(UTC) - current.astimezone(UTC)
+    return int(remaining.total_seconds()) + _DAY_TTL_MARGIN_SECONDS
+
+
+def document_retries_key(tenant_id: UUID, now: datetime | None = None) -> str:
+    """Clave del contador diario de reintentos (check y registro deben coincidir)."""
+    return f"rate:document_retries:{tenant_id}:{local_day_key(now)}"
+
+
+# Claves de contadores diarios por tenant: únicas para el control de cuota y
+# para mostrar el consumo en Mi cuenta (plan_quota_service.get_limit_usage).
+def documents_upload_key(tenant_id: UUID, now: datetime | None = None) -> str:
+    return f"rate:documents_upload:{tenant_id}:{local_day_key(now)}"
+
+
+def knowledge_upload_key(tenant_id: UUID, now: datetime | None = None) -> str:
+    return f"rate:knowledge_upload:{tenant_id}:{local_day_key(now)}"
+
+
+def support_requests_key(tenant_id: UUID, now: datetime | None = None) -> str:
+    return f"rate:support_requests:{tenant_id}:{local_day_key(now)}"
+
+
+def chat_messages_tenant_key(tenant_id: UUID, now: datetime | None = None) -> str:
+    return f"rate:chat_messages:{tenant_id}:{local_day_key(now)}"
 
 
 def _utc_hour_key() -> str:
@@ -110,7 +158,7 @@ async def check_documents_upload_rate(
     max_per_day: int | None,
     n_files: int = 1,
 ) -> None:
-    key = f"rate:documents_upload:{tenant_id}:{_utc_date_key()}"
+    key = documents_upload_key(tenant_id)
     from app.core.plan_limits import MSG_DOCUMENTS_DAILY
 
     await increment_quota(
@@ -118,7 +166,7 @@ async def check_documents_upload_rate(
         key=key,
         delta=n_files,
         max_count=max_per_day,
-        ttl_seconds=_DAY_SECONDS,
+        ttl_seconds=daily_ttl_seconds(),
         error_message=MSG_DOCUMENTS_DAILY,
         log_event="documents.upload.rate_limit",
         tenant_id=str(tenant_id),
@@ -132,7 +180,7 @@ async def check_document_retries_rate(
     tenant_id: UUID,
     max_per_day: int | None,
 ) -> None:
-    key = f"rate:document_retries:{tenant_id}:{_utc_date_key()}"
+    key = document_retries_key(tenant_id)
     from app.core.plan_limits import MSG_DOCUMENT_RETRIES_DAILY
 
     await increment_quota(
@@ -140,7 +188,7 @@ async def check_document_retries_rate(
         key=key,
         delta=1,
         max_count=max_per_day,
-        ttl_seconds=_DAY_SECONDS,
+        ttl_seconds=daily_ttl_seconds(),
         error_message=MSG_DOCUMENT_RETRIES_DAILY,
         log_event="documents.retry.rate_limit",
         tenant_id=str(tenant_id),
@@ -154,7 +202,7 @@ async def check_knowledge_upload_rate(
     max_per_day: int | None,
     n_files: int = 1,
 ) -> None:
-    key = f"rate:knowledge_upload:{tenant_id}:{_utc_date_key()}"
+    key = knowledge_upload_key(tenant_id)
     from app.core.plan_limits import MSG_KNOWLEDGE_UPLOADS_DAILY
 
     await increment_quota(
@@ -162,7 +210,7 @@ async def check_knowledge_upload_rate(
         key=key,
         delta=n_files,
         max_count=max_per_day,
-        ttl_seconds=_DAY_SECONDS,
+        ttl_seconds=daily_ttl_seconds(),
         error_message=MSG_KNOWLEDGE_UPLOADS_DAILY,
         log_event="knowledge.upload.rate_limit",
         tenant_id=str(tenant_id),
@@ -181,16 +229,16 @@ async def check_chat_messages_rate(
     """Cuota diaria de chat: primero por usuario, luego por tenant (pool del plan)."""
     from app.core.plan_limits import MSG_CHAT_MESSAGES_DAILY, MSG_CHAT_MESSAGES_USER_DAILY
 
-    date_key = _utc_date_key()
-    user_key = f"rate:chat_messages:{tenant_id}:{user_id}:{date_key}"
-    tenant_key = f"rate:chat_messages:{tenant_id}:{date_key}"
+    ttl_seconds = daily_ttl_seconds()
+    user_key = f"rate:chat_messages:{tenant_id}:{user_id}:{local_day_key()}"
+    tenant_key = chat_messages_tenant_key(tenant_id)
 
     await increment_quota(
         redis,
         key=user_key,
         delta=1,
         max_count=max_per_user_day,
-        ttl_seconds=_DAY_SECONDS,
+        ttl_seconds=ttl_seconds,
         error_message=MSG_CHAT_MESSAGES_USER_DAILY,
         log_event="chat.messages.user_rate_limit",
         tenant_id=str(tenant_id),
@@ -202,7 +250,7 @@ async def check_chat_messages_rate(
             key=tenant_key,
             delta=1,
             max_count=max_per_day,
-            ttl_seconds=_DAY_SECONDS,
+            ttl_seconds=ttl_seconds,
             error_message=MSG_CHAT_MESSAGES_DAILY,
             log_event="chat.messages.rate_limit",
             tenant_id=str(tenant_id),

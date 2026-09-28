@@ -1,0 +1,51 @@
+{# Modal de solicitud de baja. Se abre desde member_row.html (botón Baja).
+   Aceptar envía el aviso al SADM y sustituye la fila; Cancelar solo cierra. #}
+{% set member = form.member %}
+<div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+  <h3 class="text-lg font-semibold mb-4">Solicitar baja</h3>
+  <p class="text-sm text-slate-700 mb-4">
+    Se va a comunicar al admin la baja del usuario "{{ member.name or member.email }}", ¿Deseas continuar?
+  </p>
+
+  <dl class="mb-4 divide-y divide-slate-200 rounded-lg border border-slate-200 px-3">
+    <div class="py-2 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Usuario</dt>
+      <dd class="text-sm font-medium break-all text-right">
+        {{ member.email }} · {{ member.role | role_label }}
+      </dd>
+    </div>
+    <div class="py-2 flex justify-between gap-4">
+      <dt class="text-sm text-slate-500">Solicitado por</dt>
+      <dd class="text-sm font-medium break-all text-right">
+        {{ form.actor_name or form.actor_email }} · {{ form.actor_role | role_label }}
+      </dd>
+    </div>
+  </dl>
+
+  <form hx-post="/settings/members/{{ member.membership_id }}/removal-request"
+        hx-target="#member-{{ member.membership_id }}"
+        hx-swap="outerHTML"
+        hx-indicator="#member-removal-spinner"
+        hx-disabled-elt="find button[type='submit']"
+        hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('close-member-modal'))"
+        class="space-y-4">
+    <label class="block text-sm">
+      <span class="font-medium text-slate-700">Fecha baja efectiva</span>
+      <span class="block text-xs text-slate-500">Desde ese día el usuario no tendrá acceso.</span>
+      <input type="date"
+             name="effective_date"
+             required
+             value="{{ form.min_date.isoformat() }}"
+             min="{{ form.min_date.isoformat() }}"
+             max="{{ form.max_date.isoformat() }}"
+             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    </label>
+
+    <div class="flex items-center justify-end gap-2">
+      <span id="member-removal-spinner" class="htmx-indicator text-xs text-slate-400">Enviando…</span>
+      <button type="button" @click="window.dispatchEvent(new CustomEvent('close-member-modal'))"
+              class="btn-secondary cursor-pointer">Cancelar</button>
+      <button type="submit" class="btn-primary cursor-pointer">Aceptar</button>
+    </div>
+  </form>
+</div>

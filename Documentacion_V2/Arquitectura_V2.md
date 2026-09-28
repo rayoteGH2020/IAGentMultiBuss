@@ -88,7 +88,7 @@ Capas (regla absoluta: `routes/` no importa `models/` directamente):
 
 **API:** health, metrics, scheduling (`/api/v1/scheduling`), webhooks Clerk, WhatsApp, Telegram.
 
-No hay rutas de analytics SQL (D011 — no se implementara). Webhooks Stripe: montados (`/api/webhooks/stripe`).
+No hay rutas de analytics SQL (D011 — no se implementara). Sin integracion de pagos (D016: Stripe retirado).
 
 ## 5. Modulos de producto
 
@@ -104,7 +104,7 @@ No hay rutas de analytics SQL (D011 — no se implementara). Webhooks Stripe: mo
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
 | Planes/entitlements | Implementado | D012: `basic`/`advanced`/`premium`; gates; cuotas duros; calendar_* no publicados. |
 | Analytics SQL | **No implementar** (D011) | Feature retirada del catalogo. Paso08 archivado. Sin rutas ni tablas. |
-| Billing Stripe | Implementado | Checkout + portal + webhook firmado; `assign_tenant_plan`; `tenant_plan_changes`; `billing_status`. Requiere Price IDs e Infisical. |
+| Cobro de planes | **Pendiente de decision** (D016) | Stripe retirado. Plan asignado solo por SADM (`assign_tenant_plan` + historial `tenant_plan_changes`). `/settings/billing` solo lectura. |
 
 ## 6. Datos
 
@@ -127,12 +127,11 @@ No hay rutas de analytics SQL (D011 — no se implementara). Webhooks Stripe: mo
 - Calendario/citas: `calendar_integrations`, `appointments`, `professionals`, `professional_specialties`, `professional_working_hours`, `business_hours`, `scheduling_services`, `schedule_exceptions`.
 - Observabilidad/coste: `llm_calls`, `audit_log`, `usage_meter`.
 - Planes: `plans`, `plan_entitlements`, `tenant_plan_changes`.
-- Tenants billing: `stripe_customer_id`, `stripe_subscription_id`, `billing_status`.
 
 ### 6.3 Deuda de esquema documentada
 
 - Analytics (D011): **no** crear `data_sources` / `analytics_queries`. Columna historica `usage_meter.analytics_queries_count` sin uso de producto.
-- Stripe Price IDs: rellenar `plans.stripe_price_id` por entorno (Paso09 codigo listo).
+- Stripe (D016): columnas eliminadas en `p68_drop_stripe_billing_01`; sin deuda pendiente.
 
 ## 7. Seguridad base
 
@@ -160,8 +159,24 @@ Residual operativo (no bloquea el modelo de capas, si el go-live): checklists ab
 1. Middleware extrae/valida sesion Clerk.
 2. Resuelve `user`, `tenant`, `membership` locales.
 3. Setea `request.state.*` y `app.current_tenant` (RLS).
-4. Dependencias: `CurrentUser`, `CurrentTenant`, `RequireAdmin`, `SuperAdmin`, `require_feature` / `require_any_feature`.
+4. Dependencias: `CurrentUser`, `CurrentTenant`, `RequireManager` (admin o co_admin), `SuperAdmin`, `require_feature` / `require_any_feature`.
 5. Denegacion de plan → `PlanRequiredError` (HTML o JSON segun ruta).
+
+Roles de organizacion (Clerk `org:<rol>`, reglas en `app/core/permissions.py`):
+
+| Rol | Acceso | Solicitar baja de miembros |
+| --- | --- | --- |
+| `admin` | Dueno del negocio, unico por tenant (un segundo admin de Clerk se sincroniza como `co_admin`, salvo en la org SADM). Todo el tenant | Cualquiera salvo a si mismo |
+| `co_admin` | Igual que admin | Cualquiera salvo a si mismo y al admin |
+| `member` / `viewer` | Chat y citas segun permisos | No |
+
+Ningun rol de tenant asigna ni cambia el plan: lo hace solo el SADM (Ajustes > Facturacion es de solo lectura).
+
+La baja se solicita al SADM por email con fecha de baja efectiva; la membership sigue activa hasta que el SADM la elimina en Clerk (webhook `organizationMembership.deleted`). La solicitud queda guardada en `memberships.removal_requested_at` / `removal_effective_date` (`p69`): la fila muestra la papelera bloqueada con ambas fechas y no admite otra solicitud mientras este pendiente. Se limpia si la membership se reactiva. Regla de negocio: el SADM **no puede rechazar** una baja solicitada; debe ejecutarla en la fecha efectiva (no existe "anular solicitud").
+
+Corte automatico (RGPD): desde las 00:00 de la fecha efectiva (zona de la app) el middleware desactiva la membership en la primera peticion y el cron ARQ `expire_member_removals` (cada 15 min + al arrancar el worker) desactiva al resto; ambos registran `membership.removal_executed` en `audit_log`. No depende de que el SADM actue en Clerk. Solo `organizationMembership.created` reactiva una membership; `updated` nunca devuelve el acceso. Mientras la baja esta pendiente el miembro no es editable (`member_locked_by_removal`).
+
+El alta tambien se solicita al SADM por email desde `/settings/members` ("Nuevo miembro": nombre, apellidos, alias, email, fecha de alta y rol `co_admin`/`member`). La app no crea nada en Clerk ni en BD; rechaza antes de enviar si el email ya es miembro o el plan no tiene plazas (`members_max`). Anti-reenvio 24 h por tenant+email.
 
 SADM (D004): org `ADMIN_CLERK_ORG_ID` + membership admin + allowlist opcional `SUPERADMIN_CLERK_USER_IDS`. Sin columna `users.is_superadmin`.
 
@@ -287,17 +302,17 @@ Checklist go-live: `PasosParaProduccion.md`.
 
 ## 17. Orden estrategico restante
 
-Codigo de Pasos 02–07 y 09 (Stripe) esta en el repo. Lo que queda:
+Codigo de Pasos 02–07 esta en el repo (Paso09 Stripe retirado, D016). Lo que queda:
 
 1. Ops: residual Paso00/01 (Infisical staging/prod, rotacion credenciales), QA manual Paso07, soft-launch Paso10.
-2. Operativa Stripe: Price IDs + claves Infisical + webhook Dashboard.
+2. Decidir el metodo de cobro de los planes (Backlog P3-2, D016).
 3. Deuda documental menor: mantener este fichero y el backlog alineados tras cada cierre.
 
 **No roadmap:** Analytics SQL / modulo 3 (D011).
 
 ## 18. Decisiones cerradas
 
-Ver `Decision_Log.md` (D001–D015): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, etc.
+Ver `Decision_Log.md` (D001–D016): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, **plan solo por SADM y Stripe retirado (D016)**, etc.
 
 ## 19. Docs V2 a no usar como snapshot de codigo sin revisar
 
