@@ -17,8 +17,22 @@ from app.schemas.pagination import Page
 class DocumentSearchFilters(BaseModel):
     """Filtros comunes y específicos por tipo; el handler ignora campos no aplicables."""
 
-    fecha_from: date | None = None
-    fecha_to: date | None = None
+    fecha_from: date | None = Field(
+        default=None,
+        description="Fecha del documento desde (contratos y seguros: fecha de inicio)",
+    )
+    fecha_to: date | None = Field(
+        default=None,
+        description="Fecha del documento hasta (contratos y seguros: fecha de inicio)",
+    )
+    fecha_fin_from: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) desde",
+    )
+    fecha_fin_to: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) hasta",
+    )
     total_min: Decimal | None = Field(default=None, ge=0)
     total_max: Decimal | None = Field(default=None, ge=0)
     status: list[str] | None = None

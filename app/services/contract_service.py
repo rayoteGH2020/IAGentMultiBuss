@@ -275,6 +275,10 @@ def _contract_search_conditions(
         conditions.append(Contract.fecha_inicio >= filters.fecha_from)
     if filters.fecha_to is not None:
         conditions.append(Contract.fecha_inicio <= filters.fecha_to)
+    if filters.fecha_fin_from is not None:
+        conditions.append(Contract.fecha_fin >= filters.fecha_fin_from)
+    if filters.fecha_fin_to is not None:
+        conditions.append(Contract.fecha_fin <= filters.fecha_fin_to)
     if filters.total_min is not None:
         conditions.append(Contract.importe >= filters.total_min)
     if filters.total_max is not None:

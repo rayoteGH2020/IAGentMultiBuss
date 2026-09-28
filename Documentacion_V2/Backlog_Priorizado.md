@@ -50,7 +50,7 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 2 | `GOOGLE_API_KEY` dedicada a CI (hoy comparte cuota con dev) | **Ops** |
 | 3 | Contratos: separar `fecha_inicio` (firma vs inicio de vigencia) e `importe` (periodico vs total + periodicidad) | **Pendiente** (schema + prompt v2 + migracion) |
 | 4 | Polizas: `tipo_seguro` como enum cerrado en vez de texto libre | **Pendiente** (schema + prompt v2 + migracion de datos) |
-| 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Pendiente** (`chat_documents_v2` doc_031 agota iteraciones) |
+| 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Hecho** 2026-09-28 (`fecha_fin_from` / `fecha_fin_to`; `chat_documents_v2` 32/32 x2) |
 | 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Pendiente** (medir y migrar) |
 | 7 | Eval de tickets con mas casos (hoy 3, todos fotos buenas) | **Pendiente** (anadir tickets arrugados / baja calidad) |
 | 8 | Evals escriben en BD `saas` (tenant "Invoice extraction eval") | **Pendiente** (BD dedicada o `saas_test`) |
@@ -81,6 +81,8 @@ Solucion 3a/3b: separar campos (`fecha_firma` / `fecha_inicio`; `importe_periodi
 Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multirriesgo_comercio, otros), prompt `insurance_extraction_v2` y migracion que reclasifique lo ya extraido.
 
 **5. Tools del chat sin filtro por vencimiento.** `search_documents` / `aggregate_documents` filtran contratos y polizas por `fecha_inicio`, no por `fecha_fin`. En `chat_documents_v2` doc_031 ("cuantas polizas vencen en octubre de 2027?", respuesta correcta 7) el chat respondio "No se ha encontrado ninguna poliza": respuesta falsa dada con seguridad, que hoy recibiria un cliente real. Solucion: filtros `fecha_fin_from` / `fecha_fin_to` en las tools y servicios de contratos/polizas. **Prioridad mas alta de los tres.**
+
+*Resuelto 2026-09-28:* filtros `fecha_fin_from` / `fecha_fin_to` en `DocumentSearchFilters`, en los args de `search_documents` / `aggregate_documents` y en los servicios de contratos y polizas; `fecha_from` / `fecha_to` documentan que en contratos/polizas filtran por inicio. La pista va solo en la descripcion de los parametros: anadirla tambien a la descripcion de las tools hizo que el modelo dejara de usar `aggregate_documents` en doc_013 (sumaba a mano y fallaba, 2/2 ejecuciones). Pendiente relacionado: `group_by` month/year sigue agrupando por `fecha_inicio`.
 
 ## P3 - Nuevos modulos
 

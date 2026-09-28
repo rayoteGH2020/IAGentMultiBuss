@@ -41,8 +41,31 @@ class SearchDocumentsArgs(BaseModel):
     doc_type_code: str = Field(
         description="Código del catálogo doc_types (factura, ticket, contrato, seguro)",
     )
-    fecha_from: date | None = None
-    fecha_to: date | None = None
+    fecha_from: date | None = Field(
+        default=None,
+        description=(
+            "Fecha desde. Facturas y tickets: fecha del documento. "
+            "Contratos y seguros: fecha de inicio (no vencimiento)."
+        ),
+    )
+    fecha_to: date | None = Field(
+        default=None,
+        description=(
+            "Fecha hasta. Facturas y tickets: fecha del documento. "
+            "Contratos y seguros: fecha de inicio (no vencimiento)."
+        ),
+    )
+    fecha_fin_from: date | None = Field(
+        default=None,
+        description=(
+            "Solo contratos y seguros: vencimiento (fecha_fin) desde. "
+            "Úsalo para preguntas sobre qué vence o caduca en un periodo."
+        ),
+    )
+    fecha_fin_to: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) hasta.",
+    )
     total_min: Decimal | None = Field(default=None, ge=0)
     total_max: Decimal | None = Field(default=None, ge=0)
     status: list[str] | None = None
@@ -75,8 +98,31 @@ class AggregateDocumentsArgs(BaseModel):
             "none, proveedor, comercio, parte_contraria, aseguradora, month, year, status"
         ),
     )
-    fecha_from: date | None = None
-    fecha_to: date | None = None
+    fecha_from: date | None = Field(
+        default=None,
+        description=(
+            "Fecha desde. Facturas y tickets: fecha del documento. "
+            "Contratos y seguros: fecha de inicio (no vencimiento)."
+        ),
+    )
+    fecha_to: date | None = Field(
+        default=None,
+        description=(
+            "Fecha hasta. Facturas y tickets: fecha del documento. "
+            "Contratos y seguros: fecha de inicio (no vencimiento)."
+        ),
+    )
+    fecha_fin_from: date | None = Field(
+        default=None,
+        description=(
+            "Solo contratos y seguros: vencimiento (fecha_fin) desde. "
+            "Úsalo para preguntas sobre qué vence o caduca en un periodo."
+        ),
+    )
+    fecha_fin_to: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) hasta.",
+    )
     total_min: Decimal | None = Field(default=None, ge=0)
     total_max: Decimal | None = Field(default=None, ge=0)
     status: list[str] | None = None

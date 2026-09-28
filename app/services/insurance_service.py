@@ -277,6 +277,10 @@ def _insurance_search_conditions(
         conditions.append(Insurance.fecha_inicio >= filters.fecha_from)
     if filters.fecha_to is not None:
         conditions.append(Insurance.fecha_inicio <= filters.fecha_to)
+    if filters.fecha_fin_from is not None:
+        conditions.append(Insurance.fecha_fin >= filters.fecha_fin_from)
+    if filters.fecha_fin_to is not None:
+        conditions.append(Insurance.fecha_fin <= filters.fecha_fin_to)
     if filters.total_min is not None:
         conditions.append(Insurance.prima >= filters.total_min)
     if filters.total_max is not None:
