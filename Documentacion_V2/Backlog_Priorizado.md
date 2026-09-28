@@ -1,6 +1,6 @@
 # Backlog_Priorizado
 
-Fecha actualizacion: 2026-09-25
+Fecha actualizacion: 2026-09-28
 Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67` + Stripe `p65`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
@@ -51,12 +51,16 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 3 | Contratos: separar `fecha_inicio` (firma vs inicio de vigencia) e `importe` (periodico vs total + periodicidad) | **Pendiente** (schema + prompt v2 + migracion) |
 | 4 | Polizas: `tipo_seguro` como enum cerrado en vez de texto libre | **Pendiente** (schema + prompt v2 + migracion de datos) |
 | 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Hecho** 2026-09-28 (`fecha_fin_from` / `fecha_fin_to`; `chat_documents_v2` 32/32 x2) |
-| 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Pendiente** (medir y migrar) |
+| 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Pendiente, no urgente** (medir y migrar; antes consultar fecha de retirada del modelo) |
 | 7 | Eval de tickets con mas casos (hoy 3, todos fotos buenas) | **Pendiente** (anadir tickets arrugados / baja calidad) |
 | 8 | Evals escriben en BD `saas` (tenant "Invoice extraction eval") | **Pendiente** (BD dedicada o `saas_test`) |
-| 9 | CI de evals: fallar si una metrica baja >5 % frente a `main` (Agents.md §9) | **Pendiente** (hoy gating por umbral absoluto) |
+| 9 | CI de evals: fallar si una metrica baja >5 % frente a `main` (Agents.md §9) | **Hecho** 2026-09-28 (`app/evals/baselines.json` + `compare_baseline`; chat x2 con media; excepcion con etiqueta `eval-regression-accepted`) |
 | 10 | Dev `DATABASE_URL` con superusuario `saas`: la UI de dev no pasa por RLS (prod usa `saas_app`, NOBYPASSRLS) | **Ops** |
 | 11 | Objetos huerfanos en R2/MinIO de tenants borrados en dev | **Ops** (limpieza puntual) |
+| 12 | Tools del chat: `group_by` month/year agrupa contratos/polizas por `fecha_inicio`; falta agrupar por vencimiento (`fecha_fin`) | **Pendiente** (continuacion del item 5 + caso nuevo en `chat_documents_v2`) |
+| 13 | `.gitattributes` solo fija LF en ficheros de deploy; el resto depende de `core.autocrlf` de cada maquina | **Pendiente, higiene** (`* text=auto eol=lf` + `git add --renormalize .`, commit `chore:`) |
+
+Orden acordado para la deuda de producto (2026-09-28, aplazado): **12 -> 3 -> 4**, despues 6. El item 3 cambia campos usados por panel, chat y evals: presentar diseno de campos antes de implementar.
 
 ### Detalle de la deuda de producto (items 3, 4 y 5)
 

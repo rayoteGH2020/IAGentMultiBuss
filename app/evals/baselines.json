@@ -1,0 +1,26 @@
+{
+  "updated_at": "2026-09-28",
+  "max_relative_drop": 0.05,
+  "metrics": {
+    "invoices_v1": {
+      "field_accuracy_avg": 0.9833,
+      "json_validity_rate": 1.0
+    },
+    "tickets_v1": {
+      "field_accuracy_avg": 1.0,
+      "json_validity_rate": 1.0
+    },
+    "contracts_v1": {
+      "field_accuracy_avg": 1.0,
+      "json_validity_rate": 1.0
+    },
+    "insurances_v1": {
+      "field_accuracy_avg": 1.0,
+      "json_validity_rate": 1.0
+    },
+    "chat_documents_v2": {
+      "answer_correct": 0.9812,
+      "document_tool_used": 1.0
+    }
+  }
+}

@@ -56,6 +56,11 @@ jobs:
 
   invoice-extraction:
     runs-on: ubuntu-latest
+    # pull-requests: read → el gate de baseline lee las etiquetas del PR en vivo
+    # (así un re-run tras poner eval-regression-accepted ve la etiqueta nueva).
+    permissions:
+      contents: read
+      pull-requests: read
 
     # Servicios de soporte: el runner necesita Postgres (para persistir LLMCall
     # y hacer queries con RLS) y Redis (para el semáforo de concurrencia por tenant,
@@ -138,16 +143,16 @@ jobs:
         run: psql -h localhost -U saas -d saas -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Apply DB migrations
-        # --frozen: usa las versiones exactas de uv.lock sin intentar resolver
-        # nuevas versiones. Garantiza reproducibilidad entre ejecuciones de CI.
-        run: uv sync --frozen
-
-      - name: Apply DB migrations
         # Se aplican TODAS las migraciones (upgrade head) para que las tablas
         # invoices, llm_calls, etc. existan antes de que el runner las use.
         # Si una migración falla aquí, el eval falla antes de gastar créditos LLM.
         id: migrate
         run: uv run alembic upgrade head
+
+      - name: Mark eval start
+        # Los runners nombran los resultados <eval>_<epoch>.json; el gate de
+        # baseline solo compara los generados a partir de este instante.
+        run: echo "EVAL_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Run invoice extraction evals
         # Se ejecuta como módulo Python (-m) para que las importaciones absolutas
@@ -163,11 +168,45 @@ jobs:
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
         run: uv run python -m app.evals.runners.document_extraction all
 
-      - name: Run document chat eval
+      - name: Run document chat eval (x2)
         # Siembra documentos conocidos en el tenant de evals y puntúa la
-        # respuesta final del chat (chat_documents_v2, D015).
+        # respuesta final del chat (chat_documents_v2, D015). Dos ejecuciones:
+        # el chat varía ~6 % entre runs sin cambios de código y el gate de
+        # baseline compara la media. Ambas se ejecutan aunque falle la primera.
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
-        run: uv run python -m app.evals.runners.chat_documents
+        run: |
+          status=0
+          for run in 1 2; do
+            uv run python -m app.evals.runners.chat_documents || status=1
+          done
+          exit "$status"
+
+      - name: Compare against main baseline
+        # AGENTS.md §9: falla si una métrica baja >5 % frente a la baseline de
+        # main (app/evals/baselines.json en origin/main, no la del PR, para que
+        # un PR no pueda rebajar su propia referencia). Con la etiqueta
+        # eval-regression-accepted informa sin fallar; tras ponerla, re-run.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          baseline="$RUNNER_TEMP/baselines_main.json"
+          if git fetch --depth=1 origin main \
+            && git show origin/main:app/evals/baselines.json > "$baseline" 2>/dev/null; then
+            echo "Baseline: origin/main"
+          else
+            echo "::warning::main no tiene app/evals/baselines.json; se usa la del PR"
+            cp app/evals/baselines.json "$baseline"
+          fi
+          args=(--since "${EVAL_STARTED_AT:-0}" --baseline "$baseline")
+          if [ -n "$PR_NUMBER" ] \
+            && gh pr view "$PR_NUMBER" --json labels -q '.labels[].name' \
+              | grep -qx eval-regression-accepted; then
+            echo "::warning::Etiqueta eval-regression-accepted: las regresiones no fallan el job"
+            args+=(--allow-regression)
+          fi
+          uv run python -m app.evals.compare_baseline "${args[@]}"
 
       - name: Upload eval results
         # if: always(): sube los resultados AUNQUE el step anterior haya fallado.
@@ -184,7 +223,3 @@ jobs:
           # debe considerarse un fallo del CI — simplemente el dataset no está
           # anotado todavía.
           if-no-files-found: warn
-        # NOTA: Este workflow actualmente NO falla el CI si las métricas caen.
-        # Agents.md §9 especifica que una bajada >5% respecto a main debe fallar
-        # el PR. Pendiente: añadir un step de comparación contra la línea base
-        # (p. ej. descargando el artifact de main y comparando field_accuracy_avg).
