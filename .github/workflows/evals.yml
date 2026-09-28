@@ -74,14 +74,15 @@ jobs:
         env:
           POSTGRES_USER: saas
           POSTGRES_PASSWORD: saas  # pragma: allowlist secret
-          POSTGRES_DB: saas
+          # Misma BD que en local: evals y tests comparten saas_test (app/evals/eval_db.py).
+          POSTGRES_DB: saas_test
         ports:
           - 5432:5432
         # Health: 10 reintentos × 5s ≈ 50s (arranque en frío en runners GitHub).
         # IMPORTANTE: no poner `#` dentro del bloque `options: >-` — YAML lo
         # trata como texto literal y Docker recibe `invalid reference format`.
         options: >-
-          --health-cmd "pg_isready -U saas -d saas"
+          --health-cmd "pg_isready -U saas -d saas_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -102,7 +103,8 @@ jobs:
       APP_SECRET_KEY: ci-not-secret  # pragma: allowlist secret
       # asyncpg en DATABASE_URL: obligatorio para que SQLAlchemy use el driver async.
       # Con psycopg2 las llamadas async fallarían en runtime.
-      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas  # pragma: allowlist secret
+      # saas_test: los runners redirigen DATABASE_URL a esta BD (use_eval_database).
+      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas_test  # pragma: allowlist secret
       REDIS_URL: redis://localhost:6379/0
       # Secretos LLM: inyectados desde GitHub Secrets del repositorio.
       # El runner los necesita para llamar a Gemini (extracción) y opcionalmente
@@ -140,7 +142,7 @@ jobs:
       - name: Enable pgvector extension
         env:
           PGPASSWORD: saas  # pragma: allowlist secret
-        run: psql -h localhost -U saas -d saas -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        run: psql -h localhost -U saas -d saas_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Apply DB migrations
         # Se aplican TODAS las migraciones (upgrade head) para que las tablas

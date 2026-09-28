@@ -28,6 +28,7 @@ from app.evals.document_compare import (
     compare_insurance,
     compare_ticket,
 )
+from app.evals.eval_db import use_eval_database
 from app.evals.eval_tenant import ensure_eval_tenant
 from app.evals.runners.extraction import (
     RESULTS_DIR,
@@ -155,6 +156,7 @@ async def _main_async(doc_types: list[str]) -> dict[str, dict[str, Any]]:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    use_eval_database()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     summaries = asyncio.run(_main_async(_selected_types(sys.argv[1:])))
 

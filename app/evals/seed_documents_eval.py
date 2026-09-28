@@ -28,6 +28,7 @@ import structlog
 from sqlalchemy import delete
 
 from app.core.db import session_factory_for_worker
+from app.evals.eval_db import use_eval_database
 from app.evals.eval_tenant import ensure_eval_tenant
 from app.models import (
     Contract,
@@ -215,5 +216,10 @@ async def seed(tenant_id: UUID | None = None) -> dict[str, int]:
     return counts
 
 
-if __name__ == "__main__":
+def main() -> None:
+    use_eval_database()
     asyncio.run(seed())
+
+
+if __name__ == "__main__":
+    main()

@@ -30,6 +30,7 @@ import structlog
 from app.core.db import session_factory_for_worker
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.media_limits import MediaLimitExceeded
+from app.evals.eval_db import use_eval_database
 from app.evals.eval_tenant import ensure_eval_tenant
 from app.evals.field_compare import compare_factura, ground_truth_is_usable
 from app.evals.thresholds import metrics_pass
@@ -344,6 +345,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
+    use_eval_database()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     requested_tenant: uuid.UUID | None = None
     if len(sys.argv) > 1:

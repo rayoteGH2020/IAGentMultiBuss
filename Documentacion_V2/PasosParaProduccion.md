@@ -65,7 +65,7 @@ Alcance del primer go-live:
 
 Estado a 2026-09-24: hay cambios sin commitear (renombrado `p66_drop_analytics_ent_01`, nueva `p67_plans_basic_adv_prem_01`, tests, `Dockerfile`, `deploy/`, docs).
 
-Los tests usan la BD `saas_test`, nunca `saas` (crearla/migrarla una vez y tras cada migracion nueva):
+Los tests y los evals usan la BD `saas_test`, nunca `saas` (crearla/migrarla una vez y tras cada migracion nueva):
 
 ```powershell
 git status --short

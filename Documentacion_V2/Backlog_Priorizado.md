@@ -53,7 +53,7 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Hecho** 2026-09-28 (`fecha_fin_from` / `fecha_fin_to`; `chat_documents_v2` 32/32 x2) |
 | 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Pendiente, no urgente** (medir y migrar; antes consultar fecha de retirada del modelo) |
 | 7 | Eval de tickets con mas casos (hoy 3, todos fotos buenas) | **Pendiente** (anadir tickets arrugados / baja calidad) |
-| 8 | Evals escriben en BD `saas` (tenant "Invoice extraction eval") | **Pendiente** (BD dedicada o `saas_test`) |
+| 8 | Evals escriben en BD `saas` (tenant "Invoice extraction eval") | **Hecho** 2026-09-28 (evals en `saas_test`, compartida con pytest: `app/evals/eval_db.py`; CI igual). Datos antiguos del tenant de evals siguen en `saas` (limpieza puntual pendiente) |
 | 9 | CI de evals: fallar si una metrica baja >5 % frente a `main` (Agents.md §9) | **Hecho** 2026-09-28 (`app/evals/baselines.json` + `compare_baseline`; chat x2 con media; excepcion con etiqueta `eval-regression-accepted`) |
 | 10 | Dev `DATABASE_URL` con superusuario `saas`: la UI de dev no pasa por RLS (prod usa `saas_app`, NOBYPASSRLS) | **Ops** |
 | 11 | Objetos huerfanos en R2/MinIO de tenants borrados en dev | **Ops** (limpieza puntual) |

@@ -32,6 +32,8 @@ from typing import Any, cast
 
 import structlog
 
+from app.evals.eval_db import use_eval_database
+
 logger = structlog.get_logger(__name__)
 
 DATASET = Path(__file__).parent.parent / "datasets" / "chat_documents_v2.json"
@@ -272,6 +274,8 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     validate_only = "--validate-only" in sys.argv
+    if not validate_only:
+        use_eval_database()
     summary = asyncio.run(run_evals(validate_only=validate_only))
     view = {k: summary[k] for k in _STDOUT_KEYS if k in summary}
     sys.stdout.write(json.dumps(view, indent=2, ensure_ascii=False) + "\n")

@@ -32,6 +32,8 @@ from typing import Any, cast
 import structlog
 from sqlalchemy import select
 
+from app.evals.eval_db import use_eval_database
+
 logger = structlog.get_logger(__name__)
 
 DATASET = Path(__file__).parent.parent / "datasets" / "knowledge_qa_v1.json"
@@ -508,6 +510,8 @@ def main() -> None:
     _configure_stdio_utf8()
     validate_only = "--validate-only" in sys.argv
     with_llm = "--with-llm" in sys.argv
+    if not validate_only:
+        use_eval_database()
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     tenant_id = uuid.UUID(args[0]) if args else None
 
