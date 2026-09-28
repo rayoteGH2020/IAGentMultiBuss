@@ -2,6 +2,80 @@
  * Componentes Alpine registrados globalmente (Agents.md §5).
  * Debe cargarse antes de alpine.min.js para capturar alpine:init.
  */
+
+// El servidor ya reduce las imágenes a 1280 px antes de llamar al LLM, pero eso
+// ocurre después de que el móvil haya subido los 4-8 MB originales por red
+// móvil. Reducir aquí a 1800 px deja margen sobre ese 1280 (no se pierde
+// calidad de extracción) y baja la subida a unos cientos de KB. De paso, pasar
+// por canvas convierte a JPEG el HEIC que entrega iOS, que el servidor rechaza.
+const UPLOAD_IMAGE_MAX_EDGE_PX = 1800;
+const UPLOAD_IMAGE_JPEG_QUALITY = 0.85;
+const UPLOAD_RECOMPRESSIBLE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+
+function jpegFilename(name) {
+  const base = String(name || "").replace(/\.[^./\\]+$/, "");
+  return `${base || "foto"}.jpg`;
+}
+
+/** Devuelve una versión reducida a JPEG del fichero, o el mismo si no aplica. */
+async function optimizeImageFile(file) {
+  if (!file || !String(file.type || "").startsWith("image/")) return file;
+  if (typeof createImageBitmap !== "function") return file;
+
+  let bitmap = null;
+  try {
+    // imageOrientation "from-image": aplica la rotación EXIF de las fotos de
+    // móvil (el canvas descarta los metadatos, así que hay que hacerlo aquí).
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+
+    const longEdge = Math.max(bitmap.width, bitmap.height);
+    const scale = longEdge > UPLOAD_IMAGE_MAX_EDGE_PX ? UPLOAD_IMAGE_MAX_EDGE_PX / longEdge : 1;
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", UPLOAD_IMAGE_JPEG_QUALITY);
+    });
+    if (!blob) return file;
+
+    // Recomprimir una imagen ya pequeña puede engordarla. Solo se conserva el
+    // original si el servidor acepta su formato: un HEIC hay que convertirlo
+    // aunque pese más. Si hubo rotación EXIF tampoco importa conservarlo,
+    // porque el servidor la corrige por su cuenta.
+    const serverAccepts = UPLOAD_RECOMPRESSIBLE_MIMES.includes(file.type);
+    if (serverAccepts && scale === 1 && blob.size >= file.size) return file;
+
+    return new File([blob], jpegFilename(file.name), {
+      type: "image/jpeg",
+      lastModified: file.lastModified || Date.now(),
+    });
+  } catch {
+    // Formato que el navegador no sabe decodificar, canvas "sucio", memoria
+    // agotada: se sube el original y que decida el servidor.
+    return file;
+  } finally {
+    bitmap?.close?.();
+  }
+}
+
+/** Optimiza una lista de ficheros conservando el orden; los no-imagen pasan. */
+async function optimizeUploadFiles(files) {
+  const optimized = [];
+  // Secuencial a propósito: diez bitmaps de 12 Mpx a la vez agotan la memoria
+  // de Safari en iOS y el sistema mata la pestaña sin previo aviso.
+  for (const file of files) {
+    optimized.push(await optimizeImageFile(file));
+  }
+  return optimized;
+}
+
 function registerInvoicesTableColumns() {
   const STORAGE_KEY = "invoicesTableColWidths";
   const DEFAULT_WIDTHS = {
@@ -758,6 +832,7 @@ function registerKnowledgeUploadForm() {
     kind: "",
     uploadInputKey: 0,
     formError: "",
+    optimizing: false,
     isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
 
     openModal() {
@@ -785,28 +860,47 @@ function registerKnowledgeUploadForm() {
         (detail && detail.message) || "No se pudo subir el documento. Revisa los datos.";
     },
 
-    onFilePick(event) {
-      this.files = Array.from(event.target.files || []);
-      this.formError = "";
-    },
-
-    onDrop(event) {
-      this.dragging = false;
-      this.files = Array.from(event.dataTransfer.files || []);
-      this.formError = "";
-      this.syncInputFiles();
-    },
-
-    onCameraCapture(event) {
-      const captured = Array.from(event.target.files || []);
-      if (captured.length > 0) {
-        this.files = captured;
-        this.kind = "";
+    /** Reduce las fotos y deja el resultado en `files`. Devuelve si hubo alguna. */
+    async acceptFiles(fileList) {
+      // Array.from antes de cualquier await: los llamadores limpian
+      // input.value a continuación y el FileList vivo se quedaría vacío.
+      const incoming = Array.from(fileList || []);
+      if (incoming.length === 0) {
+        this.files = [];
         this.formError = "";
-        this.uploadInputKey += 1;
-        this.open = true;
+        return false;
       }
+
+      this.optimizing = true;
+      try {
+        this.files = await optimizeUploadFiles(incoming);
+      } finally {
+        this.optimizing = false;
+      }
+      this.formError = "";
+      return true;
+    },
+
+    async onFilePick(event) {
+      await this.acceptFiles(event.target.files);
+    },
+
+    async onDrop(event) {
+      this.dragging = false;
+      if (await this.acceptFiles(event.dataTransfer.files)) {
+        this.syncInputFiles();
+      }
+    },
+
+    async onCameraCapture(event) {
+      const captured = Array.from(event.target.files || []);
       event.target.value = "";
+      if (captured.length === 0) return;
+
+      this.kind = "";
+      this.uploadInputKey += 1;
+      this.open = true;
+      await this.acceptFiles(captured);
     },
 
     syncInputFiles() {
@@ -859,6 +953,7 @@ function registerDocumentUploadForm() {
     dragOverSlot: null,
     uploadInputKey: 0,
     formError: "",
+    optimizing: false,
     isMobile: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
 
     get filledSlots() {
@@ -871,7 +966,9 @@ function registerDocumentUploadForm() {
 
     get canSubmit() {
       const filled = this.filledSlots;
-      return filled.length > 0 && filled.every((slot) => Boolean(slot.docType));
+      return (
+        !this.optimizing && filled.length > 0 && filled.every((slot) => Boolean(slot.docType))
+      );
     },
 
     openModal() {
@@ -907,26 +1004,44 @@ function registerDocumentUploadForm() {
         .filter((index) => index !== null);
     },
 
-    placeFiles(fileList) {
+    hasRoomFor(count) {
+      const free = this.firstEmptyIndexes().length;
+      if (free === 0) {
+        this.formError = `Máximo ${MAX_FILES} ficheros por subida. No quedan zonas libres.`;
+        return false;
+      }
+      if (count > free) {
+        this.formError =
+          `Solo quedan ${free} zona${free === 1 ? "" : "s"} libre${free === 1 ? "" : "s"} ` +
+          `(${this.filledCount} de ${MAX_FILES} ocupadas). ` +
+          `Reduce la selección a ${free} fichero${free === 1 ? "" : "s"} o quita alguno antes.`;
+        return false;
+      }
+      return true;
+    },
+
+    async placeFiles(fileList) {
+      // Array.from antes de cualquier await: los llamadores limpian
+      // input.value a continuación y el FileList vivo se quedaría vacío.
       const incoming = Array.from(fileList || []);
       if (incoming.length === 0) return;
+      if (!this.hasRoomFor(incoming.length)) return;
+
+      this.optimizing = true;
+      let optimized;
+      try {
+        optimized = await optimizeUploadFiles(incoming);
+      } finally {
+        this.optimizing = false;
+      }
+
+      // Se revalida el hueco: durante la optimización el usuario ha podido
+      // colocar más ficheros o vaciar zonas.
+      if (!this.hasRoomFor(optimized.length)) return;
 
       const emptyIndexes = this.firstEmptyIndexes();
-      if (emptyIndexes.length === 0) {
-        this.formError = `Máximo ${MAX_FILES} ficheros por subida. No quedan zonas libres.`;
-        return;
-      }
-
-      if (incoming.length > emptyIndexes.length) {
-        this.formError =
-          `Solo quedan ${emptyIndexes.length} zona${emptyIndexes.length === 1 ? "" : "s"} libre${emptyIndexes.length === 1 ? "" : "s"} ` +
-          `(${this.filledCount} de ${MAX_FILES} ocupadas). ` +
-          `Reduce la selección a ${emptyIndexes.length} fichero${emptyIndexes.length === 1 ? "" : "s"} o quita alguno antes.`;
-        return;
-      }
-
       const next = this.slots.map((slot) => ({ ...slot }));
-      incoming.forEach((file, offset) => {
+      optimized.forEach((file, offset) => {
         const index = emptyIndexes[offset];
         next[index] = {
           index,
@@ -950,32 +1065,33 @@ function registerDocumentUploadForm() {
       }
     },
 
-    onSlotPick(event) {
-      this.placeFiles(event.target.files);
+    async onSlotPick(event) {
+      const picked = Array.from(event.target.files || []);
       event.target.value = "";
+      await this.placeFiles(picked);
     },
 
-    onGridDrop(event) {
+    async onGridDrop(event) {
       this.dragging = false;
       this.dragOverSlot = null;
-      this.placeFiles(event.dataTransfer.files);
+      await this.placeFiles(event.dataTransfer.files);
     },
 
-    onSlotDrop(event, _index) {
+    async onSlotDrop(event, _index) {
       this.dragging = false;
       this.dragOverSlot = null;
-      this.placeFiles(event.dataTransfer.files);
+      await this.placeFiles(event.dataTransfer.files);
     },
 
-    onCameraCapture(event) {
+    async onCameraCapture(event) {
       const captured = Array.from(event.target.files || []);
-      if (captured.length > 0) {
-        this.open = true;
-        this.uploadInputKey += 1;
-        this.slots = emptySlots(this.uploadInputKey);
-        this.placeFiles(captured);
-      }
       event.target.value = "";
+      if (captured.length === 0) return;
+
+      this.open = true;
+      this.uploadInputKey += 1;
+      this.slots = emptySlots(this.uploadInputKey);
+      await this.placeFiles(captured);
     },
 
     prepareRequest(event) {

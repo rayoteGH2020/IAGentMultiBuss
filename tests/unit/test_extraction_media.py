@@ -8,7 +8,7 @@ import pytest
 from app.config import get_settings
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.media_limits import MediaLimitExceeded
-from app.llm.extraction_media import prepare_invoice_media
+from app.llm.extraction_media import prepare_classification_media, prepare_invoice_media
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
@@ -38,6 +38,18 @@ def _make_pdf(page_count: int) -> bytes:
 def _make_png(width: int, height: int) -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (width, height), color=(255, 255, 255)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _make_jpeg(width: int, height: int, *, orientation: int | None = None) -> bytes:
+    image = Image.new("RGB", (width, height), color=(255, 255, 255))
+    buffer = io.BytesIO()
+    if orientation is None:
+        image.save(buffer, format="JPEG")
+    else:
+        exif = image.getexif()
+        exif[0x0112] = orientation
+        image.save(buffer, format="JPEG", exif=exif)
     return buffer.getvalue()
 
 
@@ -92,3 +104,53 @@ def test_prepare_invoice_media_rejects_unreadable_image() -> None:
         prepare_invoice_media(b"\xff\xd8\xff no soy un jpeg", "image/jpeg")
 
     assert exc_info.value.error_code is DocumentErrorCode.unreadable_file
+
+
+def test_prepare_invoice_media_straightens_photo_taken_sideways() -> None:
+    """La foto cabe en 1280 px, pero hay que recomprimirla igual para enderezarla."""
+    original = _make_jpeg(40, 20, orientation=6)
+
+    result_bytes, result_mime, _ = prepare_invoice_media(original, "image/jpeg")
+
+    assert result_mime == "image/jpeg"
+    with Image.open(io.BytesIO(result_bytes)) as straightened:
+        assert straightened.size == (20, 40)
+        assert straightened.getexif().get(0x0112) is None
+
+
+def test_prepare_invoice_media_keeps_original_when_recompressing_does_not_help() -> None:
+    """Un PNG plano y pequeño engorda al pasar a JPEG: se envía tal cual."""
+    original = _make_png(40, 30)
+
+    result_bytes, result_mime, _ = prepare_invoice_media(original, "image/png")
+
+    assert result_bytes == original
+    assert result_mime == "image/png"
+
+
+def test_prepare_classification_media_downscales_images() -> None:
+    original = _make_png(3000, 2000)
+
+    result_bytes, result_mime = prepare_classification_media(original, "image/png")
+
+    assert result_mime == "image/jpeg"
+    assert len(result_bytes) < len(original)
+    with Image.open(io.BytesIO(result_bytes)) as optimized:
+        assert max(optimized.size) <= 1280
+
+
+def test_prepare_classification_media_straightens_photo_taken_sideways() -> None:
+    result_bytes, _ = prepare_classification_media(_make_jpeg(40, 20, orientation=6), "image/jpeg")
+
+    with Image.open(io.BytesIO(result_bytes)) as straightened:
+        assert straightened.size == (20, 40)
+
+
+def test_prepare_classification_media_ignores_the_pdf_page_limit() -> None:
+    """Clasificar no es extraer: el tope de páginas lo aplica el ingest, no esto."""
+    original = _make_pdf(8)
+
+    result_bytes, result_mime = prepare_classification_media(original, "application/pdf")
+
+    assert result_bytes == original
+    assert result_mime == "application/pdf"

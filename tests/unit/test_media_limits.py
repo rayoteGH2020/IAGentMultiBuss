@@ -46,6 +46,19 @@ def _png_bytes(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
+def _jpeg_bytes(width: int, height: int, *, orientation: int | None = None) -> bytes:
+    """JPEG con el tag EXIF Orientation opcional (6 = foto tomada de lado)."""
+    image = Image.new("RGB", (width, height), color=(255, 255, 255))
+    buffer = io.BytesIO()
+    if orientation is None:
+        image.save(buffer, format="JPEG")
+    else:
+        exif = image.getexif()
+        exif[0x0112] = orientation
+        image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
 def test_pdf_page_count_reads_real_pages() -> None:
     assert pdf_page_count(_pdf_bytes(3)) == 3
 
@@ -113,10 +126,30 @@ def test_open_image_within_limits_refuses_oversized(monkeypatch: pytest.MonkeyPa
 
 
 def test_open_image_within_limits_returns_rgb() -> None:
-    image = open_image_within_limits(_png_bytes(40, 30))
+    image, exif_oriented = open_image_within_limits(_png_bytes(40, 30))
     try:
         assert image.mode == "RGB"
         assert image.size == (40, 30)
+        assert exif_oriented is False
+    finally:
+        image.close()
+
+
+def test_open_image_within_limits_applies_exif_orientation() -> None:
+    """Orientation 6: el móvil guarda la foto de lado y anota el giro en EXIF."""
+    image, exif_oriented = open_image_within_limits(_jpeg_bytes(40, 20, orientation=6))
+    try:
+        assert image.size == (20, 40)
+        assert exif_oriented is True
+    finally:
+        image.close()
+
+
+def test_open_image_within_limits_leaves_upright_photo_untouched() -> None:
+    image, exif_oriented = open_image_within_limits(_jpeg_bytes(40, 20, orientation=1))
+    try:
+        assert image.size == (40, 20)
+        assert exif_oriented is False
     finally:
         image.close()
 

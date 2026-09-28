@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +13,7 @@ import structlog
 from instructor.processing.multimodal import PDF, Image
 
 from app.llm.client import get_llm_client
+from app.llm.extraction_media import MAX_PAYLOAD_BYTES, prepare_classification_media
 from app.llm.prompts_loader import load_prompt
 from app.schemas.document_classification import DocumentTypeClassification
 
@@ -58,13 +60,22 @@ async def classify_document_with_llm(
     source_filename: str | None = None,
 ) -> DocumentTypeClassification:
     """Clasifica un documento cuando las heurísticas de texto no aplican."""
-    if len(file_bytes) > 20 * 1024 * 1024:
+    if len(file_bytes) > MAX_PAYLOAD_BYTES:
         raise ValueError("File too large (>20MB)")
+
+    # Sin esto, una foto de 8 MB se enviaba en base64 tal cual y girada: la
+    # clasificación pagaba el mismo documento dos veces más caro que la
+    # extracción y leía el ticket de lado. Pillow bloquea, de ahí el hilo.
+    prepared, prepared_mime = await asyncio.to_thread(
+        prepare_classification_media,
+        file_bytes,
+        mime_type,
+    )
 
     messages = _build_messages(
         system_prompt=load_prompt(PROMPT_VERSION),
-        file_bytes=file_bytes,
-        mime_type=mime_type,
+        file_bytes=prepared,
+        mime_type=prepared_mime,
     )
     client = get_llm_client()
     completion = await client.complete(

@@ -178,7 +178,12 @@
 
         <div class="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 shrink-0 bg-white rounded-b-lg">
           <p class="text-xs text-slate-500">
-            <span x-text="filledCount"></span> / 10 colocados · 20 MB máx. por fichero
+            <template x-if="!optimizing">
+              <span><span x-text="filledCount"></span> / 10 colocados · 20 MB máx. por fichero</span>
+            </template>
+            <template x-if="optimizing">
+              <span class="text-slate-600">Optimizando fotos…</span>
+            </template>
           </p>
           <div class="flex items-center gap-2">
             <span id="upload-spinner" class="htmx-indicator text-sm text-slate-500">

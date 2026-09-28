@@ -119,6 +119,10 @@
           </p>
         </label>
 
+        <p x-show="optimizing" x-cloak class="mt-3 text-xs text-slate-600">
+          Optimizando fotos…
+        </p>
+
         {# Lista de ficheros seleccionados #}
         <ul x-show="files.length" class="mt-3 space-y-1 max-h-32 overflow-y-auto">
           <template x-for="(f, idx) in files" :key="uploadInputKey + '-' + idx + '-' + f.name">
@@ -168,7 +172,7 @@
           </button>
           <button
             type="submit"
-            :disabled="files.length === 0 || !kind"
+            :disabled="files.length === 0 || !kind || optimizing"
             class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
             Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
           </button>

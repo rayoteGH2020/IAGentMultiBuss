@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.media_limits import MediaLimitExceeded, inspect_document
 from app.llm.client import get_llm_client
-from app.llm.extraction_media import prepare_invoice_media
+from app.llm.extraction_media import MAX_PAYLOAD_BYTES, prepare_invoice_media
 from app.llm.prompts_loader import load_prompt
 from app.schemas.contract import ContratoDocumento
 from app.schemas.insurance import SeguroPoliza
@@ -113,9 +113,6 @@ def _build_extraction_messages(
             ],
         },
     ]
-
-
-MAX_PAYLOAD_BYTES = 20 * 1024 * 1024
 
 
 async def _prepare_media(

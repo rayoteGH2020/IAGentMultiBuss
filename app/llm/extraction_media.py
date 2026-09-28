@@ -27,6 +27,10 @@ logger = structlog.get_logger(__name__)
 _MAX_IMAGE_LONG_EDGE_PX = 1280
 _JPEG_QUALITY = 80
 
+# Tope de payload multimodal de Anthropic. Vive aquí, junto al preprocesado,
+# porque lo comparten la extracción y la clasificación.
+MAX_PAYLOAD_BYTES = 20 * 1024 * 1024
+
 
 def prepare_invoice_media(
     file_bytes: bytes,
@@ -57,8 +61,30 @@ def prepare_invoice_media(
     return file_bytes, mime_type, inspection
 
 
+def prepare_classification_media(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Optimiza la imagen antes de la llamada de clasificación.
+
+    Los PDFs pasan intactos a propósito: el tope de páginas es una regla de la
+    extracción y aplicarlo aquí convertiría un PDF largo en un fallo de
+    clasificación, en lugar del rechazo con motivo que ya emite el ingest.
+
+    Args:
+        file_bytes: Contenido del documento.
+        mime_type: MIME validado en la subida.
+
+    Returns:
+        Tupla (bytes a enviar, MIME resultante).
+
+    Raises:
+        MediaLimitExceeded: La imagen supera los límites o es ilegible.
+    """
+    if mime_type in IMAGE_MIMES:
+        return _optimize_image(file_bytes, mime_type)
+    return file_bytes, mime_type
+
+
 def _optimize_image(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
-    image = open_image_within_limits(file_bytes)
+    image, exif_oriented = open_image_within_limits(file_bytes)
     try:
         width, height = image.size
         long_edge = max(width, height)
@@ -78,7 +104,12 @@ def _optimize_image(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
 
     # Recomprimir una imagen ya pequeña puede engordarla; en ese caso se envía
     # el original, que además conserva mejor calidad para el OCR del modelo.
-    if len(optimized) >= len(file_bytes) and long_edge <= _MAX_IMAGE_LONG_EDGE_PX:
+    # No aplica si se corrigió la orientación: el original llegaría girado.
+    if (
+        not exif_oriented
+        and len(optimized) >= len(file_bytes)
+        and long_edge <= _MAX_IMAGE_LONG_EDGE_PX
+    ):
         return file_bytes, mime_type
 
     logger.info(
@@ -88,6 +119,7 @@ def _optimize_image(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
         original_mime=mime_type,
         width=width,
         height=height,
+        exif_oriented=exif_oriented,
     )
     return optimized, "image/jpeg"
 

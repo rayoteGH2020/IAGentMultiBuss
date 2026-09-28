@@ -34,6 +34,11 @@ logger = structlog.get_logger(__name__)
 PDF_MIME = "application/pdf"
 IMAGE_MIMES: frozenset[str] = frozenset({"image/jpeg", "image/png", "image/webp"})
 
+# Tag EXIF `Orientation` (0x0112). Los valores 2-8 codifican rotaciones y
+# espejos; el 1 (y la ausencia del tag) significa "ya está derecha".
+_EXIF_ORIENTATION_TAG = 0x0112
+_EXIF_TRANSFORMING_ORIENTATIONS: frozenset[int] = frozenset({2, 3, 4, 5, 6, 7, 8})
+
 
 class MediaLimitExceeded(ValidationError):
     """El fichero supera un límite de recursos o no se puede inspeccionar."""
@@ -174,16 +179,23 @@ def image_dimensions(file_bytes: bytes) -> tuple[int, int]:
     return width, height
 
 
-def open_image_within_limits(file_bytes: bytes) -> PILImage:
-    """Decodifica una imagen en RGB tras validar sus dimensiones.
+def open_image_within_limits(file_bytes: bytes) -> tuple[PILImage, bool]:
+    """Decodifica una imagen en RGB y ya orientada, tras validar sus dimensiones.
+
+    Las cámaras de móvil no rotan los píxeles: guardan la foto tal como sale del
+    sensor y anotan la rotación en el tag EXIF `Orientation`. Pillow no lo
+    aplica por su cuenta, así que un ticket fotografiado en vertical llegaría
+    girado al modelo y se extraería peor.
 
     Returns:
-        La imagen ya cargada en memoria; el llamador es responsable de cerrarla.
+        La imagen cargada en memoria (el llamador es responsable de cerrarla) y
+        si se aplicó rotación EXIF. Lo segundo importa porque, cuando se ha
+        rotado, los bytes originales dejan de ser equivalentes al resultado.
 
     Raises:
         MediaLimitExceeded: Si supera los límites o no se puede decodificar.
     """
-    from PIL import Image, UnidentifiedImageError
+    from PIL import Image, ImageOps, UnidentifiedImageError
 
     _configure_pillow_limits()
     width, height = image_dimensions(file_bytes)
@@ -196,7 +208,17 @@ def open_image_within_limits(file_bytes: bytes) -> PILImage:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(file_bytes)) as image_file:
-                return image_file.convert("RGB")
+                orientation = image_file.getexif().get(_EXIF_ORIENTATION_TAG)
+                # exif_transpose devuelve siempre una imagen nueva (una copia
+                # cuando no hay nada que rotar), nunca la misma instancia.
+                transposed = ImageOps.exif_transpose(image_file)
+                try:
+                    return (
+                        transposed.convert("RGB"),
+                        orientation in _EXIF_TRANSFORMING_ORIENTATIONS,
+                    )
+                finally:
+                    transposed.close()
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise MediaLimitExceeded(
             "Image exceeds decompression bomb threshold",
