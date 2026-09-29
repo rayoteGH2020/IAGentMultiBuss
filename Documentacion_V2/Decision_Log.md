@@ -339,3 +339,22 @@ Consecuencia:
 - `app/services/llm_budget_alert_service.py`, job ARQ `send_llm_budget_alert` (email fuera de la peticion) y comprobacion en `chat_service._run_assistant_turn`.
 - Umbrales y frecuencia configurables: `LLM_BUDGET_WARN_RATIO` (0,8), `CHAT_BUDGET_CUTOFF_RATIO` (0,9), `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` (86400), `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` (3).
 - Pendiente: mismo corte en el asistente de canales (Backlog P2b-17), interfaz de consumo y avisos (P2b-18) y rellenar los metadatos en Clerk (P2b-19, ops).
+
+## D021 - Usuario de Clerk borrado y recreado con el mismo email: cuenta nueva y limpia
+
+Decision (cerrada 2026-09-29): cuando llega un usuario de Clerk sin usuario local y ya hay uno local con el mismo email (sin distinguir mayusculas):
+
+- **Sin id de Clerk** (alta desde la app con invitacion): se vincula al nuevo id, solo si Clerk tiene el email verificado.
+- **Con un id de Clerk que ya no existe** (404 en Clerk): el usuario local antiguo se anonimiza (`deleted+<id>@deleted.invalid`, sin nombre ni id de Clerk), sus membresias se desactivan en todos los tenants y se crea un usuario nuevo. No hereda permisos ni historial.
+- **Con un id de Clerk que sigue existiendo**: error de autenticacion y log `auth.clerk_email_conflict`; no se toca nada.
+- El webhook `user.deleted` aplica la misma anonimizacion (antes solo se registraba en el log).
+
+Motivo:
+
+- Un usuario borrado y recreado en Clerk (caso real en dev, 2026-09-29) no podia entrar: `resolve_user` intentaba crear otro usuario con el mismo email y chocaba con `ix_users_email`. El mismo fallo afectaba al primer login de los usuarios invitados desde la app.
+- Vincular por email a una cuenta con historial permitiria heredar permisos (p. ej. co_admin) a quien consiga una cuenta de Clerk con ese email. Un error de red al consultar Clerk nunca se trata como "borrado".
+
+Consecuencia:
+
+- `auth_service.resolve_user`, `detach_deleted_clerk_user`, `handle_clerk_user_deleted` y `security.clerk_user_exists`.
+- La fila anonimizada se conserva por las FK (audit_log, documentos). `memberships` tiene RLS por tenant: la desactivacion recorre los tenants fijando el contexto de cada uno (evento raro).

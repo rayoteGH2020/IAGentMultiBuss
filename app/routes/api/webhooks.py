@@ -14,6 +14,7 @@ from app.core.webhook_ingress import (
     read_request_body_limited,
 )
 from app.services.auth_service import (
+    handle_clerk_user_deleted,
     resolve_tenant,
     resolve_user,
     revoke_clerk_membership,
@@ -115,7 +116,12 @@ async def clerk_webhook(
                     revoked=revoked,
                 )
 
-        elif event_type in ("user.deleted", "organization.deleted"):
+        elif event_type == "user.deleted":
+            uid = data.get("id")
+            detached = isinstance(uid, str) and await handle_clerk_user_deleted(db, uid)
+            log.info("clerk.user_deleted", id=uid, detached=detached)
+
+        elif event_type == "organization.deleted":
             log.info("clerk.delete_event", type=event_type, id=data.get("id"))
 
     return {"received": True}

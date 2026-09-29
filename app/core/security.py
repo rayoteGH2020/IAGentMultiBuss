@@ -103,6 +103,21 @@ async def fetch_clerk_user(clerk_user_id: str) -> dict[str, Any]:
         return cast("dict[str, Any]", r.json())
 
 
+async def clerk_user_exists(clerk_user_id: str) -> bool:
+    """True si el usuario existe en Clerk; False solo ante un 404 (borrado).
+
+    Cualquier otro error se propaga: no se debe tratar un fallo de red como
+    "usuario borrado" (anonimizaría una cuenta viva).
+    """
+    try:
+        await fetch_clerk_user(clerk_user_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return False
+        raise
+    return True
+
+
 async def fetch_clerk_org(clerk_org_id: str) -> dict[str, Any]:
     settings = get_settings()
     secret = settings.clerk_secret_key.get_secret_value()

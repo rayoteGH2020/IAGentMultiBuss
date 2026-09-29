@@ -2,19 +2,21 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.db import set_tenant_context
 from app.core.errors import AuthError
 from app.core.permissions import ORG_ADMIN_ROLE, ORG_CO_ADMIN_ROLE
-from app.core.security import fetch_clerk_org, fetch_clerk_user
+from app.core.security import clerk_user_exists, fetch_clerk_org, fetch_clerk_user
 from app.models import Membership, Tenant, User
 
 log = structlog.get_logger(__name__)
 
 _VALID_ORG_ROLES = frozenset({ORG_ADMIN_ROLE, ORG_CO_ADMIN_ROLE, "member", "viewer"})
+# Dominio reservado (RFC 2606): los emails anonimizados nunca son entregables.
+DELETED_USER_EMAIL_DOMAIN = "deleted.invalid"
 
 
 async def get_user_by_id(db: AsyncSession, user_id: UUID) -> User:
@@ -33,31 +35,104 @@ async def clear_force_password_reset(db: AsyncSession, user_id: UUID) -> None:
     await db.flush()
 
 
+def _clerk_email(clerk_data: dict[str, Any]) -> tuple[str, bool]:
+    """(email principal, verificado) del perfil de Clerk; el primero si no hay principal."""
+    addresses = [e for e in clerk_data.get("email_addresses", []) if isinstance(e, dict)]
+    primary_id = clerk_data.get("primary_email_address_id")
+    ordered = sorted(addresses, key=lambda e: e.get("id") != primary_id)
+    for entry in ordered:
+        raw = entry.get("email_address")
+        if isinstance(raw, str) and raw:
+            verification = entry.get("verification")
+            status = verification.get("status") if isinstance(verification, dict) else None
+            return raw, status == "verified"
+    raise AuthError("User has no primary email in Clerk")
+
+
+async def detach_deleted_clerk_user(db: AsyncSession, user: User) -> None:
+    """Desvincula y anonimiza un usuario local cuyo usuario de Clerk se borró.
+
+    Libera el email (un alta nueva en Clerk con ese email crea un usuario
+    limpio, sin heredar permisos ni historial) y desactiva sus membresías en
+    todos los tenants. La fila se conserva por las FK (audit_log, documentos).
+    ``memberships`` tiene RLS por tenant: se recorren los tenants fijando el
+    contexto de cada uno. Es un evento raro (borrado de cuenta).
+    """
+    user_id = user.id
+    tenant_ids = (await db.execute(select(Tenant.id))).scalars().all()
+    for tenant_id in tenant_ids:
+        await set_tenant_context(db, str(tenant_id))
+        await db.execute(
+            update(Membership)
+            .where(Membership.user_id == user_id, Membership.is_active.is_(True))
+            .values(is_active=False)
+        )
+    await db.execute(text("SELECT set_config('app.current_tenant', '', true)"))
+    user.email = f"deleted+{user_id}@{DELETED_USER_EMAIL_DOMAIN}"
+    user.name = None
+    user.clerk_user_id = None
+    await db.flush()
+    log.warning("auth.clerk_user_detached", user_id=str(user_id))
+
+
+async def handle_clerk_user_deleted(db: AsyncSession, clerk_user_id: str) -> bool:
+    """Webhook ``user.deleted``: anonimiza el usuario local si existe."""
+    result = await db.execute(select(User).where(User.clerk_user_id == clerk_user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return False
+    await detach_deleted_clerk_user(db, user)
+    return True
+
+
+async def _claim_existing_email(
+    db: AsyncSession, *, existing: User, clerk_user_id: str, verified: bool
+) -> User | None:
+    """Resuelve un usuario local con el mismo email y otro (o ningún) id de Clerk.
+
+    Returns:
+        El usuario a usar si se vincula; None si se ha anonimizado y hay que
+        crear uno nuevo.
+    """
+    if existing.clerk_user_id is None:
+        # Alta desde la app (invitación): se vincula solo con email verificado.
+        if not verified:
+            raise AuthError("Email not verified in Clerk")
+        existing.clerk_user_id = clerk_user_id
+        await db.flush()
+        log.info("auth.clerk_user_linked", user_id=str(existing.id))
+        return existing
+    if await clerk_user_exists(existing.clerk_user_id):
+        log.error("auth.clerk_email_conflict", user_id=str(existing.id))
+        raise AuthError("Email already linked to another Clerk user")
+    await detach_deleted_clerk_user(db, existing)
+    return None
+
+
 async def resolve_user(db: AsyncSession, clerk_user_id: str) -> User:
-    """Obtiene el User local. Si no existe, lo crea pidiendo datos a Clerk."""
+    """Obtiene el User local. Si no existe, lo crea pidiendo datos a Clerk.
+
+    Si ya hay un usuario local con ese email: se vincula si se dio de alta
+    desde la app sin id de Clerk (invitación), o se anonimiza el antiguo si su
+    usuario de Clerk fue borrado (ver ``detach_deleted_clerk_user``).
+    """
     result = await db.execute(select(User).where(User.clerk_user_id == clerk_user_id))
     user = result.scalar_one_or_none()
     if user is not None:
         return user
 
     clerk_data = await fetch_clerk_user(clerk_user_id)
-    primary_id = clerk_data.get("primary_email_address_id")
-    email: str | None = None
-    for e in clerk_data.get("email_addresses", []):
-        if isinstance(e, dict) and e.get("id") == primary_id:
-            raw = e.get("email_address")
-            if isinstance(raw, str):
-                email = raw
-                break
-    if email is None:
-        for e in clerk_data.get("email_addresses", []):
-            if isinstance(e, dict):
-                raw = e.get("email_address")
-                if isinstance(raw, str):
-                    email = raw
-                    break
-    if email is None:
-        raise AuthError("User has no primary email in Clerk")
+    email, verified = _clerk_email(clerk_data)
+
+    existing = (
+        await db.execute(select(User).where(func.lower(User.email) == email.lower()))
+    ).scalar_one_or_none()
+    if existing is not None:
+        linked = await _claim_existing_email(
+            db, existing=existing, clerk_user_id=clerk_user_id, verified=verified
+        )
+        if linked is not None:
+            return linked
 
     name_parts = [clerk_data.get("first_name"), clerk_data.get("last_name")]
     name = " ".join(p for p in name_parts if p) or email.split("@", maxsplit=1)[0]
