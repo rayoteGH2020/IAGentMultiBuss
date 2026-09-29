@@ -285,3 +285,33 @@ Consecuencia:
 - Supersede D006 en lo relativo a Stripe (planes y entitlements siguen vigentes). `Paso09_Billing_Stripe.md` queda como historico.
 - Infisical: borrar `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` de todos los entornos.
 - Si se reintroduce un proveedor de pago: nueva decision en este log; el pago nunca asigna plan sin pasar por la regla que se decida.
+
+## D017 - Historico visible (`history_months`): solo documentos puntuales; contratos por vigencia
+
+Decision (cerrada 2026-09-29, pendiente de implementar): el limite `history_months` de `especificacion-planes-y-cuotas.md` (12 / 36 / sin limite) oculta solo **facturas y tickets** con fecha de emision anterior al limite. Los **contratos** activos o pendientes de vencer son siempre visibles, buscables en el chat y avisables; tras vencer o ser sustituidos se aplica el mismo limite contado desde su fecha de fin. Las polizas seguiran la regla de los contratos cuando se corrija su encaje en planes (incongruencia aparcada).
+
+Motivo:
+
+- La especificacion no fija sobre que fecha se cuenta el historico. Contado desde la subida, un contrato de 3 anos quedaria oculto en Basico a los 12 meses: desaparece de la lista y del chat, y el aviso de vencimiento (incluido en Basico, §2.2) no se enviaria o apuntaria a un contrato invisible. Anula el argumento de venta del plan.
+- El tamano del archivo de contratos ya lo limita `contracts_active_max`; un segundo limite por antiguedad sobre contratos vigentes es redundante y ambiguo (¿un contrato oculto ocupa hueco?).
+
+Consecuencia:
+
+- Al revisar la especificacion, sustituir §4.7 por: "`history_months` oculta facturas y tickets con fecha de emision anterior al limite. Los contratos activos o pendientes de vencer son siempre visibles; tras vencer o ser sustituidos, se aplica el mismo limite desde su fecha de fin."
+- Ni `history_months` ni los avisos de contratos existen aun en el codigo (2026-09-29); implementar ambos ya con esta regla.
+- El historico oculto no se borra; si el cliente sube de plan, vuelve a verse (§4.7 sin cambios en ese punto).
+
+## D018 - Analista de datos en Premium: aplazado hasta despues del producto minimo
+
+Decision (cerrada 2026-09-29): el analista de datos conversacional para Premium (`analytics`, §2.1 y §4.5 de `especificacion-planes-y-cuotas.md`) **no se desarrolla ahora**. Queda en el roadmap para despues del producto minimo, junto con el resto de funcionalidades posteriores.
+
+Motivo:
+
+- Prioridad: cerrar el producto minimo (plan Basico).
+- El analista no forma parte del Basico ni del Avanzado.
+
+Consecuencia:
+
+- **D011 sigue vigente** mientras no se retome el analista: sin feature `analytics` en el catalogo, sin rutas ni runners de la tarea `sql`. AGENTS.md §7, `arquitectura.md` y `app/llm/client.py` no se tocan.
+- Al retomarlo: nueva decision que sustituya a D011. Diferencia de alcance a tener en cuenta: D011 descartaba BI/SQL sobre la **BD externa del cliente**; la especificacion plantea un analista sobre los **datos del propio tenant en la app** (facturas, tickets, contratos), en solo lectura y con RLS.
+- Mientras tanto, Premium se ofrece con las mismas funcionalidades que Avanzado y limites mayores (D012). En la especificacion, `analytics` y `analytics_questions_per_month` quedan como fase posterior y no entran en el calculo del presupuesto de Premium.

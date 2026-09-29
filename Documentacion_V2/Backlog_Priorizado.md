@@ -58,6 +58,8 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 10 | Dev `DATABASE_URL` con superusuario `saas`: la UI de dev no pasa por RLS (prod usa `saas_app`, NOBYPASSRLS) | **Ops** |
 | 11 | Objetos huerfanos en R2/MinIO de tenants borrados en dev | **Ops** (limpieza puntual) |
 | 12 | Tools del chat: `group_by` month/year agrupa contratos/polizas por `fecha_inicio`; falta agrupar por vencimiento (`fecha_fin`) | **Pendiente** (continuacion del item 5 + caso nuevo en `chat_documents_v2`) |
+| 14 | Coste de reintentos de Instructor con Gemini: Instructor 1.15 solo suma el uso de los reintentos para OpenAI y Anthropic (`instructor/utils/core.py::update_total_usage`); con `from_genai` en `llm_calls` queda solo el ultimo intento. Una extraccion con 2 reintentos por schema invalido cuenta ~1/3 de su coste en el presupuesto del plan. Sumar el uso de cada intento (hooks de Instructor) | **Pendiente** (detectado 2026-09-29) |
+| 15 | Semaforo de extraccion por tenant: cada `Retry` consume un intento de ARQ (`max_tries=2`); con varios workers un job diferido 2 veces se descartaria y el documento quedaria en processing hasta el barrido de huerfanos. Hoy no ocurre (1 worker, `max_jobs` = limite por tenant = 5). Resolver antes de escalar workers (p. ej. `max_tries` propio para extraccion, ya seguro por `extraction_guard`) | **Pendiente** (latente) |
 | 13 | `.gitattributes` solo fija LF en ficheros de deploy; el resto depende de `core.autocrlf` de cada maquina | **Pendiente, higiene** (`* text=auto eol=lf` + `git add --renormalize .`, commit `chore:`) |
 
 Orden acordado para la deuda de producto (2026-09-28, aplazado): **12 -> 3 -> 4**, despues 6. El item 3 cambia campos usados por panel, chat y evals: presentar diseno de campos antes de implementar.
@@ -101,13 +103,14 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 | 5 | `/metrics`: restriccion de red en proxy/infra ademas del token (hoy Caddy responde 404 a `/metrics`) | **Ops** |
 | 6 | CSP sin `unsafe-eval` / `unsafe-inline`: migrar a `@alpinejs/csp` (~156 usos de Alpine) + nonces para ~10 scripts inline. 1-2 dias | **Pendiente** (backlog) |
 
-Ops inmediato: aplicar `p71` y `p72` en dev (`infisical run -- uv run alembic upgrade head`; comprobar con `infisical run -- uv run alembic current` que muestra `p72_drop_sadm_chat_read_01 (head)`). Solo estan aplicadas en `saas_test`.
+`p71` y `p72` aplicadas en dev y `saas_test` (2026-09-29). Pendiente en staging/prod cuando existan (`infisical run -- uv run alembic upgrade head`; comprobar con `alembic current` que muestra `p72_drop_sadm_chat_read_01 (head)`).
 
 ## P3 - Nuevos modulos
 
 | # | Item | Estado |
 | --- | --- | --- |
-| 1 | Analytics SQL read-only | **No implementar** (D011 / Paso08 archivado; no se vende BI) |
+| 1 | Analytics SQL read-only | **No implementar** (D011 / Paso08 archivado; no se vende BI sobre BD externa del cliente) |
+| 1b | Analista de datos Premium sobre datos del tenant (`especificacion-planes-y-cuotas.md` §4.5) | **Post producto minimo** (D018). Al retomarlo, nueva decision que sustituya a D011 |
 | 2 | **Metodo de cobro de los planes** (2026-09-28) | **Pendiente de decision** (D016). Stripe retirado. Decidir: proveedor (Stripe, Redsys, GoCardless/SEPA...) o cobro fuera de la app (transferencia/factura manual); quien cambia el plan ante impago; si el cobro debe reflejarse en la app. Nueva decision en `Decision_Log.md` antes de implementar |
 | 3 | Resenas/marketing | **Pendiente** (no priorizado) |
 | 4 | MCP/tooling externo | **Pendiente** (no priorizado) |

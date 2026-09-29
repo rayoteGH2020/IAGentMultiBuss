@@ -1,0 +1,424 @@
+# Especificación: planes, cuotas de uso y control de coste
+
+> **Para el asistente de código (Cursor / Claude Code).**
+> La base de esta especificación es lo que **ya está implementado** y documentado en `Planes_Entitlements.md`:
+> - catálogo `basic` | `advanced` | `premium`;
+> - `entitlement_service` + `require_feature`;
+> - `plan_quota_service` (Redis);
+> - panel SADM `/sadm/plans`;
+> - `tenant_plan_changes`;
+> - seed en `app/core/entitlement_codes.py` y migración `p67`.
+>
+> Este documento **amplía y corrige** ese sistema. No crees un catálogo, un servicio de cuotas ni tablas de planes en paralelo.
+> **No escribas código todavía.** Primero ejecuta la **Fase 1 (análisis de brechas)** y entrega el informe de la sección 10. La implementación empieza solo cuando el informe esté revisado y aprobado.
+
+---
+
+## 0. Reglas para el asistente
+
+1. **Reutiliza lo existente.**
+   - Los límites nuevos son **códigos de límite** en el seed de entitlements.
+   - Las funciones nuevas son **códigos de feature**.
+   - Las comprobaciones pasan por `entitlement_service`, `require_feature` y `plan_quota_service`.
+   - Solo propón una tabla o un servicio nuevo si el análisis demuestra que lo existente no lo cubre, y justifícalo.
+2. **Analiza el código real antes de proponer.** Cita ficheros y líneas. Si algo no existe, dilo; no lo supongas.
+3. **Respeta el stack y las convenciones:**
+   - FastAPI + Jinja2 + HTMX + Alpine.js + Tailwind (sin Node).
+   - PostgreSQL + pgvector, Redis, Cloudflare R2.
+   - Clerk multi-tenant.
+   - Cliente LLM propio (Anthropic + Google) con Langfuse e Instructor. Sin LangChain.
+   - Prompts versionados en `.txt`.
+4. **Los límites y precios no se escriben en el código.** Van en el seed de entitlements y se pueden sobrescribir por tenant desde SADM.
+5. Trabaja en **pasos pequeños y numerados**, cada uno desplegable y con sus pruebas.
+6. **Prioridad: producto mínimo.** Lo marcado como **[Fase posterior]** se especifica ahora para que el diseño lo tenga en cuenta, pero no se implementa todavía.
+
+---
+
+## 1. Decisiones de partida
+
+| Tema | Decisión | Origen |
+|---|---|---|
+| Arquitectura | La de `Planes_Entitlements.md`. **Hay que verificar** que cubre todo lo de este documento (sección 5) | Planes_Entitlements |
+| Qué incluye cada plan | El catálogo de `Planes_Entitlements.md` (D012), **más el analista en Premium** | Planes_Entitlements + esta especificación |
+| Analista de datos | **Se implementa, solo en Premium.** Esto **anula la decisión D011** ("Analytics no se implementa"). Registrar como decisión nueva | Esta especificación |
+| WhatsApp y Telegram | Incluidos en Avanzado y Premium. No existen en Básico. **No hay complemento aparte** | Planes_Entitlements |
+| Tipo de límite | **Mensuales y comerciales**, con avisos al 80 % y 100 %. Sustituyen a los diarios como referencia de producto | Esta especificación |
+| Control de coste | `llm_budget_eur_month` como **tope duro** por tenant, **con opción de ampliación** (override en SADM ahora; packs en fase posterior). Importes recalibrados (sección 3) | Planes_Entitlements + esta especificación |
+| Usuarios | 1 / 3 / 10 | Esta especificación |
+| Precios | 22 / 49 / 99 € al mes sin IVA. **No están cerrados**: pueden subir | Esta especificación |
+| Cambio de plan | Solo desde SADM con `assign_tenant_plan` (D016) | Planes_Entitlements |
+| Cobro | **Pendiente de decidir.** Stripe está retirado | Planes_Entitlements |
+| Google Calendar y voz | Fuera de la implementación por ahora (D012) | Planes_Entitlements |
+| Modelos de IA | Los de `DEFAULT_MODELS` en `app/llm/client.py` (sección 8). Los costes se calculan con las tarifas de `app/llm/pricing.py` y las medias reales de `llm_calls` | Código actual |
+| Contratos | Modelo de contratos activos + altas al mes + hash + páginas + borrado diferido (sección 4.3) | Esta especificación |
+| Packs de ampliación | Se especifican ahora y se implementan **[Fase posterior]** | Esta especificación |
+
+---
+
+## 2. Planes
+
+### 2.1 Funcionalidades (feature codes)
+
+| Feature code | Básico | Avanzado | Premium | Notas |
+|---|:---:|:---:|:---:|---|
+| `documents` | Sí | Sí | Sí | Facturas y tickets (extracción, conciliación, exportación) y contratos |
+| `documents_chat` | Sí | Sí | Sí | Preguntas sobre los documentos y contratos del dueño (RAG) |
+| `knowledge` | Sí | Sí | Sí | Conocimiento del negocio: preguntas frecuentes, servicios, tarifas, horarios, formas de pago |
+| `knowledge_chat` | Sí | Sí | Sí | Chat interno del dueño sobre ese conocimiento |
+| `appointments` | No | Sí | Sí | Citas: crear, modificar, cancelar y consultar |
+| `channel_whatsapp` | No | Sí | Sí | Asistente para clientes finales |
+| `channel_telegram` | No | Sí | Sí | Mismo motor; útil para pilotos y pruebas |
+| `analytics` | No | No | **Sí** | **Nuevo:** analista de datos conversacional (anula D011) |
+| `calendar_google`, `calendar_voice` | No | No | No | Fuera de oferta (D012); solo override SADM |
+
+> **A verificar en el análisis:** si los contratos encajan en `documents` / `documents_chat`, o si hace falta un feature code propio (`contracts`).
+
+### 2.2 Condiciones comerciales
+
+Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
+
+| | Básico | Avanzado | Premium |
+|---|---|---|---|
+| Precio mensual | 22 € | 49 € | 99 € |
+| Precio anual | 220 € | 490 € | 990 € |
+| Usuarios | 1 | 3 | 10 |
+| Histórico visible | 12 meses | 3 años | Ilimitado |
+| Exportación para la gestoría | CSV / Excel | + envío automático | + integración con software contable [Fase posterior] |
+| Avisos de contratos | Vencimiento | + plazo de baja + resumen de condiciones | + comparativa entre renovaciones [Fase posterior] |
+| Soporte | Email | Email prioritario | Teléfono / WhatsApp + puesta en marcha guiada |
+
+---
+
+## 3. Límites
+
+### 3.1 Límites comerciales mensuales (los que ve el cliente)
+
+| Limit code (propuesto) | Unidad | Básico | Avanzado | Premium |
+|---|---|---:|---:|---:|
+| `invoices_per_month` | facturas | 40 | 150 | 400 |
+| `tickets_per_month` | tickets | 30 | 80 | 200 |
+| `contracts_active_max` | contratos activos | 15 | 40 | 100 (se vende como «sin límite práctico») |
+| `contract_uploads_per_month` | altas y renovaciones | 5 | 10 | 30 |
+| `contract_uploads_first_period` | altas en el primer periodo | 15 | 40 | 100 |
+| `contract_max_pages` | páginas por fichero | 100 | 100 | 100 |
+| `assistant_messages_per_month` | mensajes enviados por el asistente | 0 | 800 | 2.500 |
+| `reminders_per_month` | recordatorios de cita | 0 | 200 | 600 |
+| `members_max` | usuarios | 1 | 3 | 10 |
+| `history_months` | meses visibles | 12 | 36 | sin límite |
+
+### 3.2 Control de coste y protección técnica (el cliente no los ve)
+
+| Limit code | Unidad | Básico | Avanzado | Premium | Notas |
+|---|---|---:|---:|---:|---|
+| `llm_budget_eur_month` | € de IA al mes | **6** | **15** | **30** | **Tope duro.** Recalibrado: antes era 30/100/250, por encima incluso del precio del Básico. Equivale a un 27-31 % del precio. Con los modelos y costes reales, el peor caso (todos los límites y topes técnicos al 100 %, reintentos incluidos) es de unos 1,75 / 8,40 / 40 €: el presupuesto lo cubre 3,4 y 1,8 veces en Básico y Avanzado. **En Premium el tope es el que limita** (sobre todo por el tope del analista y de los chats); con un uso normal (unos 12 €) no se alcanza. Ver hoja «Coste por cliente» del Excel |
+| `end_customer_messages_per_day` | mensajes por cliente final | 0 | 30 | 30 | Anti-abuso. Sustituye a `channel_messages_per_hour` |
+| `document_retries_per_month` | reintentos manuales | 40 | 150 | 400 | **Propuesta: sustituye a `document_retries_per_day` (20/80/300),** que permitía unos 600 reintentos al mes en Básico (≈4,7 € de IA). Además, **máximo 3 reintentos manuales por documento** |
+| `documents_chat_questions_per_month` | preguntas | 250 | 1.000 | 2.500 | Sin límite comercial; tope técnico de unas 5 veces el uso previsto (50/200/500) |
+| `knowledge_chat_questions_per_month` | preguntas | 150 | 500 | 1.500 | Igual: tope técnico de unas 5 veces el uso previsto (30/100/300) |
+| `analytics_questions_per_month` | preguntas | 0 | 0 | 500 | Uso previsto: 200. A ≈0,034 € por pregunta, 500 preguntas son ≈17 € |
+
+**Límites diarios actuales.** `documents_per_day`, `knowledge_uploads_per_day` y `chat_messages_per_day` **dejan de ser la referencia**; los sustituyen los mensuales.
+- En el análisis, indica si conviene conservar alguno solo como freno a ráfagas (por ejemplo, con un valor de 3 veces el mensual dividido entre 30).
+- `voice_notes_per_hour` y `channel_external_slots` se quedan como están.
+
+**Documentos de conocimiento (`knowledge_docs_max`, `knowledge_uploads_per_day`).**
+- Pendiente de decidir: ver preguntas abiertas.
+- Propuesta: aplicar el mismo modelo que a los contratos, con activos + altas al mes + hash + páginas.
+
+---
+
+## 4. Reglas de negocio
+
+### 4.1 Periodo de cómputo
+- Los contadores mensuales se reinician en cada **periodo de facturación del tenant**.
+- Mientras no haya cobro implementado, se usa el **mes natural** y queda parametrizable.
+- Los contadores mensuales **deben persistir en PostgreSQL**; Redis sirve como caché o para operaciones atómicas. Verifica en el análisis cómo guarda hoy `plan_quota_service` sus contadores.
+
+### 4.2 Facturas y tickets (bolsa compensable)
+- En la interfaz se muestran dos límites, pero **se controla el total**: `facturas + tickets <= invoices_per_month + tickets_per_month (+ saldo de packs, en la fase posterior)`.
+- **Cuándo se consume el cupo comercial:** cuando la extracción termina bien. Si falla, o el usuario lo descarta como duplicado o ilegible, no consume o se devuelve.
+- **Los fallos sí cuentan en el presupuesto de IA:**
+  - Toda llamada al LLM, con éxito o fallida (incluidos los reintentos), se registra en `llm_calls` con los tokens **reales** que devuelve la API y suma en `llm_budget_eur_month`.
+  - Los errores de la API sin tokens procesados cuentan 0 €. Una respuesta cortada a medias cuenta los tokens ya procesados.
+  - Así el gasto de IA por cliente nunca supera su presupuesto, aunque falle todo.
+- **Reintentos limitados:**
+  - Como máximo **2 reintentos automáticos** por documento: hasta **3 llamadas de extracción** al LLM por procesado. Los hace Instructor cuando la respuesta no cumple el schema (`LLM_EXTRACTION_MAX_RETRIES`, por defecto 2 y con tope 2 en `app/config.py`). Cada reintento es una llamada completa y cuenta en el presupuesto.
+  - **El worker no repite la extracción.** ARQ solo vuelve a ejecutar un job si se difiere por el semáforo de concurrencia (antes de llamar al LLM, sin coste) o si el worker se reinicia a mitad. En ese segundo caso, si la ejecución anterior ya había llamado al LLM, no se vuelve a extraer: el documento pasa a fallido con `processing_interrupted` y el usuario puede reintentarlo a mano (`app/jobs/extraction_guard.py`).
+  - Los reintentos por **errores HTTP transitorios** del proveedor (429/5xx, `LLM_RETRY_TRANSIENT_ERRORS`, desactivado por defecto) no son reintentos de extracción: el proveedor no procesa tokens y cuestan 0 €.
+  - Si tras los reintentos sigue fallando, el documento pasa a `revision_manual` (hoy estado `failed`) y **no se vuelve a intentar solo**.
+  - Los reintentos que lance el usuario los limita `document_retries_per_month` (40 / 150 / 400) y un **máximo de 3 por documento**. Pasado ese máximo, el documento se queda en `revision_manual`.
+  - **Motivo:** con el límite diario anterior (20 al día en Básico) cabían unos 600 reintentos al mes, unos 4,7 € de IA. Eso cabe en el tope de 6 €, pero agotaría el presupuesto y bloquearía los chats del cliente.
+- **Clasificación previa:** si la regla automática no reconoce el tipo de documento, se clasifica con `claude-haiku-4-5` (tarea `classify`, ≈0,002 € por llamada) antes de extraer. Cuenta en el presupuesto de IA, no en el cupo comercial. Registrar en `llm_calls` qué porcentaje de documentos la necesita.
+- **Filtros antes de llamar al LLM (coste cero):**
+  - **Hash SHA-256 del fichero:** si en el mismo tenant ya existe un documento con ese hash, no se reprocesa; se avisa de que es un duplicado y no consume cupo.
+  - **Validación básica:** formato admitido, tamaño mínimo de imagen, fichero no corrupto y límite de páginas en los PDF (configurable). Si no pasa, se rechaza sin llamar al LLM.
+- **Margen de seguridad (referencia):**
+  - Una extracción fallida cuesta lo mismo que una correcta: unos 0,005 € por factura y 0,003 € por ticket (medido con `gemini-3.8-flash`), más unos 0,002 € si también hubo que clasificarla con Haiku.
+  - Con el presupuesto de IA gastado entero, cada plan sigue dando beneficio: unos 10,77 / 16,37 / 20,62 € por cliente al mes.
+  - Sin tope, harían falta unos 3.100 / 5.400 / 7.300 fallos al mes para perder el margen.
+- **Al 80 %:** aviso en la app y por email.
+- **Al 100 %:** la subida no se bloquea. El documento queda en `pendiente_cupo`; se procesa en el siguiente periodo o tras una ampliación desde SADM (packs en la fase posterior).
+
+### 4.3 Contratos
+- **Dos límites que se aplican a la vez:**
+  - `contracts_active_max`: el tamaño de su archivo de contratos.
+  - `contract_uploads_per_month`: **cada subida consume un alta, también las renovaciones.** Borrar **no devuelve** el alta.
+- **Carga inicial:** en el **primer periodo**, el límite de altas es `contract_uploads_first_period` (igual al de activos).
+- **Renovación:** consume un alta pero **no ocupa un hueco de contrato activo**. El anterior pasa a `sustituido` y se enlaza con `replaces_contract_id`.
+- **Por páginas:**
+  - Hasta 30 páginas = 1 alta; de 31 a 60 = 2; de 61 a 100 = 3.
+  - Más de `contract_max_pages` = se rechaza con un mensaje claro.
+  - Los tramos son configurables.
+- **No se reprocesa el mismo fichero:**
+  - Se guarda el SHA-256.
+  - Si en **el mismo tenant** existe un contrato con ese hash (activo, sustituido o borrado hace menos de 30 días), se reutilizan la extracción y los embeddings. **No se llama al LLM ni se consume alta.**
+- **Borrado diferido:**
+  - Al borrar, el contrato pasa a `borrado` con `deleted_at`; queda oculto y fuera de las búsquedas.
+  - A los 30 días se purga (embeddings, datos y fichero en R2).
+- **Extracción al subir (Instructor):** proveedor, tipo, inicio, vencimiento, renovación automática, preaviso en días, **fecha límite de baja** (calculada), importe y periodicidad.
+- **Avisos según el plan** (sección 2.2), con un trabajo programado diario.
+- **Cupo:** al 80 % y al 100 % de las altas, aviso. Al 100 %, el contrato queda en `pendiente_cupo`.
+
+### 4.4 Chat documental y chat de conocimiento (dueño, en la app)
+- Cuenta **cada pregunta con su respuesta**.
+- Solo se reenvían los **últimos 4 turnos** (pregunta y respuesta). **Nunca se guardan ni se reenvían los fragmentos del RAG** en el historial.
+- **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`), con herramientas (`run_tool_loop`, desde `chat_service.py`). Coste medido: ≈0,002 € por pregunta (≈2 llamadas por las herramientas; máximo observado ≈0,0045 €).
+- **Reformulación:** solo si el chat busca **antes** de llamar al modelo. Con `run_tool_loop` es el propio modelo quien formula la búsqueda al llamar a la herramienta, así que la reformulación previa sobra. **A verificar en el análisis** cómo se construye hoy la búsqueda.
+- **Sin prompt caching explícito.**
+  - La parte fija de estos chats son las instrucciones y la definición de las herramientas. Los resultados de búsqueda cambian en cada pregunta.
+  - Gemini aplica su propia caché implícita cuando el inicio del prompt se repite; no hay que marcar nada. Solo hay que mantener **el orden fijo** (instrucciones y herramientas primero, idénticas en cada llamada; historial y pregunta al final) para no impedirla.
+  - Registrar en `llm_calls` los tokens de caché que devuelva la API, si los devuelve, para medir el efecto real.
+- Se compacta el historial solo si pasa de 8 turnos o de 4.000 tokens.
+
+### 4.5 Analista de datos (Premium)
+- Feature `analytics` y dependencia `require_feature("analytics")`. Se oculta en los demás planes.
+- **Modelo:** tarea `sql` → `claude-sonnet-4-6` (reservada y sin uso desde D011). Cada llamada se registra en `llm_calls` con `feature="analytics"`.
+- **Coste estimado:** ≈0,034 € por pregunta (8.000 / 1.000 tokens, con la tarifa de Sonnet de 3 $ / 15 $ por millón). **A verificar:** añadir `claude-sonnet-4-6` a `pricing.py` si no está, y medir con los primeros usos.
+- **Prompt caching:** la descripción del esquema de datos es fija y puede pasar del mínimo que exige Anthropic para cachear. Si lo pasa, marcar `cache_control` al final del esquema; comprobar el mínimo de `claude-sonnet-4-6` en la documentación de Anthropic.
+- **Solo lectura:** consultas contra una vista o esquema con permisos de solo lectura, filtrado por `tenant_id`. Validar el SQL generado antes de ejecutarlo (sin DML ni DDL, con límite de filas y tiempo).
+
+### 4.6 Asistente para clientes finales (WhatsApp / Telegram, Avanzado y Premium)
+- **Qué hace:** responde con el conocimiento del negocio y gestiona citas (crear, modificar, cancelar, consultar).
+- **Conocimiento en el prompt, sin RAG:**
+  - El perfil del negocio (preguntas frecuentes, servicios, tarifas, horarios, formas de pago) ocupa 2.000-5.000 tokens y va entero en el prompt.
+  - Si supera unos 8.000 tokens, se recurre a la búsqueda sobre `knowledge`.
+  - **A verificar:** cómo está implementado hoy `knowledge` y si ya usa RAG.
+- **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`, `channel_chat_service.py`), el mismo que el chat de la app. Los embeddings de `voyage-3-lite` se usan también como caché de respuestas de los canales. Coste estimado: ≈0,003 € por mensaje (2 llamadas de ≈4.000 / 150 tokens + 1 embedding). **Sin medir todavía:** tomar la media real de `llm_calls` en cuanto haya tráfico.
+- **Prompt caching:**
+  - Gemini aplica caché implícita cuando el inicio del prompt se repite; no hace falta marcar nada. Para aprovecharla:
+  - **Orden fijo del prompt:** herramientas de citas → instrucciones (`.txt` versionado) → conocimiento del negocio → historial → mensaje nuevo. **Nada variable antes del historial:** ni fecha, ni hora, ni nombre del cliente final, ni identificadores de petición. La fecha y la disponibilidad van con el mensaje nuevo.
+  - **El conocimiento se serializa de forma determinista:** mismo orden de campos, orden estable de listas y sin espacios variables. Se guarda la versión serializada y su hash, y solo se regenera cuando el dueño edita el conocimiento.
+  - **A verificar** en la documentación de Google: tamaño mínimo para que se aplique la caché implícita con `gemini-3.5-flash-lite` y descuento que aplica. Registrar en `llm_calls` los tokens de caché que devuelva la API.
+  - El Excel **no cuenta ningún descuento por caché**: si existe, el coste real será menor.
+  - Si alguna vez se enruta el asistente a un modelo de Anthropic, aplican sus reglas (marca `cache_control` explícita y mínimo de tokens por modelo).
+- **Citas con herramientas (tool use):** el modelo propone; la **disponibilidad, los solapamientos y el horario se validan en el código**. Verifica qué existe ya en `appointments`.
+- **Cuotas:**
+  - Se consume 1 de `assistant_messages_per_month` por mensaje enviado y 1 de `reminders_per_month` por recordatorio.
+  - **Al 80 %:** aviso al dueño.
+  - **Al 100 %:** mensaje fijo con el teléfono del negocio, sin llamar al modelo.
+- **Anti-abuso:**
+  - `end_customer_messages_per_day` por número de cliente final (Redis).
+  - Si la pregunta no trata sobre el negocio, se responde con una frase fija.
+- **Meta:**
+  - Cada negocio tiene **su propio número y su cuenta de WhatsApp Business**, dados de alta con el alta integrada de Meta para proveedores tecnológicos. **Meta factura al negocio.**
+  - Se guardan `waba_id`, `phone_number_id` y la referencia al token (cifrado).
+  - Tarifas desde el 1/10/2026: se cobran también las respuestas, unos 0,0166 € por mensaje en España. **Confirmar con la tarifa oficial de Meta.**
+- **Recordatorios:** plantillas de utilidad aprobadas por Meta, enviadas con un trabajo programado (por ejemplo, 24 horas antes de la cita).
+- **Derivación a una persona:** si el cliente lo pide o el asistente no sabe responder, se avisa al dueño y se pausa el bot en esa conversación.
+- **Límites en el contenido:** nunca diagnostica, valora síntomas ni da consejos clínicos o técnicos. Ante urgencias o síntomas, da una respuesta fija con el teléfono del negocio. Es imprescindible para clínicas y fisioterapia.
+- **Datos personales:** se guarda solo lo necesario para la cita (nombre, teléfono, día y hora). En centros sanitarios, la cita puede ser dato de salud: se necesita contrato de encargado del tratamiento y los datos alojados en la UE.
+
+### 4.7 Usuarios e histórico
+- `members_max` se controla al invitar en Clerk (webhook o comprobación previa).
+- El histórico más antiguo que `history_months` **no se borra**, solo se oculta. Si el cliente sube de plan, vuelve a verse.
+
+### 4.8 Control de coste (`llm_budget_eur_month`)
+- Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `feature`, tokens (incluidos los de caché si la API los devuelve) y coste. `llm_calls` ya guarda tokens y coste por llamada; **verificar** que guarda también `tenant_id` y `feature`. `plan_quota_service` acumula el gasto del periodo.
+- **Al 80 % del presupuesto:** aviso al dueño y alerta en SADM.
+- **Al 100 %: tope duro.** Se bloquean las funciones que llaman al LLM:
+  - Los documentos pasan a `pendiente_cupo`.
+  - Los chats muestran un aviso.
+  - El asistente responde con el mensaje fijo.
+  - Nada se pierde.
+- **Ampliación:**
+  - **Ahora:** override manual desde SADM, con un presupuesto extra solo para ese periodo y registrado en `tenant_plan_changes` o en una tabla de overrides existente.
+  - **[Fase posterior]:** packs de ampliación (sección 4.9).
+- Con un uso normal no debería saltar nunca. Si salta a menudo en un cliente, es señal de abuso o de que necesita otro plan.
+
+### 4.9 Packs de ampliación [Fase posterior]
+- **Pack de documentos:** 50 documentos por 5 € sin IVA.
+- **Orden de consumo:** primero el cupo del plan y después los packs, del más antiguo al más nuevo.
+- **No caducan a fin de mes;** el saldo se acumula. Tienen una **validez de 12 meses** desde la compra, con aviso 30 días antes si queda saldo.
+- Si el cliente cambia de plan, conserva el saldo.
+- Si compra packs 3 meses seguidos, la app le sugiere el plan siguiente (nunca se le cambia automáticamente).
+- **No hay packs de contratos.** El presupuesto de IA se amplía en proporción al pack.
+- Mientras no haya cobro, un pack solo puede asignarlo SADM.
+- **Ejemplo (Básico, 70 al mes):**
+  - Octubre, sube 90: gasta 70 del plan y 20 de un pack de 50. Le quedan 30.
+  - Noviembre, sube 60: no toca el pack. Le siguen quedando 30.
+  - Diciembre, sube 85: gasta 70 del plan y 15 del pack. Le quedan 15.
+
+### 4.10 Cambio de plan y cobro
+- Solo desde SADM con `assign_tenant_plan` (D016). Ningún rol del tenant puede cambiar de plan.
+- **Cobro: pendiente de decidir.** No implementar nada de cobro en esta fase. Todo lo que dependa del cobro (packs, periodo de facturación) queda parametrizado.
+
+### 4.11 Fuera de la implementación
+- Google Calendar y voz (D012).
+- Integración con software contable (Premium).
+- Comparativa entre renovaciones de contratos (Premium): solo dejar preparado el modelo de datos.
+
+---
+
+## 5. Análisis de brechas (Fase 1)
+
+Para cada punto, indica si **ya está cubierto**, **cubierto en parte** o **no cubierto** por lo implementado, con ficheros y líneas:
+
+1. **Seed de entitlements** (`app/core/entitlement_codes.py`, migración `p67`): ¿se pueden añadir los límites de la sección 3 y el feature `analytics` solo con el seed? ¿Qué pasa con los tenants existentes y con los alias legacy?
+2. **`plan_quota_service`:**
+   - ¿Soporta periodos mensuales, además de diarios?
+   - ¿Tiene un consumo atómico y devoluciones?
+   - ¿Permite una bolsa compartida entre dos límites (facturas + tickets)?
+   - ¿Persiste en PostgreSQL o solo en Redis?
+   - ¿Tiene avisos al 80 %?
+3. **Presupuesto de LLM:** `llm_calls` ya guarda tokens y coste por llamada (con las tarifas de `pricing.py`). ¿Guarda `tenant_id`, `feature` y tokens de caché? ¿Se registran también las llamadas fallidas, la clasificación y los embeddings? ¿Hay un override por tenant en SADM?
+4. **Documentos:** ¿dónde está el punto de «extracción correcta» para consumir cuota? ¿Existe un estado equivalente a `pendiente_cupo`?
+5. **Contratos:** ¿existen como entidad propia o son documentos genéricos? Campos, estados, hash, número de páginas, borrado lógico.
+6. **Knowledge:** estructura actual, si usa RAG, tamaño típico y cómo lo consume hoy el canal de WhatsApp/Telegram.
+7. **Appointments y canales:** qué está implementado (tablas, herramientas del modelo, validación de disponibilidad, recordatorios, plantillas de Meta, derivación a una persona).
+8. **Historial de los chats:** cuántos turnos se reenvían y si se incluyen los fragmentos del RAG.
+9. **Tareas programadas:** planificador existente para avisos de contratos, recordatorios, reinicio de periodos y purgas.
+10. **Usuarios e histórico:** cómo se aplica hoy `members_max` y si existe algún filtro por antigüedad.
+11. **SADM:** qué overrides permite ya (límites, features, presupuesto) y si registra quién y cuándo.
+12. **Analista:** si existe algo de `analytics` en el código conservado (D011) que sea reutilizable.
+
+---
+
+## 6. Modelo de datos (orientativo; solo lo que falte)
+
+> Antes de crear nada, comprueba si ya existe un equivalente. Adapta los nombres a las convenciones del proyecto.
+
+```sql
+-- Contadores mensuales persistentes (si plan_quota_service solo usa Redis)
+usage_events (                     -- solo inserciones: auditoría y devoluciones
+  id, tenant_id, limit_code TEXT, quantity INT DEFAULT 1,
+  source TEXT DEFAULT 'plan',      -- 'plan' | 'pack:<id>' | 'override:<id>'
+  source_id UUID NULL, period_start DATE, created_at TIMESTAMPTZ, refunded BOOL DEFAULT false
+)
+usage_counters ( tenant_id, period_start, limit_code, used INT,
+                 PRIMARY KEY (tenant_id, period_start, limit_code) )
+
+-- Coste real del LLM (si llm_calls no tiene estos campos)
+llm_calls + ( tenant_id, feature, model, input_tokens, cached_input_tokens,
+              output_tokens, cost_eur NUMERIC(10,6), langfuse_trace_id )
+
+-- Contratos (añadir a la entidad existente)
+contracts + (
+  status TEXT,                     -- 'activo' | 'sustituido' | 'archivado' | 'borrado' | 'pendiente_cupo'
+  replaces_contract_id FK NULL,
+  file_sha256 TEXT,                -- índice (tenant_id, file_sha256)
+  page_count INT, upload_units INT,
+  deleted_at TIMESTAMPTZ NULL,
+  provider, contract_type, start_date, end_date,
+  auto_renewal BOOL, notice_days INT, cancel_deadline DATE,
+  amount_cents INT, periodicity TEXT
+)
+
+-- [Fase posterior] Packs
+credit_packs ( id, tenant_id, kind TEXT,   -- 'documents'
+               quantity INT, remaining INT, purchased_at TIMESTAMPTZ,
+               expires_at TIMESTAMPTZ,      -- purchased_at + 12 meses
+               price_cents INT, granted_by TEXT )  -- 'sadm' | 'cobro'
+```
+
+Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant_conversations`, `assistant_messages`, `services`, `appointments`, `business_hours`, `reminders`): **usa lo que ya exista** por `appointments` y los canales. Añade solo lo que falte para las reglas de la sección 4.6, por ejemplo la restricción `EXCLUDE USING gist` contra solapamientos de citas si el negocio no admite citas simultáneas.
+
+---
+
+## 7. Puntos de control (ampliar `plan_quota_service`)
+
+- `check(tenant_id, limit_code, qty)` devuelve el uso, el límite, el porcentaje y si está permitido.
+- `consume(tenant_id, limit_code, qty, source_id)` es **atómico**: `UPDATE ... SET used = used + :qty WHERE used + :qty <= :limit RETURNING used`, o `INCR` con Lua en Redis y persistencia. Se aplica en una sola transacción:
+  1. Descontar del cupo del plan.
+  2. **[Fase posterior]** Si no hay hueco, descontar de packs vigentes (`FOR UPDATE SKIP LOCKED`, del más antiguo al más nuevo).
+  3. Si no queda nada, el elemento pasa a `pendiente_cupo`.
+  4. Guardar `source` en `usage_events` para poder devolver la unidad al sitio correcto.
+- `refund(event_id)`.
+- **Bolsa compensable:** un límite virtual `documents_per_month = invoices_per_month + tickets_per_month`.
+- **Presupuesto:** `consume_budget(tenant_id, cost_eur)` después de cada llamada, y `check_budget()` antes de las llamadas caras.
+- **Interfaz:** un componente Jinja con barras de consumo y banners al 80 % y al 100 % (HTMX).
+
+---
+
+## 8. Parámetros de referencia (hoja de costes)
+
+**Modelos por tarea** (`DEFAULT_MODELS` en `app/llm/client.py`, entorno dev; no hay modelos por tenant):
+
+| Tarea | Modelo | Uso | Tarifa (€ / millón, entrada / salida) |
+|---|---|---|---|
+| `extraction` | `gemini-3.8-flash` (razonamiento bajo) | Facturas, tickets, contratos, pólizas y texto de imágenes del conocimiento | 1,38 / 6,90 |
+| `classify` | `claude-haiku-4-5` | Tipo de documento cuando la regla automática no basta | 0,90 / 4,50 |
+| `chat` | `gemini-3.5-flash-lite` | Chat de la app y asistente de WhatsApp/Telegram | 0,28 / 2,30 |
+| `embedding` | `voyage-3-lite` (512 dimensiones) | Conocimiento (indexar y buscar) y caché de respuestas de los canales | 0,018 / — |
+| `sql` | `claude-sonnet-4-6` | Analista (Premium). Reservada, sin uso | ≈2,58 / 12,90 (estimada; a verificar) |
+| `transcription`, `translate` | `gemini-2.5-flash` | Voz para calendario (fuera de oferta, D012) y traducción (sin uso) | Fuera de este cálculo |
+
+**Coste por operación** (tokens medios reales de `llm_calls` en dev; base limpiada el 28/09/2026, muestra pequeña):
+
+| Operación | Muestras | Tokens entrada / salida | Coste |
+|---|---:|---|---:|
+| Extraer una factura | 1 | 2.634 / 227 | ≈0,0052 € |
+| Extraer un ticket | 4 | 1.507 / 121 | ≈0,0029 € |
+| Extraer un contrato o póliza corto | 1 + 1 | ≈1.700 / ≈200 | ≈0,0037 € |
+| Extraer un contrato de ≈10 páginas | — | 15.000 / 800 (**estimado**) | ≈0,026 € |
+| Clasificar el tipo de documento (Haiku) | 27 | 732-2.165 / 63-142 | 0,0009-0,0026 € |
+| Pregunta de chat (≈2 llamadas) | 8 | 3.286 / 96 por llamada | ≈0,002 € (máx. ≈0,0045 €) |
+| Mensaje del asistente (≈2 llamadas) | — | 4.000 / 150 por llamada (**estimado**) | ≈0,003 € |
+| Embedding (búsqueda o indexado) | 5 | 1.034 | ≈0,00002 € |
+| Pregunta al analista | — | 8.000 / 1.000 (**estimado**) | ≈0,034 € |
+
+- La salida de Gemini ya incluye los tokens de razonamiento (`_extract_token_usage` en `client.py`).
+- **Pendiente de medir:** contratos de 30-100 páginas, asistente de canales y analista. Propuesta: ejecutar los evals de extracción (facturas, tickets, contratos, pólizas) y `chat_documents_v2` contra `saas_test` para tener decenas de muestras por tipo (los documentos de los evals son sintéticos y pueden ser más cortos que los reales).
+- **Precio de Gemini 3.x Flash:** tuvo precio introductorio hasta el 31/12/2026. Comprobar que `pricing.py` usa la tarifa que se pagará en 2027.
+
+## 9. Producto mínimo: orden sugerido
+
+1. Seed: nuevos límites, `analytics` en Premium y valores de `members_max` y `llm_budget_eur_month`.
+2. Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.
+3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable.
+4. Cuotas en facturas y tickets (`pendiente_cupo`).
+5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
+6. Historial de los chats (sección 4.4).
+7. Usuarios e histórico.
+8. Interfaz de consumo y avisos.
+9. Trabajos programados: reinicio de periodos, avisos de contratos y purga de contratos borrados.
+10. Asistente: conocimiento en el prompt, cuotas de mensajes y recordatorios, anti-abuso, límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales).
+11. Analista de datos (Premium).
+12. **[Fase posterior]** Packs, cobro, integración contable, comparativa de renovaciones.
+
+---
+
+## 10. Entregable de la Fase 1: informe de brechas
+
+Crea `docs/analisis-planes-y-cuotas.md` con:
+
+1. **Resumen** de lo que ya existe: entitlements, cuotas, SADM, `llm_calls`, `appointments`, canales, knowledge.
+2. **Tabla de brechas:** una fila por cada regla de las secciones 3 y 4 → cubierta / en parte / no cubierta → fichero → cambio propuesto.
+3. **Cambios en el seed** y su efecto en los tenants existentes, incluidos los alias legacy.
+4. **Cambios por fichero:** nuevos y modificados, con una línea cada uno.
+5. **Migraciones:** en orden, indicando cuáles rellenan datos existentes.
+6. **Riesgos:** concurrencia, coherencia Redis/PostgreSQL, seguridad (tokens de Meta, webhooks, SQL del analista), datos de salud.
+7. **Plan de implementación:** los pasos de la sección 9, con ficheros, pruebas y tamaño (S/M/L).
+8. **Preguntas abiertas** (sección 11) y las que surjan del análisis.
+
+---
+
+## 11. Preguntas abiertas
+
+- **Precios definitivos:** 22 / 49 / 99 € están en revisión y pueden subir.
+- **Método de cobro** (D016).
+- **Documentos de conocimiento:** ¿aplicar el mismo modelo que a los contratos? ¿Con qué límites?
+- **Cuota de alta de WhatsApp/Telegram** (99-299 € en `Planes_Entitlements.md`): ¿se mantiene?
+- **Registrar la decisión nueva** que anula D011 (analista en Premium).
+- **Premium:** con todos los topes al 100 % el coste de IA (≈40 €) supera el presupuesto de 30 €. ¿Se deja que el tope limite, se sube el presupuesto o se bajan los topes del analista y los chats?
+- **`document_retries_per_month`:** confirmar que sustituye al límite diario, con máximo 3 reintentos por documento.
+- **Citas simultáneas:** ¿se admiten (varios profesionales o gabinetes)? ¿Hace falta el concepto de «profesional» o «recurso» en `appointments`?
