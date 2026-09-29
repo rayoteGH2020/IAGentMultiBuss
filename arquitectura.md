@@ -219,7 +219,7 @@ Todas las tablas con datos de cliente tienen `tenant_id` (UUID, FK a `tenants`) 
 
 #### Transversal
 - `llm_calls` — observabilidad de cada llamada a LLM (modelo, tokens, coste, latencia).
-- `audit_log` — toda acción sobre datos del cliente.
+- `audit_log` — mutaciones y accesos a datos del cliente (qué se audita y qué no: `AGENTS.md` §7).
 - `usage_meter` — consumo mensual por tenant (para billing).
 
 ### Esquema relacional detallado (pseudo-DDL)
@@ -764,7 +764,7 @@ Sliding window con Redis. Por tenant y por endpoint sensible.
 
 ### Audit log
 
-Decorador o middleware loguea toda acción sobre datos del cliente.
+Llamadas explícitas desde `services/` (`audit_service`) registran mutaciones, accesos a documentos concretos, consultas que recuperan contenido, exportaciones y accesos del superadmin. Listados, filtros, paginación y polling HTMX no se auditan. Regla completa: `AGENTS.md` §7.
 
 ### GDPR
 

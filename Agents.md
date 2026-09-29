@@ -222,7 +222,19 @@ Las queries no necesitan `WHERE tenant_id = ?` explícito (RLS lo aplica), pero 
 
 ### Audit log
 
-Toda acción sobre datos del cliente (subir, ver, descargar, modificar, borrar) debe loguearse en `audit_log`.
+Objetivo: poder responder "quién tocó o vio este dato del cliente, cuándo y desde dónde" sin enterrar esos eventos en ruido. Cada entrada lleva `tenant_id`, `user_id` y, si hay request HTTP, IP y user agent (`app/routes/web/audit_context.py`).
+
+**Se audita siempre:**
+
+1. **Mutaciones** sobre datos del cliente: subir, crear, modificar, reprocesar, borrar.
+2. **Acceso a un documento concreto**: abrir su detalle o su editor, y ver o descargar el fichero original. El fichero se sirve siempre por una ruta que audita y redirige (302) a una URL prefirmada de vida corta; **nunca** incrustar URLs prefirmadas en el HTML (se saltarían la auditoría).
+3. **Consultas que recuperan contenido**: mensajes al chat, tools ejecutadas y búsquedas semánticas en la base de conocimiento.
+4. **Exportaciones y descargas masivas** (varios documentos, ZIP, CSV, export RGPD): una entrada por operación con número de elementos y filtros aplicados.
+5. **Accesos del superadmin (SADM)** a datos de un tenant: en el `audit_log` del tenant propietario, con `user_id` del superadmin, para que el cliente pueda ver quién accedió.
+
+**No se audita** (ruido sin valor forense; lo cubre el access log del proxy): listados, filtros y paginación, y refrescos por polling HTMX (filas de estado, contadores).
+
+Si una vista nueva no encaja claramente en una de estas categorías, decidirlo antes de implementarla y reflejarlo aquí.
 
 ---
 

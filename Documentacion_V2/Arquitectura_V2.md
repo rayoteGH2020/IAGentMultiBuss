@@ -147,7 +147,7 @@ Obligatorio en runtime:
 - Webhooks firmados; body limit + dedupe anti-replay.
 - Rate limit / cuotas por plan en endpoints y workers sensibles.
 - Cifrado de tokens OAuth y API de canales.
-- Audit log de acciones sobre datos de cliente.
+- Audit log de mutaciones y accesos a datos de cliente; no en listados ni polling (detalle en `AGENTS.md` §7).
 - Langfuse sin contenido de cliente (D008).
 - Controles de tamano, MIME, paginas y pixeles (`media_limits`) antes de OCR/LLM.
 - Kill-switch global: `ENTITLEMENTS_DISABLED_FEATURES`.

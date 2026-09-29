@@ -83,7 +83,7 @@ Toda feature nueva debe revisar:
 - Defensa en profundidad con `WHERE tenant_id = ...` en services.
 - CSRF en mutaciones web.
 - Rate limit o cuota si puede generar coste o carga.
-- Audit log en acciones sobre datos de cliente.
+- Audit log en mutaciones y accesos a datos de cliente; no en listados ni polling (detalle en `AGENTS.md` §7).
 - Cifrado de tokens y credenciales.
 - No exponer `raw_extraction`, tokens, headers de auth ni secretos en UI o trazas.
 
