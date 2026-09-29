@@ -138,8 +138,11 @@ async def telegram_webhook(
         return Response(status_code=200)
 
     update_id = _extract_update_id(payload)
-    if update_id is not None:
-        claimed = await claim_webhook_event(provider=PROVIDER_TELEGRAM, event_id=update_id)
+    # update_id es un contador por bot: dos integraciones pueden repetirlo, así que
+    # el dedupe (Redis) y el _job_id de ARQ se acotan a la integración.
+    event_id = f"{integration_id_str}:{update_id}" if update_id is not None else None
+    if event_id is not None:
+        claimed = await claim_webhook_event(provider=PROVIDER_TELEGRAM, event_id=event_id)
         if not claimed:
             return Response(status_code=200)
 
@@ -167,7 +170,7 @@ async def telegram_webhook(
             customer_identifier=customer_identifier,
             message_text=text,
             integration_id=integration_id_str,
-            provider_event_id=update_id,
+            provider_event_id=event_id,
         )
     except Exception:
         logger.exception("telegram.webhook.enqueue_failed")

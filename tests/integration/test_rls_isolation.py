@@ -76,3 +76,23 @@ async def test_membership_rls_isolation() -> None:
         for tid in (t1_id, t2_id):
             await set_tenant_context(s, str(tid))
             await s.execute(text("DELETE FROM memberships"))
+
+
+@pytest.mark.asyncio
+async def test_app_role_has_no_truncate_privilege() -> None:
+    """TRUNCATE salta RLS: saas_app no debe tenerlo en ninguna tabla (p71)."""
+    async with _rls_session_scope() as s:
+        tables = (
+            (
+                await s.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                        "AND has_table_privilege(current_user, "
+                        "quote_ident(schemaname) || '.' || quote_ident(tablename), 'TRUNCATE')"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert tables == []

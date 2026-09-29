@@ -125,7 +125,7 @@ async def test_webhook_post_valid_secret_enqueues_job(app_client: AsyncClient) -
     assert call_kwargs["channel"] == "telegram"
     assert call_kwargs["customer_identifier"] == "123456789"
     assert call_kwargs["message_text"] == "¿Cuál es vuestro horario?"
-    assert call_kwargs["provider_event_id"] == "1001"
+    assert call_kwargs["provider_event_id"] == f"{integration_id}:1001"
 
 
 async def test_webhook_post_invalid_secret_returns_200_silently(
@@ -318,6 +318,45 @@ async def test_webhook_post_body_too_large_does_not_enqueue(
 
     assert resp.status_code == 200
     mock_enqueue.assert_not_awaited()
+
+
+async def test_webhook_same_update_id_on_two_integrations_does_not_collide(
+    app_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """update_id es por bot: el dedupe y el _job_id se acotan a la integración."""
+    mock_claim = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.routes.api.webhooks_telegram.claim_webhook_event", mock_claim)
+    integration_a, integration_b = uuid4(), uuid4()
+    body = _tg_payload(update_id=555)
+    mock_enqueue = AsyncMock(return_value="job")
+
+    with (
+        patch(
+            "app.routes.api.webhooks_telegram.channel_integration_service.get_integration_by_id",
+            new=AsyncMock(return_value=_fake_integration(with_secret=True)),
+        ),
+        patch(
+            "app.routes.api.webhooks_telegram.enqueue_channel_message",
+            new=mock_enqueue,
+        ),
+    ):
+        async with app_client as client:
+            for integration_id in (integration_a, integration_b):
+                resp = await client.post(
+                    f"/api/webhooks/telegram/{integration_id}",
+                    content=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Telegram-Bot-Api-Secret-Token": _PLAIN_WEBHOOK_SECRET,
+                    },
+                )
+                assert resp.status_code == 200
+
+    claimed_ids = [c.kwargs["event_id"] for c in mock_claim.await_args_list]
+    assert claimed_ids == [f"{integration_a}:555", f"{integration_b}:555"]
+    job_event_ids = [c.kwargs["provider_event_id"] for c in mock_enqueue.await_args_list]
+    assert job_event_ids == claimed_ids
 
 
 async def test_webhook_post_replay_same_update_id_skips_enqueue(

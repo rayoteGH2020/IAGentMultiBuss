@@ -7,6 +7,7 @@ propietario de tabla).
 
 from __future__ import annotations
 
+import hmac
 from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
@@ -29,7 +30,9 @@ async def _require_metrics_token(
     x_metrics_token: Annotated[str, Header(alias="X-Metrics-Token")],
 ) -> None:
     expected = get_settings().metrics_token.get_secret_value()
-    if not expected or x_metrics_token != expected:
+    if not expected or not hmac.compare_digest(
+        x_metrics_token.encode("utf-8"), expected.encode("utf-8")
+    ):
         raise ForbiddenError("Invalid metrics token")
 
 

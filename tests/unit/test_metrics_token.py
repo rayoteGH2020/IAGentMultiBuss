@@ -43,3 +43,56 @@ def test_metrics_module1_bad_token_is_403(monkeypatch: pytest.MonkeyPatch) -> No
     assert response.json()["code"] == "forbidden"
 
     _gs.cache_clear()
+
+
+def _set_metrics_env(monkeypatch: pytest.MonkeyPatch, token: str) -> None:
+    from app.config import get_settings as _gs
+
+    monkeypatch.setenv("APP_SECRET_KEY", "x")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x:x@localhost/x")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("METRICS_TOKEN", token)
+    _gs.cache_clear()
+
+
+async def test_require_metrics_token_accepts_exact_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import get_settings as _gs
+
+    _set_metrics_env(monkeypatch, "right-token")
+    try:
+        await metrics_router._require_metrics_token("right-token")
+    finally:
+        _gs.cache_clear()
+
+
+async def test_require_metrics_token_rejects_prefix_and_non_ascii(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pytest as _pytest
+    from app.config import get_settings as _gs
+    from app.core.errors import ForbiddenError
+
+    _set_metrics_env(monkeypatch, "right-token")
+    try:
+        for candidate in ("right-toke", "right-token-extra", "right-tokén"):
+            with _pytest.raises(ForbiddenError):
+                await metrics_router._require_metrics_token(candidate)
+    finally:
+        _gs.cache_clear()
+
+
+async def test_require_metrics_token_rejects_when_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pytest as _pytest
+    from app.config import get_settings as _gs
+    from app.core.errors import ForbiddenError
+
+    _set_metrics_env(monkeypatch, "")
+    try:
+        with _pytest.raises(ForbiddenError):
+            await metrics_router._require_metrics_token("")
+    finally:
+        _gs.cache_clear()
