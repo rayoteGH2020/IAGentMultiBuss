@@ -5,9 +5,9 @@
 {% block content %}
 <div class="space-y-6">
   <p class="text-sm text-slate-500">
-    Conversaciones de <code class="text-xs">/chat</code> de todos los tenants.
-    El detalle muestra mensajes en orden de creación, tools, <code class="text-xs">llm_calls</code>
-    y eventos de auditoría. Contiene datos de cliente: acceso solo SuperAdmin.
+    Conversaciones de <code class="text-xs">/chat</code> de tu organización. Las de otros
+    tenants no son accesibles. El detalle muestra mensajes en orden de creación, tools,
+    <code class="text-xs">llm_calls</code> y eventos de auditoría; cada apertura queda auditada.
   </p>
 
   {% include "pages/sadm/chat_traces/_list.html" %}

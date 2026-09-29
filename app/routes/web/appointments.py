@@ -48,6 +48,7 @@ from app.deps import (
     require_appointment_permission,
     require_feature,
 )
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.scheduling import (
     AppointmentCancel,
     AppointmentCreate,
@@ -437,12 +438,19 @@ async def appointment_create(
 @router.get("/{appointment_id}")
 async def appointment_detail_form(
     request: Request,
+    user: CurrentUser,
     tenant: CurrentTenant,
     membership: RequireAppointmentView,
     appointment_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    appointment = await internal_appointment_service.get_appointment(db, tenant.id, appointment_id)
+    appointment = await internal_appointment_service.view_appointment(
+        db,
+        tenant.id,
+        appointment_id,
+        viewer_user_id=user.id,
+        request_ctx=audit_request_context(request),
+    )
     settings = await business_hours_service.get_scheduling_settings(db, tenant.id)
     read_only = is_appointment_read_only(appointment.start_at, settings.timezone)
     can_edit = not read_only and _can(membership, "edit")

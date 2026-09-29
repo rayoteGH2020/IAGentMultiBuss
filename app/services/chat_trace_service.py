@@ -1,8 +1,10 @@
 """Traza completa de hilos de /chat para la consola SuperAdmin.
 
-Lecturas cross-tenant vía ``enable_superadmin_lookup`` (política RLS
-``superadmin_select`` en chat_threads, chat_messages, audit_log y llm_calls).
-Expone contenido de mensajes a propósito: solo SuperAdmin.
+Solo el tenant propio del superadmin: las conversaciones de otros tenants
+no son legibles (sin ``enable_superadmin_lookup``; p72 retira además la
+política ``superadmin_select`` de chat_threads y chat_messages). La sesión
+llega con RLS del tenant del request y cada query filtra ``tenant_id``
+como defensa en profundidad. Expone contenido de mensajes a propósito.
 """
 
 from __future__ import annotations
@@ -21,10 +23,14 @@ from app.schemas.chat_trace import (
     ChatTraceThreadListItem,
     LLMCallTraceRead,
 )
-from app.services.document_override_service import enable_superadmin_lookup
+from app.services import audit_service
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.services.audit_service import AuditRequestContext
+
+ACTION_SADM_CHAT_TRACE_VIEWED = "sadm.chat_trace.viewed"
 
 _CHAT_AUDIT_ACTIONS = (
     "chat.message_sent",
@@ -36,13 +42,12 @@ _CHAT_AUDIT_ACTIONS = (
 async def list_threads(
     db: AsyncSession,
     *,
+    tenant_id: UUID,
     limit: int = 50,
     offset: int = 0,
-    tenant_id: UUID | None = None,
     include_hidden: bool = True,
 ) -> list[ChatTraceThreadListItem]:
-    """Lista hilos de todos los tenants, más recientes primero."""
-    await enable_superadmin_lookup(db)
+    """Lista hilos del tenant ``tenant_id``, más recientes primero."""
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
 
@@ -57,12 +62,11 @@ async def list_threads(
         select(ChatThread, Tenant.name, User.email, msg_count)
         .join(Tenant, Tenant.id == ChatThread.tenant_id)
         .outerjoin(User, User.id == ChatThread.user_id)
+        .where(ChatThread.tenant_id == tenant_id)
         .order_by(ChatThread.updated_at.desc())
         .offset(offset)
         .limit(limit)
     )
-    if tenant_id is not None:
-        stmt = stmt.where(ChatThread.tenant_id == tenant_id)
     if not include_hidden:
         stmt = stmt.where(ChatThread.is_hidden.is_(False))
 
@@ -84,16 +88,25 @@ async def list_threads(
     ]
 
 
-async def get_thread_trace(db: AsyncSession, *, thread_id: UUID) -> ChatTraceThreadDetail:
-    """Detalle: mensajes en orden de creación + llm_calls + audit del hilo."""
-    await enable_superadmin_lookup(db)
+async def get_thread_trace(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    thread_id: UUID,
+    viewer_id: UUID,
+    request_ctx: AuditRequestContext | None = None,
+) -> ChatTraceThreadDetail:
+    """Detalle de un hilo del tenant ``tenant_id`` y auditoría del acceso.
 
+    Mensajes en orden de creación + llm_calls + audit del hilo. Un hilo de
+    otro tenant responde igual que uno inexistente (``NotFoundError``).
+    """
     thread_row = (
         await db.execute(
             select(ChatThread, Tenant.name, User.email)
             .join(Tenant, Tenant.id == ChatThread.tenant_id)
             .outerjoin(User, User.id == ChatThread.user_id)
-            .where(ChatThread.id == thread_id)
+            .where(ChatThread.id == thread_id, ChatThread.tenant_id == tenant_id)
         )
     ).one_or_none()
     if thread_row is None:
@@ -144,7 +157,16 @@ async def get_thread_trace(db: AsyncSession, *, thread_id: UUID) -> ChatTraceThr
     llm_by_id: dict[UUID, LLMCall] = {}
     if llm_ids:
         llm_rows = (
-            (await db.execute(select(LLMCall).where(LLMCall.id.in_(llm_ids)))).scalars().all()
+            (
+                await db.execute(
+                    select(LLMCall).where(
+                        LLMCall.id.in_(llm_ids),
+                        LLMCall.tenant_id == thread.tenant_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
         llm_by_id = {call.id: call for call in llm_rows}
 
@@ -210,6 +232,16 @@ async def get_thread_trace(db: AsyncSession, *, thread_id: UUID) -> ChatTraceThr
         )
         for row in audit_rows
     ]
+
+    await audit_service.log_action(
+        db,
+        tenant_id=thread.tenant_id,
+        user_id=viewer_id,
+        action=ACTION_SADM_CHAT_TRACE_VIEWED,
+        resource_type=audit_service.RESOURCE_CHAT_THREAD,
+        resource_id=thread.id,
+        request_ctx=request_ctx,
+    )
 
     return ChatTraceThreadDetail(
         thread=ChatTraceThreadListItem(

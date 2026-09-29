@@ -10,8 +10,9 @@ from uuid import uuid4
 
 import pytest
 from app.core.db import set_tenant_context
-from app.models import ChatMessage, ChatMessageRole, ChatThread, LLMCall, Tenant, User
+from app.models import AuditLog, LLMCall, Tenant, User
 from app.services import chat_usage_service
+from app.services.audit_service import ACTION_CHAT_MESSAGE_SENT
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +20,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def test_get_tenant_chat_usage_aggregates_by_month(
-    chat_schema_ready: None,
+    audit_schema_ready: None,
     llm_calls_schema_ready: None,
     db_session: AsyncSession,
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
@@ -40,20 +41,22 @@ async def test_get_tenant_chat_usage_aggregates_by_month(
     await db_session.flush()
 
     await set_tenant_context(db_session, str(tenant.id))
-    thread = ChatThread(tenant_id=tenant.id, user_id=user.id, title="uso")
-    db_session.add(thread)
-    await db_session.flush()
-
+    thread_id = str(uuid4())
     day = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
-    db_session.add(
-        ChatMessage(
-            thread_id=thread.id,
-            tenant_id=tenant.id,
-            role=ChatMessageRole.user,
-            content="hola",
-            created_at=day,
+    # Dos mensajes de usuario en el mismo hilo cuentan como un chat. El recuento
+    # sale de audit_log, no de chat_messages (el SADM no lee conversaciones).
+    for offset in (timedelta(0), timedelta(minutes=5)):
+        db_session.add(
+            AuditLog(
+                tenant_id=tenant.id,
+                user_id=user.id,
+                action=ACTION_CHAT_MESSAGE_SENT,
+                resource_type="chat_message",
+                resource_id=uuid4(),
+                metadata_={"thread_id": thread_id, "content_length": 4},
+                created_at=day + offset,
+            )
         )
-    )
     db_session.add(
         LLMCall(
             tenant_id=tenant.id,
@@ -110,6 +113,17 @@ async def test_get_tenant_chat_usage_aggregates_by_month(
             cost_eur=Decimal("0.001000"),
             latency_ms=100,
             status="ok",
+            created_at=day,
+        )
+    )
+    db_session.add(
+        AuditLog(
+            tenant_id=other.id,
+            user_id=user.id,
+            action=ACTION_CHAT_MESSAGE_SENT,
+            resource_type="chat_message",
+            resource_id=uuid4(),
+            metadata_={"thread_id": str(uuid4()), "content_length": 4},
             created_at=day,
         )
     )

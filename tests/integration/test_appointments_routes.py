@@ -145,3 +145,41 @@ def test_appointments_index_defaults_to_day_view(monkeypatch: pytest.MonkeyPatch
     assert r.status_code == 302
     assert "view=day" in r.headers["location"]
     assert "date=" in r.headers["location"]
+
+
+def test_appointment_detail_audits_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El detalle pasa por view_appointment con el usuario y el contexto HTTP."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.errors import NotFoundError
+
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_session(
+            permissions={
+                "appointments": {"view": True, "create": False, "edit": False, "cancel": False}
+            },
+        ),
+    )
+    view = AsyncMock(side_effect=NotFoundError("Appointment not found"))
+    appointment_id = uuid4()
+
+    from app.main import app
+
+    with (
+        patch(
+            "app.routes.web.appointments.internal_appointment_service.view_appointment",
+            view,
+        ),
+        TestClient(app, raise_server_exceptions=False) as client,
+    ):
+        r = client.get(
+            f"/appointments/{appointment_id}",
+            headers={"Authorization": "Bearer fake-jwt", "user-agent": "agenda-ua"},
+        )
+
+    assert r.status_code == 404
+    args = view.await_args
+    assert args.args[2] == appointment_id
+    assert args.kwargs["viewer_user_id"] is not None
+    assert args.kwargs["request_ctx"].user_agent == "agenda-ua"

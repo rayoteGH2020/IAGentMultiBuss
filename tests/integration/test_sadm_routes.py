@@ -364,3 +364,71 @@ def test_sadm_open_original_passes_viewer_for_audit(monkeypatch: pytest.MonkeyPa
     assert kwargs["document_id"] == document_id
     assert kwargs["viewer_id"] is not None
     assert kwargs["request_ctx"].user_agent == "sadm-ua"
+
+
+def _mount_superadmin(monkeypatch: pytest.MonkeyPatch) -> None:
+    admin_org = f"org_admin_{uuid4().hex[:8]}"
+    monkeypatch.setenv("ADMIN_CLERK_ORG_ID", admin_org)
+    monkeypatch.setenv("SUPERADMIN_CLERK_USER_IDS", "")
+    _clear_settings_cache()
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_session_with_org(org_id=admin_org, user_sub=f"user_{uuid4().hex[:12]}"),
+    )
+
+
+def test_sadm_chat_traces_list_is_scoped_to_own_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El listado usa siempre el tenant del superadmin; ?tenant_id= ajeno se ignora."""
+    from unittest.mock import AsyncMock, patch
+
+    _mount_superadmin(monkeypatch)
+    list_threads = AsyncMock(return_value=[])
+    foreign_tenant = uuid4()
+
+    from app.main import app
+
+    with (
+        patch("app.routes.web.admin.chat_traces.chat_trace_service.list_threads", list_threads),
+        TestClient(app, raise_server_exceptions=True) as client,
+    ):
+        r = client.get(
+            f"/sadm/chat-traces?tenant_id={foreign_tenant}",
+            headers={"Authorization": "Bearer fake-jwt", "Accept": "text/html"},
+        )
+
+    assert r.status_code == 200
+    assert "tu organización" in r.text
+    tenant_id = list_threads.await_args.kwargs["tenant_id"]
+    assert tenant_id is not None
+    assert tenant_id != foreign_tenant
+
+
+def test_sadm_chat_trace_detail_passes_own_tenant_and_viewer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El detalle llega al servicio con el tenant propio y el viewer para auditar."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.errors import NotFoundError
+
+    _mount_superadmin(monkeypatch)
+    get_trace = AsyncMock(side_effect=NotFoundError("Chat thread not found"))
+    thread_id = uuid4()
+
+    from app.main import app
+
+    with (
+        patch("app.routes.web.admin.chat_traces.chat_trace_service.get_thread_trace", get_trace),
+        TestClient(app, raise_server_exceptions=False) as client,
+    ):
+        r = client.get(
+            f"/sadm/chat-traces/{thread_id}",
+            headers={"Authorization": "Bearer fake-jwt", "user-agent": "sadm-ua"},
+        )
+
+    assert r.status_code == 404
+    kwargs = get_trace.await_args.kwargs
+    assert kwargs["thread_id"] == thread_id
+    assert kwargs["tenant_id"] is not None
+    assert kwargs["viewer_id"] is not None
+    assert kwargs["request_ctx"].user_agent == "sadm-ua"

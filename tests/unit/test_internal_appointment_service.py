@@ -583,3 +583,90 @@ async def test_update_rejects_past_day_appointment(
                 client_phone="600111222",
             ),
         )
+
+
+async def test_view_appointment_writes_audit_log(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+    audit_schema_ready: None,
+    freeze_scheduling_now: None,
+) -> None:
+    from app.models import AuditLog, User
+    from app.services.audit_service import AuditRequestContext
+    from sqlalchemy import select
+
+    tenant, service_id, professional_id = await _env(
+        db_session, tenant_factory, scheduling_schema_ready
+    )
+    viewer = User(
+        clerk_user_id=f"user_{uuid4().hex[:12]}",
+        email=f"{uuid4().hex[:8]}@test.local",
+        name="Viewer",
+    )
+    db_session.add(viewer)
+    await db_session.flush()
+    created = await internal_appointment_service.create_appointment(
+        db_session,
+        tenant.id,
+        AppointmentCreate(
+            service_id=service_id,
+            professional_id=professional_id,
+            start_at=future_appointment_start(hour=11, minute=0),
+            client_name="Paciente",
+            client_phone="600333444",
+        ),
+    )
+
+    shown = await internal_appointment_service.view_appointment(
+        db_session,
+        tenant.id,
+        created.id,
+        viewer_user_id=viewer.id,
+        request_ctx=AuditRequestContext(ip="203.0.113.7", user_agent="pytest"),
+    )
+
+    assert shown.id == created.id
+    rows = (
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.tenant_id == tenant.id,
+                    AuditLog.action == internal_appointment_service.ACTION_APPOINTMENT_VIEWED,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].resource_id == created.id
+    assert rows[0].user_id == viewer.id
+    assert rows[0].ip == "203.0.113.7"
+    assert rows[0].metadata_ is None
+
+
+async def test_view_appointment_missing_does_not_audit(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+    audit_schema_ready: None,
+) -> None:
+    from app.core.errors import NotFoundError
+    from app.models import AuditLog
+    from sqlalchemy import func, select
+
+    tenant, _, _ = await _env(db_session, tenant_factory, scheduling_schema_ready)
+    with pytest.raises(NotFoundError):
+        await internal_appointment_service.view_appointment(
+            db_session, tenant.id, uuid4(), viewer_user_id=uuid4()
+        )
+    count = (
+        await db_session.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.tenant_id == tenant.id,
+                AuditLog.action == internal_appointment_service.ACTION_APPOINTMENT_VIEWED,
+            )
+        )
+    ).scalar_one()
+    assert count == 0

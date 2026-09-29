@@ -9,7 +9,9 @@ Ventanas en zona de visualización de la app (por defecto Europe/Madrid):
   6 meses.
 
 Coste/tokens/latencia desde ``llm_calls.task = 'chat'``; recuento de chats = hilos
-distintos con mensaje de usuario en el periodo.
+distintos con mensaje de usuario en el periodo, contados desde ``audit_log``
+(``chat.message_sent``, escrito en la misma transacción que el mensaje). No se lee
+``chat_messages``: el superadmin no tiene acceso a conversaciones de otros tenants.
 """
 
 from __future__ import annotations
@@ -26,7 +28,8 @@ from sqlalchemy import func, select
 from app.core.datetime_display import display_today, resolve_display_timezone
 from app.core.entitlement_codes import plan_ui_name
 from app.core.errors import NotFoundError
-from app.models import ChatMessage, ChatMessageRole, LLMCall, Tenant
+from app.models import AuditLog, LLMCall, Tenant
+from app.services.audit_service import ACTION_CHAT_MESSAGE_SENT
 from app.services.document_override_service import enable_superadmin_lookup
 
 if TYPE_CHECKING:
@@ -369,17 +372,19 @@ async def get_tenant_chat_usage(
         row.period_date: row for row in (await db.execute(llm_stmt)).all() if row.period_date
     }
 
-    msg_day = func.date(func.timezone(tz_name, ChatMessage.created_at))
+    msg_day = func.date(func.timezone(tz_name, AuditLog.created_at))
     chat_stmt = (
         select(
             msg_day.label("period_date"),
-            func.count(func.distinct(ChatMessage.thread_id)).label("chat_count"),
+            func.count(func.distinct(AuditLog.metadata_["thread_id"].as_string())).label(
+                "chat_count"
+            ),
         )
         .where(
-            ChatMessage.tenant_id == tenant_id,
-            ChatMessage.role == ChatMessageRole.user,
-            ChatMessage.created_at >= start_utc,
-            ChatMessage.created_at < end_utc,
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.action == ACTION_CHAT_MESSAGE_SENT,
+            AuditLog.created_at >= start_utc,
+            AuditLog.created_at < end_utc,
         )
         .group_by(msg_day)
     )

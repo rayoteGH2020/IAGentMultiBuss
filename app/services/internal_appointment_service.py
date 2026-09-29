@@ -41,6 +41,7 @@ ACTION_APPOINTMENT_CREATED = "scheduling.appointment_created"
 ACTION_APPOINTMENT_UPDATED = "scheduling.appointment_updated"
 ACTION_APPOINTMENT_CANCELLED = "scheduling.appointment_cancelled"
 ACTION_APPOINTMENT_STATUS_UPDATED = "scheduling.appointment_status_updated"
+ACTION_APPOINTMENT_VIEWED = "scheduling.appointment_viewed"
 RESOURCE_APPOINTMENT = "appointment"
 
 
@@ -307,6 +308,32 @@ async def get_appointment(
     appointment = result.scalar_one_or_none()
     if appointment is None:
         raise NotFoundError("Appointment not found")
+    return appointment
+
+
+async def view_appointment(
+    db: AsyncSession,
+    tenant_id: UUID,
+    appointment_id: UUID,
+    *,
+    viewer_user_id: UUID,
+    request_ctx: AuditRequestContext | None = None,
+) -> Appointment:
+    """Carga una cita para mostrarla y audita el acceso (AGENTS.md §7).
+
+    La cita contiene datos personales del cliente final (nombre, teléfono,
+    email, notas); cada apertura del detalle queda en ``audit_log``.
+    """
+    appointment = await get_appointment(db, tenant_id, appointment_id)
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=viewer_user_id,
+        action=ACTION_APPOINTMENT_VIEWED,
+        resource_type=RESOURCE_APPOINTMENT,
+        resource_id=appointment.id,
+        request_ctx=request_ctx,
+    )
     return appointment
 
 
