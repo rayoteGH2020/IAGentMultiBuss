@@ -1,6 +1,6 @@
 # Backlog_Priorizado
 
-Fecha actualizacion: 2026-09-28
+Fecha actualizacion: 2026-09-29
 Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67`; Stripe retirado D016 `p68`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
@@ -88,6 +88,21 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 
 *Resuelto 2026-09-28:* filtros `fecha_fin_from` / `fecha_fin_to` en `DocumentSearchFilters`, en los args de `search_documents` / `aggregate_documents` y en los servicios de contratos y polizas; `fecha_from` / `fecha_to` documentan que en contratos/polizas filtran por inicio. La pista va solo en la descripcion de los parametros: anadirla tambien a la descripcion de las tools hizo que el modelo dejara de usar `aggregate_documents` en doc_013 (sumaba a mano y fallaba, 2/2 ejecuciones). Pendiente relacionado: `group_by` month/year sigue agrupando por `fecha_inicio`.
 
+## P2c - Deuda de seguridad (revision 2026-09-29, aplazada)
+
+Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hmac.compare_digest`, dedupe Telegram, `REVOKE TRUNCATE` (`p71`), errores LLM crudos fuera de logs (`0c42075`), auditoria de knowledge y accesos SADM (`cd614d0`), alcance de `audit_log` en `AGENTS.md` §7 (`502eafe`), trazas de chat SADM solo del tenant propio + auditoria de detalle de cita (`5379502`, `p72`). Aplazado el resto para cerrar el producto minimo; retomar antes de produccion comercial y en este orden.
+
+| # | Item | Estado |
+| --- | --- | --- |
+| 1 | `audit_log` solo insercion: `REVOKE UPDATE, DELETE ON audit_log FROM saas_app` (concedido en `p16`). Los tests que borran filas de `audit_log` (p. ej. `_cleanup` en `test_document_override.py`) pasaran a usar el rol propietario. ~1 h | **Pendiente** |
+| 2 | Datos personales en logs: `customer_identifier` (`channel_jobs.py`), nombres de fichero en subida (`documents.py`), comercio/total en `worker.ticket.done`, ramas `except Exception` que loguean `str(exc)` en workers/knowledge, destinatario/asunto en debug de `email.py`, `client_name` en metadata de `scheduling.appointment_created` (legible por SADM via `audit_log`). Sustituir por hash HMAC / contadores / tipos. 2-3 h | **Pendiente** |
+| 3 | IP de auditoria: hoy no falsificable (Caddy es el borde sin `trusted_proxies`). Unificar en `request.client.host` (quitar parseo manual de `X-Forwarded-For` en `audit_context.py` y `documents.py`, y las 5 copias de `_audit_request_context`), restringir `--forwarded-allow-ips=*` a la red interna y test en `test_deploy_config.py`. ~30-45 min | **Pendiente** (robustez) |
+| 4 | Al activar Cloudflare delante: `trusted_proxies` con rangos de Cloudflare en Caddy y firewall solo desde Cloudflare; si no, todas las IPs auditadas seran de Cloudflare | **Ops** (bloqueante al activar Cloudflare) |
+| 5 | `/metrics`: restriccion de red en proxy/infra ademas del token (hoy Caddy responde 404 a `/metrics`) | **Ops** |
+| 6 | CSP sin `unsafe-eval` / `unsafe-inline`: migrar a `@alpinejs/csp` (~156 usos de Alpine) + nonces para ~10 scripts inline. 1-2 dias | **Pendiente** (backlog) |
+
+Ops inmediato: aplicar `p71` y `p72` en dev (`infisical run -- uv run alembic upgrade head`; comprobar con `infisical run -- uv run alembic current` que muestra `p72_drop_sadm_chat_read_01 (head)`). Solo estan aplicadas en `saas_test`.
+
 ## P3 - Nuevos modulos
 
 | # | Item | Estado |
@@ -112,5 +127,6 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07. Borrar `STRIPE_*` de Infisical (D016).
 2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
 3. Soft-launch Paso10 cuando staging este vivo.
+4. Deuda de seguridad P2c (1 -> 2 -> 3) antes de la produccion comercial; P2c-4 al activar Cloudflare.
 
 No roadmap: Paso08 Analytics / modulo 3 (D011).
