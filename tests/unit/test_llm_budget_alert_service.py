@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -145,40 +145,26 @@ async def test_chat_cutoff_notifies_once_per_day_and_three_per_month(
     assert all(call.args == (tenant_id, "chat_cutoff") for call in enqueued.await_args_list)
 
 
-def _db_with_tenant(clerk_org_id: str | None) -> AsyncMock:
-    db = AsyncMock()
-    result = MagicMock()
-    result.scalar_one.return_value = SimpleNamespace(clerk_org_id=clerk_org_id, name="Org")
-    db.execute = AsyncMock(return_value=result)
-    return db
-
-
-async def test_cutoff_message_reads_clerk_metadata_and_caches_it(
-    monkeypatch: pytest.MonkeyPatch, redis: _FakeRedis
+@pytest.mark.parametrize(
+    ("admin", "expected"),
+    [
+        (
+            SimpleNamespace(phone="600 111 222", email="admin@negocio.es"),
+            svc.build_chat_cutoff_message("600 111 222", "admin@negocio.es"),
+        ),
+        (
+            SimpleNamespace(phone=None, email="admin@negocio.es"),
+            svc.build_chat_cutoff_message(None, "admin@negocio.es"),
+        ),
+        (None, svc.build_chat_cutoff_message(None, None)),
+    ],
+)
+async def test_cutoff_message_uses_tenant_admin_contact(
+    monkeypatch: pytest.MonkeyPatch, admin: Any, expected: str
 ) -> None:
-    org: dict[str, Any] = {
-        "public_metadata": {"contact_phone": " 600111222 ", "contact_email": "hola@negocio.es"}
-    }
-    get_org = AsyncMock(return_value=org)
-    monkeypatch.setattr(svc.clerk_client, "get_organization", get_org)
-    db = _db_with_tenant("org_123")
-
-    first = await svc.chat_cutoff_message(db, uuid4())
-    second = await svc.chat_cutoff_message(db, uuid4())
-
-    assert first == second
-    assert first.endswith("(600111222 - hola@negocio.es)")
-    get_org.assert_awaited_once_with("org_123")
-
-
-async def test_cutoff_message_survives_clerk_failure(
-    monkeypatch: pytest.MonkeyPatch, redis: _FakeRedis
-) -> None:
-    monkeypatch.setattr(
-        svc.clerk_client, "get_organization", AsyncMock(side_effect=RuntimeError("clerk down"))
-    )
-    message = await svc.chat_cutoff_message(_db_with_tenant("org_123"), uuid4())
-    assert message == svc.build_chat_cutoff_message(None, None)
+    """Teléfono y email del admin del tenant en ``users`` (D020), sin Clerk."""
+    monkeypatch.setattr(svc, "_tenant_admin", AsyncMock(return_value=admin))
+    assert await svc.chat_cutoff_message(AsyncMock(), uuid4()) == expected
 
 
 async def test_record_llm_cost_checks_warning_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -241,19 +227,6 @@ async def test_sadm_is_not_warned_below_cutoff(
     _usage(monkeypatch, "5.20")  # 86 %
     await svc.maybe_warn_budget(AsyncMock(), uuid4())
     assert [call.args[1] for call in enqueued.await_args_list] == ["budget_warning"]
-
-
-def test_primary_phone_from_clerk_user() -> None:
-    clerk_user = {
-        "primary_phone_number_id": "p2",
-        "phone_numbers": [
-            {"id": "p1", "phone_number": "+34600000001"},
-            {"id": "p2", "phone_number": "+34600000002"},
-        ],
-    }
-    assert svc._primary_phone(clerk_user) == "+34600000002"
-    assert svc._primary_phone({"phone_numbers": []}) is None
-    assert svc._primary_phone({}) is None
 
 
 async def test_budget_exhausted_is_cached(

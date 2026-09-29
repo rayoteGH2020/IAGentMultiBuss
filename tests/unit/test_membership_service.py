@@ -271,6 +271,79 @@ async def test_update_tenant_member_permissions_local_only_no_clerk(
     assert updated.role == original_role
 
 
+async def _member_for_phone(db_session: AsyncSession) -> tuple[Tenant, User, Membership]:
+    tenant = await _tenant_with_org(db_session)
+    user = User(clerk_user_id=f"user_{uuid4().hex[:8]}", email=f"tel.{uuid4().hex[:6]}@example.com")
+    db_session.add_all([tenant, user])
+    await db_session.flush()
+    await set_tenant_context(db_session, str(tenant.id))
+    membership = Membership(user_id=user.id, tenant_id=tenant.id, role="member")
+    db_session.add(membership)
+    await db_session.flush()
+    return tenant, user, membership
+
+
+@pytest.mark.asyncio
+async def test_admin_sets_and_clears_member_phone_in_users(db_session: AsyncSession) -> None:
+    """El teléfono se guarda en users (no en Clerk) y vacío lo borra."""
+    tenant, user, membership = await _member_for_phone(db_session)
+    perms = MembershipPermissions()
+
+    updated = await membership_service.update_tenant_member(
+        db_session,
+        tenant.id,
+        membership.id,
+        TenantMemberUpdate(permissions=perms, phone="+34  600 111 222"),
+        actor_role="admin",
+    )
+    assert updated.phone == "+34 600 111 222"
+    assert user.phone == "+34 600 111 222"
+
+    cleared = await membership_service.update_tenant_member(
+        db_session,
+        tenant.id,
+        membership.id,
+        TenantMemberUpdate(permissions=perms, phone=""),
+        actor_role="admin",
+    )
+    assert cleared.phone is None
+    assert user.phone is None
+
+
+@pytest.mark.asyncio
+async def test_co_admin_cannot_change_member_phone(db_session: AsyncSession) -> None:
+    tenant, user, membership = await _member_for_phone(db_session)
+    user.phone = "600111222"
+    await db_session.flush()
+
+    with pytest.raises(ForbiddenError):
+        await membership_service.update_tenant_member(
+            db_session,
+            tenant.id,
+            membership.id,
+            TenantMemberUpdate(permissions=MembershipPermissions(), phone="699000000"),
+            actor_role="co_admin",
+        )
+    # Sin el campo, el co_admin sí guarda permisos y el teléfono no cambia.
+    updated = await membership_service.update_tenant_member(
+        db_session,
+        tenant.id,
+        membership.id,
+        TenantMemberUpdate(permissions=MembershipPermissions()),
+        actor_role="co_admin",
+    )
+    assert updated.phone == "600111222"
+
+
+def test_member_phone_validation() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    for bad in ("600-111-222", "abc", "12345"):
+        with pytest.raises(PydanticValidationError):
+            TenantMemberUpdate(permissions=MembershipPermissions(), phone=bad)
+    assert TenantMemberUpdate(permissions=MembershipPermissions(), phone="  ").phone is None
+
+
 async def _add_member(
     db_session: AsyncSession, tenant: Tenant, role: str, name: str
 ) -> tuple[User, Membership]:

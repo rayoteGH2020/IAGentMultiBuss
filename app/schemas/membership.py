@@ -57,12 +57,32 @@ class TenantMemberCreate(BaseModel):
         return value.strip().lower()
 
 
+_PHONE_RE = re.compile(r"^\+?[0-9][0-9 ]{5,19}$")
+
+
 class TenantMemberUpdate(BaseModel):
-    """Solo permisos de app (citas). Identidad/rol viven en Clerk."""
+    """Permisos de app (citas) y teléfono. Identidad/rol viven en Clerk.
+
+    ``phone`` solo se aplica si viene en la petición (``model_fields_set``);
+    vacío lo borra. Solo el admin puede cambiarlo (lo impone el servicio).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     permissions: MembershipPermissions
+    phone: str | None = Field(default=None, max_length=40)
+
+    @field_validator("phone")
+    @classmethod
+    def _normalize_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = " ".join(value.split())
+        if not clean:
+            return None
+        if not _PHONE_RE.match(clean):
+            raise ValueError("phone must contain digits, spaces and an optional leading +")
+        return clean
 
 
 class TenantMemberRead(BaseModel):
@@ -72,6 +92,7 @@ class TenantMemberRead(BaseModel):
     user_id: UUID
     email: str
     name: str | None
+    phone: str | None = None
     role: str
     permissions: MembershipPermissions
     clerk_user_id: str | None = None

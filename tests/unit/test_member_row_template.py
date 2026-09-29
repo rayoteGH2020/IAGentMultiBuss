@@ -145,3 +145,17 @@ def test_removal_form_confirmation_actor_role_and_date() -> None:
 def test_removal_form_falls_back_to_email() -> None:
     html = _render("member_removal_form.html", form=_form(_member(name=None)))
     assert 'baja del usuario "ana@example.com"' in html
+
+
+def test_member_form_phone_editable_only_for_admin() -> None:
+    member = _member().model_copy(update={"phone": "+34 600 111 222"})
+
+    admin_html = _render("member_form.html", member=member, can_edit_phone=True)
+    assert 'name="phone"' in admin_html
+    assert 'value="+34 600 111 222"' in admin_html
+    assert "member-phone-readonly" not in admin_html
+
+    co_admin_html = _render("member_form.html", member=member, can_edit_phone=False)
+    assert 'name="phone"' not in co_admin_html
+    assert "member-phone-readonly" in co_admin_html
+    assert "+34 600 111 222" in co_admin_html

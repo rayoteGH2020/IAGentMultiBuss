@@ -321,7 +321,7 @@ Consecuencia:
 Decision (cerrada 2026-09-29): el presupuesto mensual de IA (`llm_budget_eur_month`) es unico para toda la IA del tenant. Para que el chat no agote lo que necesita la extraccion de documentos:
 
 - **80 %**: al cruzarlo con cualquier gasto de IA, email al admin del tenant (rol `admin` activo; no co_admin), una vez por mes.
-- **90 %**: el chat de la app deja de llamar al LLM y responde: "En estos momentos no puedo responderte, ponte en contacto con nosotros y te ayudaremos (telefono - email)". El telefono y el email salen de los metadatos publicos de la organizacion en Clerk (`contact_phone`, `contact_email`), con cache de 1 h. Tras esa respuesta se notifica al admin como maximo una vez cada 24 h y 3 veces por mes, y queda `chat.budget_cutoff` en `audit_log`.
+- **90 %**: el chat de la app deja de llamar al LLM y responde: "En estos momentos no puedo responderte, ponte en contacto con nosotros y te ayudaremos (telefono - email)". El telefono y el email son los del admin del tenant en `users` (D020; la version inicial los leia de los metadatos de la organizacion en Clerk). Tras esa respuesta se notifica al admin como maximo una vez cada 24 h y 3 veces por mes, y queda `chat.budget_cutoff` en `audit_log`.
 - **100 %**: `ensure_llm_budget` bloquea el resto de la IA.
 
 Ampliacion (2026-09-29):
@@ -339,6 +339,21 @@ Consecuencia:
 - `app/services/llm_budget_alert_service.py`, job ARQ `send_llm_budget_alert` (email fuera de la peticion) y comprobacion en `chat_service._run_assistant_turn`.
 - Umbrales y frecuencia configurables: `LLM_BUDGET_WARN_RATIO` (0,8), `CHAT_BUDGET_CUTOFF_RATIO` (0,9), `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` (86400), `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` (3).
 - Pendiente: mismo corte en el asistente de canales (Backlog P2b-17), interfaz de consumo y avisos (P2b-18) y rellenar los metadatos en Clerk (P2b-19, ops).
+
+## D020 - Telefono de los miembros en `users`, editable solo por el admin del tenant
+
+Decision (cerrada 2026-09-29): el telefono de cada miembro se guarda en nuestra tabla `users` (`users.phone`, migracion `p73_users_phone_01`), **no en Clerk**. Se edita en la ficha de miembro (`/settings/members` > editar): solo el `admin` del tenant puede modificarlo; el `co_admin` lo ve en lectura. El contacto que muestra el chat al cortarse por presupuesto (D019) es el telefono y el email del admin del tenant, y el email al SADM al 90 % usa tambien `users.phone` (nombre y apellido siguen leyendose de Clerk).
+
+Motivo:
+
+- Decision del usuario: no guardar el telefono en Clerk (en dev ningun usuario tenia telefono en Clerk y la instancia no lo usa).
+- El telefono es un dato de la app, igual que los permisos de citas de la ficha de miembro.
+
+Consecuencia:
+
+- `TenantMemberUpdate.phone` (validado: digitos, espacios y + inicial, 6-20 caracteres; vacio = borrar) solo se aplica si viene en la peticion; `membership_service.update_tenant_member` devuelve 403 si lo envia un rol distinto de `admin`. El `audit_log` registra `phone_set`, nunca el numero.
+- `users` es global (un usuario puede pertenecer a varios tenants): el telefono es uno por usuario.
+- Se descarta la version anterior de esta decision (formulario en SADM que escribia `contact_phone`/`contact_email` en los metadatos de la organizacion en Clerk); no llego a commitearse.
 
 ## D021 - Usuario de Clerk borrado y recreado con el mismo email: cuenta nueva y limpia
 

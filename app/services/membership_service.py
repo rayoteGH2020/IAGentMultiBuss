@@ -247,8 +247,16 @@ async def update_tenant_member(
     payload: TenantMemberUpdate,
     *,
     actor_user_id: UUID | None = None,
+    actor_role: str | None = None,
 ) -> TenantMemberRead:
-    """Actualiza solo permisos de citas en BD local. No escribe en Clerk."""
+    """Actualiza permisos de citas y, si viene, el teléfono. No escribe en Clerk.
+
+    El teléfono solo lo cambia el admin del tenant (``actor_role``); el
+    co_admin lo ve pero no lo modifica.
+    """
+    phone_requested = "phone" in payload.model_fields_set
+    if phone_requested and actor_role != ORG_ADMIN_ROLE:
+        raise ForbiddenError("Only the tenant admin can change a member's phone")
     await _get_tenant_or_raise(db, tenant_id)
     await set_tenant_context(db, str(tenant_id))
 
@@ -268,6 +276,11 @@ async def update_tenant_member(
     _ensure_not_pending_removal(membership)
 
     membership.permissions = payload.permissions.to_json_dict()
+    metadata: dict[str, object] = {"permissions": membership.permissions}
+    if phone_requested:
+        user.phone = payload.phone
+        # Se audita el cambio, no el número (dato personal).
+        metadata["phone_set"] = payload.phone is not None
     await db.flush()
     await audit_service.log_action(
         db,
@@ -276,7 +289,7 @@ async def update_tenant_member(
         action=ACTION_MEMBER_UPDATED,
         resource_type=RESOURCE_MEMBERSHIP,
         resource_id=membership.id,
-        metadata={"permissions": membership.permissions},
+        metadata=metadata,
     )
 
     log.info("membership.updated", membership_id=str(membership_id), tenant_id=str(tenant_id))
@@ -440,6 +453,7 @@ def _member_read(membership: Membership, user: User) -> TenantMemberRead:
         user_id=user.id,
         email=user.email,
         name=user.name,
+        phone=user.phone,
         role=membership.role,
         permissions=MembershipPermissions.from_json_dict(membership.permissions),
         clerk_user_id=user.clerk_user_id,

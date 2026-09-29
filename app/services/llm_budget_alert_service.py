@@ -6,11 +6,11 @@ chat). Para que el chat no deje al tenant sin extracción de documentos:
 - Al cruzar ``LLM_BUDGET_WARN_RATIO`` (80 %) con cualquier gasto de IA, email al
   admin del tenant, una vez por mes.
 - Desde ``CHAT_BUDGET_CUTOFF_RATIO`` (90 %) el chat de la app no llama al LLM:
-  responde con un mensaje fijo con el contacto de la organización (metadatos
-  públicos de Clerk ``contact_phone`` / ``contact_email``) y se notifica al admin
-  como máximo una vez cada 24 h y 3 veces por mes. Al cruzar ese umbral, además,
-  email al SADM (``EMAIL_SADM``) con nombre, apellido, email y móvil del admin
-  (Clerk), una vez por mes.
+  responde con un mensaje fijo con el teléfono y el email del admin del tenant
+  (tabla ``users``, D020) y se notifica al admin como máximo una vez cada 24 h y
+  3 veces por mes. Al cruzar ese umbral, además, email al SADM (``EMAIL_SADM``)
+  con nombre y apellido (Clerk), email y teléfono (``users``) del admin, una vez
+  por mes.
 - Al 100 % bloquea ``plan_quota_service.ensure_llm_budget`` (resto de la IA) y el
   panel muestra a todos los usuarios el aviso ``LLM_BUDGET_EXHAUSTED_NOTICE``.
 
@@ -21,7 +21,7 @@ ni a las extracciones. Los avisos nunca interrumpen el flujo que los dispara.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import structlog
 from sqlalchemy import select
@@ -83,7 +83,6 @@ _ALERT_BODIES: dict[AdminAlertKind, str] = {
     ),
 }
 
-_CONTACT_CACHE_TTL_SECONDS = 3600
 # Más que un mes: la clave del periodo caduca sola tras el cambio de mes.
 _PERIOD_KEY_TTL_SECONDS = 40 * 24 * 3600
 
@@ -195,37 +194,6 @@ async def notify_chat_cutoff(tenant_id: UUID) -> None:
         )
 
 
-def _metadata_value(org: dict[str, Any], field: str) -> str | None:
-    metadata = org.get("public_metadata")
-    if not isinstance(metadata, dict):
-        return None
-    value = metadata.get(field)
-    return value.strip() if isinstance(value, str) and value.strip() else None
-
-
-async def _organization_contact(clerk_org_id: str) -> tuple[str | None, str | None]:
-    """(teléfono, email) de los metadatos públicos de la organización en Clerk."""
-    redis = get_redis()
-    cache_key = f"clerk:org_contact:{clerk_org_id}"
-    try:
-        cached = await redis.get(cache_key)
-    except Exception:
-        cached = None
-    if cached is not None:
-        raw = cached.decode() if isinstance(cached, bytes) else str(cached)
-        cached_phone, _, cached_email = raw.partition("\n")
-        return cached_phone or None, cached_email or None
-
-    org = await clerk_client.get_organization(clerk_org_id)
-    phone = _metadata_value(org, "contact_phone")
-    email = _metadata_value(org, "contact_email")
-    try:
-        await redis.set(cache_key, f"{phone or ''}\n{email or ''}", ex=_CONTACT_CACHE_TTL_SECONDS)
-    except Exception:
-        logger.warning("llm_budget.contact_cache_failed", clerk_org_id=clerk_org_id)
-    return phone, email
-
-
 def build_chat_cutoff_message(phone: str | None, email: str | None) -> str:
     """Mensaje fijo del chat: ``(teléfono - email)`` con lo que haya disponible."""
     contact = " - ".join(part for part in (phone, email) if part)
@@ -233,19 +201,14 @@ def build_chat_cutoff_message(phone: str | None, email: str | None) -> str:
 
 
 async def chat_cutoff_message(db: AsyncSession, tenant_id: UUID) -> str:
-    """Mensaje fijo del chat con el contacto de la organización (sin fallar si falta)."""
-    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
-    phone: str | None = None
-    email: str | None = None
-    if tenant.clerk_org_id:
-        try:
-            phone, email = await _organization_contact(tenant.clerk_org_id)
-        except Exception as exc:
-            logger.warning(
-                "llm_budget.contact_lookup_failed",
-                tenant_id=str(tenant_id),
-                error_type=type(exc).__name__,
-            )
+    """Mensaje fijo del chat con el contacto del negocio (sin fallar si falta).
+
+    Teléfono y email son los del admin del tenant en ``users`` (D020): el
+    teléfono lo mantiene el propio admin desde la ficha de miembro.
+    """
+    admin = await _tenant_admin(db, tenant_id)
+    phone = admin.phone if admin is not None else None
+    email = admin.email if admin is not None else None
     if phone is None or email is None:
         logger.warning(
             "llm_budget.contact_incomplete",
@@ -275,35 +238,21 @@ def _format_eur(value: Decimal) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
-def _primary_phone(clerk_user: dict[str, Any]) -> str | None:
-    primary_id = clerk_user.get("primary_phone_number_id")
-    numbers = clerk_user.get("phone_numbers")
-    if not isinstance(numbers, list):
-        return None
-    for number in numbers:
-        if isinstance(number, dict) and number.get("id") == primary_id:
-            value = number.get("phone_number")
-            return value if isinstance(value, str) and value else None
-    return None
-
-
 async def _admin_contact(admin: User) -> dict[str, str]:
-    """Nombre, apellido y móvil del admin desde Clerk; lo local si Clerk no responde."""
+    """Datos del admin para el SADM: nombre y apellido de Clerk, email y teléfono de ``users``."""
     first_name, _, last_name = (admin.name or "").partition(" ")
-    phone: str | None = None
     if admin.clerk_user_id:
         try:
             clerk_user = await clerk_client.get_user(admin.clerk_user_id)
             first_name = str(clerk_user.get("first_name") or first_name)
             last_name = str(clerk_user.get("last_name") or last_name)
-            phone = _primary_phone(clerk_user)
         except Exception as exc:
             logger.warning("llm_budget.admin_lookup_failed", error_type=type(exc).__name__)
     return {
         "first_name": first_name or _NOT_AVAILABLE,
         "last_name": last_name or _NOT_AVAILABLE,
         "email": admin.email,
-        "phone": phone or _NOT_AVAILABLE,
+        "phone": admin.phone or _NOT_AVAILABLE,
     }
 
 

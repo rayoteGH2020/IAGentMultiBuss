@@ -15,6 +15,8 @@ class User(Base, IdMixin, TimestampMixin):
     clerk_user_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(255))
+    # Teléfono de contacto; lo edita el admin del tenant (no se guarda en Clerk, D020).
+    phone: Mapped[str | None] = mapped_column(String(20))
     force_password_reset: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

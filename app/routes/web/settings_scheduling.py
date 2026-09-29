@@ -20,6 +20,7 @@ from app.core.errors import (
     ValidationError,
     public_error_message,
 )
+from app.core.permissions import ORG_ADMIN_ROLE
 from app.core.professional_hours_grid import (
     allowed_center_slot_keys,
     build_center_period_slot_grids,
@@ -668,7 +669,7 @@ async def members_page(
 async def member_edit_form(
     request: Request,
     tenant: CurrentTenant,
-    _: RequireManager,
+    manager: RequireManager,
     membership_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -677,7 +678,8 @@ async def member_edit_form(
         request,
         full="components/scheduling/member_form.html",
         partial="components/scheduling/member_form.html",
-        ctx={"member": member},
+        # El teléfono lo edita solo el admin; el co_admin lo ve en lectura.
+        ctx={"member": member, "can_edit_phone": manager.role == ORG_ADMIN_ROLE},
     )
 
 
@@ -693,24 +695,37 @@ async def member_update(
     perm_create: bool = Form(False),
     perm_edit: bool = Form(False),
     perm_cancel: bool = Form(False),
+    phone: str | None = Form(None),
 ) -> HTMLResponse:
     from app.schemas.membership import AppointmentPermissions, MembershipPermissions
 
+    permissions = MembershipPermissions(
+        appointments=AppointmentPermissions(
+            view=perm_view,
+            create=perm_create,
+            edit=perm_edit,
+            cancel=perm_cancel,
+        )
+    )
+    # Sin campo en el formulario (co_admin) el teléfono no se toca.
+    try:
+        payload = (
+            TenantMemberUpdate(permissions=permissions)
+            if phone is None
+            else TenantMemberUpdate(permissions=permissions, phone=phone)
+        )
+    except PydanticValidationError as exc:
+        raise ValidationError(
+            "El teléfono solo puede tener dígitos, espacios y un + inicial (6-20 caracteres).",
+            details={"field": "phone"},
+        ) from exc
     row = await membership_service.update_tenant_member(
         db,
         tenant.id,
         membership_id,
-        TenantMemberUpdate(
-            permissions=MembershipPermissions(
-                appointments=AppointmentPermissions(
-                    view=perm_view,
-                    create=perm_create,
-                    edit=perm_edit,
-                    cancel=perm_cancel,
-                )
-            ),
-        ),
+        payload,
         actor_user_id=user.id,
+        actor_role=manager.role,
     )
     return render(
         request,

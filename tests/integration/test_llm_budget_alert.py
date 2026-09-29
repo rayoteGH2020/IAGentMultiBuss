@@ -87,6 +87,7 @@ async def test_sadm_alert_carries_tenant_and_admin_contact(
 
     tenant = await tenant_factory(name="Clinica Sol")
     admin = await _user(db_session, f"ana-{uuid4().hex[:6]}@test.local")
+    admin.phone = "+34600111222"  # teléfono en users (D020), no en Clerk
     await set_tenant_context(db_session, str(tenant.id))
     db_session.add(Membership(user_id=admin.id, tenant_id=tenant.id, role="admin", is_active=True))
     await db_session.flush()
@@ -103,8 +104,9 @@ async def test_sadm_alert_carries_tenant_and_admin_contact(
             return_value={
                 "first_name": "Ana",
                 "last_name": "Garcia",
+                # Un teléfono en Clerk no se usa: manda users.phone.
                 "primary_phone_number_id": "p1",
-                "phone_numbers": [{"id": "p1", "phone_number": "+34600111222"}],
+                "phone_numbers": [{"id": "p1", "phone_number": "+34999999999"}],
             }
         ),
     )
