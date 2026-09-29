@@ -14,6 +14,7 @@ import structlog
 from instructor.processing.multimodal import PDF, Image
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.media_limits import MediaLimitExceeded, inspect_document
 from app.llm.client import get_llm_client
@@ -184,7 +185,7 @@ async def extract_invoice(
         db=db,
         prompt_version=PROMPT_VERSION,
         source_filename=source_filename,
-        max_retries=2,
+        max_retries=get_settings().llm_extraction_max_retries,
     )
     factura = completion.result
     # Se loguea solo los campos clave (no el objeto completo) para mantener
@@ -233,7 +234,7 @@ async def extract_ticket(
         db=db,
         prompt_version=TICKET_PROMPT_VERSION,
         source_filename=source_filename,
-        max_retries=2,
+        max_retries=get_settings().llm_extraction_max_retries,
     )
     ticket = completion.result
     logger.info(
@@ -278,7 +279,7 @@ async def extract_contract(
         db=db,
         prompt_version=CONTRACT_PROMPT_VERSION,
         source_filename=source_filename,
-        max_retries=2,
+        max_retries=get_settings().llm_extraction_max_retries,
     )
     contract = completion.result
     logger.info(
@@ -324,7 +325,7 @@ async def extract_insurance(
         db=db,
         prompt_version=INSURANCE_PROMPT_VERSION,
         source_filename=source_filename,
-        max_retries=2,
+        max_retries=get_settings().llm_extraction_max_retries,
     )
     insurance = completion.result
     logger.info(
@@ -406,7 +407,7 @@ async def extract_text_from_image(
         tenant_id=tenant_id,
         db=db,
         prompt_version=KNOWLEDGE_OCR_PROMPT_VERSION,
-        max_retries=2,
+        max_retries=get_settings().llm_extraction_max_retries,
     )
     text = completion.result.text
     logger.info(

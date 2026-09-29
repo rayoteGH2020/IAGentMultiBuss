@@ -327,3 +327,83 @@ async def test_process_invoice_settles_authorized_charge(
         await db_session.execute(delete(LLMCall).where(LLMCall.tenant_id == tenant_id))
         await db_session.commit()
         reset_storage_for_tests()
+
+
+class _MarkRedis:
+    """Redis mínimo para extraction_guard (la marca de 'LLM iniciado')."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        _ = ex
+        self.values[key] = value
+
+    async def exists(self, key: str) -> int:
+        return int(key in self.values)
+
+
+@pytest.mark.asyncio
+async def test_process_invoice_does_not_repeat_llm_after_interruption(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Segunda ejecución ARQ de un job que ya llamó al LLM: no se vuelve a extraer.
+
+    Garantiza el tope de 2 reintentos automáticos por documento: el documento
+    queda en processing_interrupted (reintentable a mano) sin nueva llamada.
+    """
+    from datetime import UTC, datetime
+
+    from app.jobs import extraction_guard
+
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    monkeypatch.setattr(invoice_jobs, "get_storage", lambda: _FakeStorage(_PDF_BYTES))
+
+    @asynccontextmanager
+    async def _noop_slot(*_a: object, **_kw: object) -> AsyncIterator[None]:
+        yield
+
+    monkeypatch.setattr(invoice_jobs, "tenant_invoice_extraction_slot", _noop_slot)
+    calls: list[int] = []
+
+    async def fake_extract(**_kwargs: object) -> ExtractionResult:
+        calls.append(1)
+        raise AssertionError("no debe llamarse al LLM en la re-ejecución")
+
+    monkeypatch.setattr(invoice_jobs, "extract_invoice", fake_extract)
+
+    invoice = await invoice_service.create_invoice_stub(
+        db_session,
+        tenant.id,
+        source_file_key="test/invoices/mock.pdf",
+        source_filename="mock.pdf",
+        source_mime="application/pdf",
+    )
+    invoice.status = InvoiceStatus.processing
+    tenant_id = tenant.id
+    invoice_id = invoice.id
+    await db_session.commit()
+
+    redis_conn = _MarkRedis()
+    enqueued = datetime.now(tz=UTC)
+    first_run = {"job_id": f"invoice:{invoice_id}", "job_try": 1, "enqueue_time": enqueued}
+    # La primera ejecución llegó a llamar al LLM y el worker se reinició.
+    await extraction_guard.mark_llm_started(first_run, redis_conn)  # type: ignore[arg-type]
+
+    second_run = {**first_run, "job_try": 2, "redis": redis_conn}
+    result = await invoice_jobs.process_invoice(second_run, str(invoice_id), str(tenant_id))
+
+    try:
+        assert result["status"] == "interrupted"
+        assert calls == []
+        db_session.expire(invoice)
+        await set_tenant_context(db_session, str(tenant_id))
+        refreshed = await invoice_service.get_invoice(db_session, tenant_id, invoice_id)
+        assert refreshed.status == InvoiceStatus.failed
+        assert refreshed.error_code == DocumentErrorCode.processing_interrupted.value
+    finally:
+        reset_storage_for_tests()

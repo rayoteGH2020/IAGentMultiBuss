@@ -70,9 +70,10 @@ class WorkerSettings:
     # el TTL solo afecta a la inspección manual de jobs mediante arq CLI.
     keep_result = 3600
 
-    # Número máximo de intentos antes de que ARQ marque el job como fallido.
-    # Con max_tries=2, si el job lanza una excepción no controlada (distinto
-    # de arq.worker.Retry), ARQ lo reintenta una vez más automáticamente.
-    # Combinado con max_retries=2 de Instructor, en el peor caso se harían
-    # hasta 2 x 3 = 6 llamadas al LLM antes de agotar todos los intentos.
+    # Número máximo de ejecuciones de un job. ARQ solo vuelve a ejecutar un job
+    # ante arq.worker.Retry o si se cancela (worker reiniciado a mitad); una
+    # excepción normal lo cierra como fallido sin repetir. Cada ejecución
+    # cuenta, incluidas las diferidas por Retry. Los jobs de extracción no
+    # repiten la llamada al LLM en la segunda ejecución (extraction_guard.py):
+    # el tope por documento sigue siendo 1 + llm_extraction_max_retries (3).
     max_tries = 2

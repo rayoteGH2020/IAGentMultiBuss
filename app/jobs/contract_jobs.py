@@ -13,6 +13,7 @@ from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import LLMCompleteError
 from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
+from app.jobs import extraction_guard
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_contract
 from app.services import (
@@ -79,10 +80,23 @@ async def process_contract(
             await db.commit()
             return {"status": "failed", "contract_id": contract_id}
 
+        # Máximo 2 reintentos automáticos (ver app/jobs/extraction_guard.py).
+        if await extraction_guard.close_if_interrupted_after_llm(
+            ctx,
+            redis_conn,
+            db,
+            tenant_id=tenant_uuid,
+            document_kind="contract",
+            document_id=contract_uuid,
+        ):
+            return {"status": "interrupted", "contract_id": contract_id}
+
         try:
             storage = get_storage()
             file_bytes = await storage.download_bytes(contract_row.source_file_key)
             mime = contract_row.source_mime or "application/pdf"
+
+            await extraction_guard.mark_llm_started(ctx, redis_conn)
 
             extraction = await extract_contract(
                 file_bytes=file_bytes,

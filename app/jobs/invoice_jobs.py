@@ -24,6 +24,7 @@ from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import LLMCompleteError
 from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
+from app.jobs import extraction_guard
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_invoice
 from app.services import (
@@ -111,12 +112,26 @@ async def process_invoice(
             await db.commit()
             return {"status": "failed", "invoice_id": invoice_id}
 
+        # Máximo 2 reintentos automáticos: no repetir la extracción si una
+        # ejecución anterior de este job ya llamó al LLM (worker reiniciado).
+        if await extraction_guard.close_if_interrupted_after_llm(
+            ctx,
+            redis_conn,
+            db,
+            tenant_id=t_uuid,
+            document_kind="invoice",
+            document_id=inv_uuid,
+        ):
+            return {"status": "interrupted", "invoice_id": invoice_id}
+
         try:
             storage = get_storage()
             file_bytes = await storage.download_bytes(invoice_row.source_file_key)
             # Fallback a PDF si por algún motivo el MIME no se guardó; es el
             # tipo más probable en el contexto de facturas.
             mime = invoice_row.source_mime or "application/pdf"
+
+            await extraction_guard.mark_llm_started(ctx, redis_conn)
 
             # extract_invoice llama al LLM y añade un LLMCall a la sesión db
             # pero NO hace commit; la transacción permanece abierta hasta el

@@ -257,6 +257,10 @@ class Settings(BaseSettings):
     # Espera máxima entre reintentos en segundos. El backoff exponencial empieza
     # en 1 s y duplica hasta este techo, con jitter para evitar tormentas.
     llm_retry_max_wait_seconds: float = 15.0
+    # Reintentos automáticos de Instructor por extracción de documento (schema
+    # no válido): 2 = hasta 3 llamadas al LLM. Tope de producto (spec de planes
+    # §4.2): cada reintento cuenta en el presupuesto de IA, por eso le=2.
+    llm_extraction_max_retries: int = Field(default=2, ge=0, le=2)
 
     # Google Calendar OAuth (Paso 17)
     # Defaults vacíos: la app arranca sin integración; /settings/integrations

@@ -59,6 +59,7 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `LLM_MODEL_CHAT` | No | Override del modelo de chat. Default `gemini-3.5-flash-lite` (`GOOGLE_API_KEY`, D015). Debe coincidir en todos los entornos. Alternativa: `claude-sonnet-4-6` con `ANTHROPIC_API_KEY`. |
 | `LLM_MODEL_CLASSIFY` | No | Override del modelo de clasificación. Default `claude-haiku-4-5-20251001`. |
 | `LLM_MODEL_SQL` | No | Override del modelo SQL. Default `claude-sonnet-4-6`. |
+| `LLM_EXTRACTION_MAX_RETRIES` | No | Reintentos automáticos de Instructor por extracción de documento cuando la respuesta no cumple el schema. Default `2` (hasta 3 llamadas); admite `0`-`2`, con tope 2 por regla de producto (`especificacion-planes-y-cuotas.md` §4.2). El worker no repite la extracción si se reinicia a mitad (`app/jobs/extraction_guard.py`). |
 
 ### Observabilidad (Langfuse)
 

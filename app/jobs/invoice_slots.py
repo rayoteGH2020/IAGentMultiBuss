@@ -5,8 +5,12 @@ Redis (INCR/DECR). Evita que un tenant con muchas facturas monopolice todos
 los slots del worker y bloquee a otros tenants.
 
 Cuando el tenant alcanza el límite, el job se difiere (arq.worker.Retry) en
-lugar de fallar: ARQ lo re-encola automáticamente sin consumir un intento
-de max_tries, por lo que el job se ejecutará en cuanto haya un slot libre.
+lugar de fallar: ARQ lo re-encola automáticamente. Cada re-ejecución SÍ
+consume un intento de max_tries (ARQ incrementa arq:retry:<job_id> en cada
+ejecución). Con un solo worker (max_jobs = límite por tenant = 5) el cupo no
+se llena; con varios workers, un job diferido más de max_tries - 1 veces se
+descartaría y el documento quedaría en processing hasta el barrido de
+huérfanos (processing_interrupted).
 
 Si el worker muere tras INCR y antes del DECR, el contador podría quedar
 hinchado: la clave lleva TTL para que caduque sola.
@@ -81,9 +85,9 @@ async def tenant_invoice_extraction_slot(
                 key=key,
             )
             # Retry (arq.worker.Retry): le indica a ARQ que re-encole el job
-            # después de _RETRY_DEFER_SECONDS sin consumir un intento de
-            # max_tries. Es distinto a lanzar una excepción normal, que sí
-            # consumiría un intento y podría llegar a marcar el job como failed.
+            # después de _RETRY_DEFER_SECONDS. La siguiente ejecución consume
+            # un intento de max_tries (ver docstring del módulo). Es anterior
+            # a cualquier llamada al LLM: no tiene coste de IA.
             raise Retry(defer=_RETRY_DEFER_SECONDS)
 
         # Renueva TTL en cada adquisición: si el worker muere sin DECR,
