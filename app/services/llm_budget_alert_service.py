@@ -8,8 +8,11 @@ chat). Para que el chat no deje al tenant sin extracción de documentos:
 - Desde ``CHAT_BUDGET_CUTOFF_RATIO`` (90 %) el chat de la app no llama al LLM:
   responde con un mensaje fijo con el contacto de la organización (metadatos
   públicos de Clerk ``contact_phone`` / ``contact_email``) y se notifica al admin
-  como máximo una vez cada 24 h y 3 veces por mes.
-- Al 100 % bloquea ``plan_quota_service.ensure_llm_budget`` (resto de la IA).
+  como máximo una vez cada 24 h y 3 veces por mes. Al cruzar ese umbral, además,
+  email al SADM (``EMAIL_SADM``) con nombre, apellido, email y móvil del admin
+  (Clerk), una vez por mes.
+- Al 100 % bloquea ``plan_quota_service.ensure_llm_budget`` (resto de la IA) y el
+  panel muestra a todos los usuarios el aviso ``LLM_BUDGET_EXHAUSTED_NOTICE``.
 
 Los emails se envían desde un job ARQ para no añadir la latencia SMTP al chat
 ni a las extracciones. Los avisos nunca interrumpen el flujo que los dispara.
@@ -39,19 +42,31 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.schemas.entitlements import Entitlements
+
 logger = structlog.get_logger(__name__)
 
-AlertKind = Literal["budget_warning", "chat_cutoff"]
+AlertKind = Literal["budget_warning", "chat_cutoff", "sadm_cutoff"]
+AdminAlertKind = Literal["budget_warning", "chat_cutoff"]
+
+SADM_CUTOFF_SUBJECT = "Cuota de uso de IA de uno de los tenant al {pct}%"
+SADM_CUTOFF_BODY = (
+    "El tenant {org}-{tenant_id}, ha llegado al {pct}% de su cupo de uso de IA para este "
+    "mes. Contacta con su admin para gestionarlo.\n"
+    "Admin del tenant: {first_name}, {last_name}, {email} y {phone}."
+)
+_NOT_AVAILABLE = "no disponible"
+_EXHAUSTED_CACHE_TTL_SECONDS = 60
 
 CHAT_CUTOFF_BASE_MESSAGE = (
     "En estos momentos no puedo responderte, ponte en contacto con nosotros y te ayudaremos"
 )
 
-_ALERT_SUBJECTS: dict[AlertKind, str] = {
+_ALERT_SUBJECTS: dict[AdminAlertKind, str] = {
     "budget_warning": "Aviso: has usado el {pct} % del presupuesto de IA de este mes",
     "chat_cutoff": "El asistente de chat está pausado por el presupuesto de IA",
 }
-_ALERT_BODIES: dict[AlertKind, str] = {
+_ALERT_BODIES: dict[AdminAlertKind, str] = {
     "budget_warning": (
         "Tu organización {org} ha consumido el {pct} % del presupuesto mensual de IA "
         "de su plan ({spent} € de {budget} €).\n\n"
@@ -109,20 +124,37 @@ async def _enqueue_alert(tenant_id: UUID, kind: AlertKind) -> None:
     await pool.enqueue_job("send_llm_budget_alert", str(tenant_id), kind)
 
 
+def _monthly_thresholds() -> tuple[tuple[str, float, AlertKind], ...]:
+    """(clave Redis, umbral, aviso) de los emails que se envían una vez al mes."""
+    settings = get_settings()
+    return (
+        ("warned", settings.llm_budget_warn_ratio, "budget_warning"),
+        ("sadm_notified", settings.chat_budget_cutoff_ratio, "sadm_cutoff"),
+    )
+
+
 async def maybe_warn_budget(db: AsyncSession, tenant_id: UUID) -> None:
-    """Tras sumar gasto: email al admin la primera vez del mes que se cruza el 80 %."""
+    """Tras sumar gasto: avisos que se envían la primera vez del mes que se cruza su umbral.
+
+    80 % → email al admin del tenant; 90 % → email al SADM con los datos del admin.
+    """
     try:
         redis = get_redis()
-        key = _period_key("warned", tenant_id)
-        if await redis.exists(key):
+        pending = [
+            (_period_key(prefix, tenant_id), ratio, kind)
+            for prefix, ratio, kind in _monthly_thresholds()
+        ]
+        pending = [item for item in pending if not await redis.exists(item[0])]
+        if not pending:
             return
         usage = await get_budget_usage(db, tenant_id)
-        if usage.ratio < get_settings().llm_budget_warn_ratio:
-            return
-        if not await redis.set(key, "1", nx=True, ex=_PERIOD_KEY_TTL_SECONDS):
-            return
-        await _enqueue_alert(tenant_id, "budget_warning")
-        logger.info("llm_budget.warning_enqueued", tenant_id=str(tenant_id))
+        for key, ratio, kind in pending:
+            if usage.ratio < ratio:
+                continue
+            if not await redis.set(key, "1", nx=True, ex=_PERIOD_KEY_TTL_SECONDS):
+                continue
+            await _enqueue_alert(tenant_id, kind)
+            logger.info("llm_budget.alert_enqueued", tenant_id=str(tenant_id), kind=kind)
     except Exception as exc:
         logger.warning(
             "llm_budget.warning_failed", tenant_id=str(tenant_id), error_type=type(exc).__name__
@@ -224,9 +256,10 @@ async def chat_cutoff_message(db: AsyncSession, tenant_id: UUID) -> str:
     return build_chat_cutoff_message(phone, email)
 
 
-async def _admin_email(db: AsyncSession, tenant_id: UUID) -> str | None:
+async def _tenant_admin(db: AsyncSession, tenant_id: UUID) -> User | None:
+    """Miembro activo con rol admin (uno por tenant)."""
     stmt = (
-        select(User.email)
+        select(User)
         .join(Membership, Membership.user_id == User.id)
         .where(
             Membership.tenant_id == tenant_id,
@@ -242,9 +275,84 @@ def _format_eur(value: Decimal) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
-async def send_admin_alert(db: AsyncSession, tenant_id: UUID, kind: AlertKind) -> bool:
+def _primary_phone(clerk_user: dict[str, Any]) -> str | None:
+    primary_id = clerk_user.get("primary_phone_number_id")
+    numbers = clerk_user.get("phone_numbers")
+    if not isinstance(numbers, list):
+        return None
+    for number in numbers:
+        if isinstance(number, dict) and number.get("id") == primary_id:
+            value = number.get("phone_number")
+            return value if isinstance(value, str) and value else None
+    return None
+
+
+async def _admin_contact(admin: User) -> dict[str, str]:
+    """Nombre, apellido y móvil del admin desde Clerk; lo local si Clerk no responde."""
+    first_name, _, last_name = (admin.name or "").partition(" ")
+    phone: str | None = None
+    if admin.clerk_user_id:
+        try:
+            clerk_user = await clerk_client.get_user(admin.clerk_user_id)
+            first_name = str(clerk_user.get("first_name") or first_name)
+            last_name = str(clerk_user.get("last_name") or last_name)
+            phone = _primary_phone(clerk_user)
+        except Exception as exc:
+            logger.warning("llm_budget.admin_lookup_failed", error_type=type(exc).__name__)
+    return {
+        "first_name": first_name or _NOT_AVAILABLE,
+        "last_name": last_name or _NOT_AVAILABLE,
+        "email": admin.email,
+        "phone": phone or _NOT_AVAILABLE,
+    }
+
+
+async def send_sadm_alert(db: AsyncSession, tenant_id: UUID) -> bool:
+    """Email al SADM: el tenant ha llegado al umbral de corte, con los datos de su admin."""
+    to = get_settings().email_sadm.strip()
+    if not to:
+        logger.warning("llm_budget.sadm_email_missing", tenant_id=str(tenant_id))
+        return False
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
+    admin = await _tenant_admin(db, tenant_id)
+    contact = (
+        await _admin_contact(admin)
+        if admin is not None
+        else dict.fromkeys(("first_name", "last_name", "email", "phone"), _NOT_AVAILABLE)
+    )
+    pct = int(get_settings().chat_budget_cutoff_ratio * 100)
+    await send_email(
+        to=to,
+        subject=SADM_CUTOFF_SUBJECT.format(pct=pct),
+        body=SADM_CUTOFF_BODY.format(org=tenant.name, tenant_id=tenant.id, pct=pct, **contact),
+    )
+    logger.info("llm_budget.alert_sent", tenant_id=str(tenant_id), kind="sadm_cutoff")
+    return True
+
+
+async def is_budget_exhausted(db: AsyncSession, tenant_id: UUID, ents: Entitlements) -> bool:
+    """True si el gasto de IA del mes alcanza el presupuesto (banner del 100 %).
+
+    Se consulta en cada petición del panel: caché de 60 s en Redis por tenant.
+    """
+    budget = resolve_budget_cap(ents, LIMIT_LLM_BUDGET_EUR_MONTH, platform_cap_eur=None)
+    if budget is None:
+        return False
+    redis = get_redis()
+    cache_key = f"llm_budget:exhausted:{tenant_id}"
+    cached = await redis.get(cache_key)
+    if cached is not None:
+        return (cached.decode() if isinstance(cached, bytes) else str(cached)) == "1"
+    spent = await usage_meter_service.get_llm_cost_eur(db, tenant_id=tenant_id)
+    exhausted = budget <= 0 or spent >= budget
+    await redis.set(cache_key, "1" if exhausted else "0", ex=_EXHAUSTED_CACHE_TTL_SECONDS)
+    return exhausted
+
+
+async def send_admin_alert(db: AsyncSession, tenant_id: UUID, kind: AdminAlertKind) -> bool:
     """Envía el email de aviso al admin del tenant. False si no hay destinatario."""
-    to = await _admin_email(db, tenant_id)
+    admin = await _tenant_admin(db, tenant_id)
+    to = admin.email if admin is not None else None
     if not to:
         logger.warning("llm_budget.alert_no_admin", tenant_id=str(tenant_id), kind=kind)
         return False

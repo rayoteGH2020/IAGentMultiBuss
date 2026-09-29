@@ -270,6 +270,13 @@ class Settings(BaseSettings):
     chat_budget_cutoff_ratio: float = Field(default=0.9, gt=0, le=1)
     chat_cutoff_notify_interval_seconds: int = Field(default=86_400, gt=0)
     chat_cutoff_notify_max_per_month: int = Field(default=3, ge=0)
+    # Aviso del panel (banner en todas las páginas, todos los usuarios) cuando
+    # el gasto de IA del mes llega al 100 % del presupuesto.
+    llm_budget_exhausted_notice: str = (
+        "Se ha alcanzado el 100 % del cupo de uso de IA de este mes. Las funcionalidades "
+        "de IA (extracción de documentos, base de conocimiento y chat) están "
+        "inhabilitadas hasta que se incremente el cupo."
+    )
 
     # Google Calendar OAuth (Paso 17)
     # Defaults vacíos: la app arranca sin integración; /settings/integrations

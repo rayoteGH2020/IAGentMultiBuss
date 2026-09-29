@@ -110,6 +110,12 @@ def _inject_auth_context(request: Request) -> dict[str, Any]:
         "membership": getattr(request.state, "membership", None),
         "entitlements": getattr(request.state, "entitlements", None),
         "csrf_token": csrf_token,
+        # Aviso de cupo de IA agotado (banner en layouts/dashboard.html).
+        "llm_budget_exhausted_notice": (
+            get_settings().llm_budget_exhausted_notice
+            if getattr(request.state, "llm_budget_exhausted", False)
+            else None
+        ),
     }
     if user is not None:
         # clerk-js en el panel para renovar la cookie __session (layouts/dashboard.html).

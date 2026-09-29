@@ -76,3 +76,68 @@ async def test_alert_without_active_admin_is_skipped(
 
     assert not await llm_budget_alert_service.send_admin_alert(db_session, tenant.id, "chat_cutoff")
     sent.assert_not_awaited()
+
+
+async def test_sadm_alert_carries_tenant_and_admin_contact(
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    tenant = await tenant_factory(name="Clinica Sol")
+    admin = await _user(db_session, f"ana-{uuid4().hex[:6]}@test.local")
+    await set_tenant_context(db_session, str(tenant.id))
+    db_session.add(Membership(user_id=admin.id, tenant_id=tenant.id, role="admin", is_active=True))
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        llm_budget_alert_service,
+        "get_settings",
+        lambda: SimpleNamespace(email_sadm="sadm@test.local", chat_budget_cutoff_ratio=0.9),
+    )
+    monkeypatch.setattr(
+        llm_budget_alert_service.clerk_client,
+        "get_user",
+        AsyncMock(
+            return_value={
+                "first_name": "Ana",
+                "last_name": "Garcia",
+                "primary_phone_number_id": "p1",
+                "phone_numbers": [{"id": "p1", "phone_number": "+34600111222"}],
+            }
+        ),
+    )
+    sent = AsyncMock()
+    monkeypatch.setattr(llm_budget_alert_service, "send_email", sent)
+
+    assert await llm_budget_alert_service.send_sadm_alert(db_session, tenant.id)
+
+    kwargs = sent.await_args.kwargs
+    assert kwargs["to"] == "sadm@test.local"
+    assert kwargs["subject"] == "Cuota de uso de IA de uno de los tenant al 90%"
+    assert kwargs["body"] == (
+        f"El tenant Clinica Sol-{tenant.id}, ha llegado al 90% de su cupo de uso de IA para "
+        "este mes. Contacta con su admin para gestionarlo.\n"
+        f"Admin del tenant: Ana, Garcia, {admin.email} y +34600111222."
+    )
+
+
+async def test_sadm_alert_skipped_without_sadm_email(
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    tenant = await tenant_factory()
+    monkeypatch.setattr(
+        llm_budget_alert_service,
+        "get_settings",
+        lambda: SimpleNamespace(email_sadm=" ", chat_budget_cutoff_ratio=0.9),
+    )
+    sent = AsyncMock()
+    monkeypatch.setattr(llm_budget_alert_service, "send_email", sent)
+
+    assert not await llm_budget_alert_service.send_sadm_alert(db_session, tenant.id)
+    sent.assert_not_awaited()

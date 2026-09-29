@@ -285,6 +285,19 @@ async def try_resolve_clerk_session(request: Request) -> None:
                     entitlement_service.resolve_plan_code_for_tenant(tenant)
                 )
 
+            # Banner del 100 % del presupuesto de IA. Antes del commit: la
+            # consulta a usage_meter necesita el contexto RLS del tenant.
+            try:
+                from app.services import llm_budget_alert_service
+
+                request.state.llm_budget_exhausted = (
+                    await llm_budget_alert_service.is_budget_exhausted(
+                        session, tenant.id, entitlements
+                    )
+                )
+            except Exception as exc:
+                log.warning("auth.llm_budget_check_failed", error_type=type(exc).__name__)
+
             await session.commit()
             request.state.user = user
             request.state.tenant = tenant
@@ -323,6 +336,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.is_superadmin = False
         request.state.force_password_reset = False
         request.state.entitlements = None
+        request.state.llm_budget_exhausted = False
 
         try:
             if _skip_session_resolution(request.url.path):

@@ -62,7 +62,8 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `LLM_BUDGET_WARN_RATIO` | No | Fracción del presupuesto mensual de IA a partir de la cual se envía un email al admin del tenant (una vez por mes). Default `0.8` (D019). |
 | `CHAT_BUDGET_CUTOFF_RATIO` | No | Fracción del presupuesto a partir de la cual el chat de la app deja de llamar al LLM y responde con el mensaje fijo de contacto (metadatos `contact_phone` / `contact_email` de la organización en Clerk). Default `0.9` (D019). |
 | `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` | No | Intervalo mínimo entre avisos al admin tras el corte del chat. Default `86400` (24 h). |
-| `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` | No | Máximo de avisos al admin por el corte del chat en un mes. Default `3`. |
+| `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` | No | Máximo de avisos al admin por el corte del chat en un mes. Default `3`. Al cruzar `CHAT_BUDGET_CUTOFF_RATIO` también se avisa al SADM (`EMAIL_SADM`) una vez al mes, con nombre, apellido, email y móvil del admin (Clerk). |
+| `LLM_BUDGET_EXHAUSTED_NOTICE` | No | Texto del banner que ven todos los usuarios del tenant en todas las páginas del panel cuando el gasto de IA del mes llega al 100 % del presupuesto. Tiene un texto por defecto en `app/config.py`. |
 | `LLM_EXTRACTION_MAX_RETRIES` | No | Reintentos automáticos de Instructor por extracción de documento cuando la respuesta no cumple el schema. Default `2` (hasta 3 llamadas); admite `0`-`2`, con tope 2 por regla de producto (`especificacion-planes-y-cuotas.md` §4.2). El worker no repite la extracción si se reinicia a mitad (`app/jobs/extraction_guard.py`). |
 
 ### Observabilidad (Langfuse)

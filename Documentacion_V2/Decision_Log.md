@@ -322,7 +322,12 @@ Decision (cerrada 2026-09-29): el presupuesto mensual de IA (`llm_budget_eur_mon
 
 - **80 %**: al cruzarlo con cualquier gasto de IA, email al admin del tenant (rol `admin` activo; no co_admin), una vez por mes.
 - **90 %**: el chat de la app deja de llamar al LLM y responde: "En estos momentos no puedo responderte, ponte en contacto con nosotros y te ayudaremos (telefono - email)". El telefono y el email salen de los metadatos publicos de la organizacion en Clerk (`contact_phone`, `contact_email`), con cache de 1 h. Tras esa respuesta se notifica al admin como maximo una vez cada 24 h y 3 veces por mes, y queda `chat.budget_cutoff` en `audit_log`.
-- **100 %**: sin cambios, `ensure_llm_budget` bloquea el resto de la IA.
+- **100 %**: `ensure_llm_budget` bloquea el resto de la IA.
+
+Ampliacion (2026-09-29):
+
+- **90 % → SADM**: al cruzar el umbral de corte con cualquier gasto de IA, email a `EMAIL_SADM` una vez por mes. Asunto "Cuota de uso de IA de uno de los tenant al 90%"; cuerpo con "nombre de la organizacion-id del tenant" y nombre, apellido, email y movil del admin (nombre, apellido y telefono principal desde Clerk; "no disponible" si faltan o Clerk falla). Las notificaciones al tenant siguen yendo solo al admin.
+- **100 % → aviso en el panel**: banner en la cabecera de todas las paginas del panel, para todos los usuarios del tenant, con el texto configurable `LLM_BUDGET_EXHAUSTED_NOTICE` (un unico texto para toda la app). El middleware calcula la condicion con cache de 60 s en Redis.
 
 Motivo:
 

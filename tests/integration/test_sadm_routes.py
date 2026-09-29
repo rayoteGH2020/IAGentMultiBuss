@@ -432,3 +432,36 @@ def test_sadm_chat_trace_detail_passes_own_tenant_and_viewer(
     assert kwargs["tenant_id"] is not None
     assert kwargs["viewer_id"] is not None
     assert kwargs["request_ctx"].user_agent == "sadm-ua"
+
+
+@pytest.mark.parametrize("exhausted", [True, False])
+def test_budget_exhausted_banner_on_every_panel_page(
+    exhausted: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Con el presupuesto de IA al 100 % el layout muestra el aviso configurable."""
+    from app.config import get_settings
+
+    admin_org = f"org_admin_{uuid4().hex[:8]}"
+    monkeypatch.setenv("ADMIN_CLERK_ORG_ID", admin_org)
+    monkeypatch.setenv("SUPERADMIN_CLERK_USER_IDS", "")
+    _clear_settings_cache()
+    resolve = _fake_session_with_org(org_id=admin_org, user_sub=f"user_{uuid4().hex[:12]}")
+
+    async def _resolve_with_budget(request: Request) -> None:
+        await resolve(request)  # type: ignore[operator]
+        request.state.llm_budget_exhausted = exhausted
+
+    monkeypatch.setattr("app.core.middleware.try_resolve_clerk_session", _resolve_with_budget)
+
+    from app.main import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(
+            "/sadm/organizations",
+            headers={"Authorization": "Bearer fake-jwt", "Accept": "text/html"},
+        )
+
+    assert r.status_code == 200
+    assert ("llm-budget-exhausted-banner" in r.text) is exhausted
+    if exhausted:
+        assert get_settings().llm_budget_exhausted_notice.split(".")[0] in r.text

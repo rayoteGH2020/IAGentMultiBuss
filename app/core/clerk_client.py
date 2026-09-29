@@ -71,6 +71,10 @@ async def create_user(
     return await _request("POST", "/users", json=payload)
 
 
+async def get_user(clerk_user_id: str) -> dict[str, Any]:
+    return await _request("GET", f"/users/{clerk_user_id}")
+
+
 async def delete_user(clerk_user_id: str) -> None:
     await _request("DELETE", f"/users/{clerk_user_id}")
 

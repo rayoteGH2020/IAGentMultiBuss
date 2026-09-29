@@ -220,3 +220,81 @@ async def test_alert_job_delegates_and_rejects_unknown_kind(
     assert result == {"status": "sent", "kind": "chat_cutoff"}
     assert skipped["status"] == "skipped"
     send.assert_awaited_once_with(session, tenant_id, "chat_cutoff")
+
+
+async def test_crossing_cutoff_warns_admin_and_sadm_once_per_month(
+    monkeypatch: pytest.MonkeyPatch, redis: _FakeRedis, enqueued: AsyncMock
+) -> None:
+    _usage(monkeypatch, "5.50")  # 92 %: cruza el 80 % y el 90 % a la vez
+    tenant_id = uuid4()
+
+    await svc.maybe_warn_budget(AsyncMock(), tenant_id)
+    await svc.maybe_warn_budget(AsyncMock(), tenant_id)
+
+    kinds = sorted(call.args[1] for call in enqueued.await_args_list)
+    assert kinds == ["budget_warning", "sadm_cutoff"]
+
+
+async def test_sadm_is_not_warned_below_cutoff(
+    monkeypatch: pytest.MonkeyPatch, redis: _FakeRedis, enqueued: AsyncMock
+) -> None:
+    _usage(monkeypatch, "5.20")  # 86 %
+    await svc.maybe_warn_budget(AsyncMock(), uuid4())
+    assert [call.args[1] for call in enqueued.await_args_list] == ["budget_warning"]
+
+
+def test_primary_phone_from_clerk_user() -> None:
+    clerk_user = {
+        "primary_phone_number_id": "p2",
+        "phone_numbers": [
+            {"id": "p1", "phone_number": "+34600000001"},
+            {"id": "p2", "phone_number": "+34600000002"},
+        ],
+    }
+    assert svc._primary_phone(clerk_user) == "+34600000002"
+    assert svc._primary_phone({"phone_numbers": []}) is None
+    assert svc._primary_phone({}) is None
+
+
+async def test_budget_exhausted_is_cached(
+    monkeypatch: pytest.MonkeyPatch, redis: _FakeRedis
+) -> None:
+    from app.core.entitlement_codes import LIMIT_LLM_BUDGET_EUR_MONTH
+    from app.schemas.entitlements import Entitlements
+
+    ents = Entitlements(
+        plan_code="basic",
+        features=frozenset(),
+        limits={LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("6")},
+        fail_closed=False,
+    )
+    spent = AsyncMock(return_value=Decimal("6.01"))
+    monkeypatch.setattr(svc.usage_meter_service, "get_llm_cost_eur", spent)
+    tenant_id = uuid4()
+
+    assert await svc.is_budget_exhausted(AsyncMock(), tenant_id, ents) is True
+    assert await svc.is_budget_exhausted(AsyncMock(), tenant_id, ents) is True
+    spent.assert_awaited_once()
+
+    unlimited = Entitlements(
+        plan_code="premium",
+        features=frozenset(),
+        limits={LIMIT_LLM_BUDGET_EUR_MONTH: None},
+        fail_closed=False,
+    )
+    assert await svc.is_budget_exhausted(AsyncMock(), uuid4(), unlimited) is False
+
+
+def test_exhausted_notice_reaches_template_context() -> None:
+    from app.config import get_settings
+    from app.core.templating import _inject_auth_context
+
+    def _request(exhausted: bool) -> Any:
+        state = SimpleNamespace(user=None, tenant=None, llm_budget_exhausted=exhausted)
+        return SimpleNamespace(state=state)
+
+    assert (
+        _inject_auth_context(_request(True))["llm_budget_exhausted_notice"]
+        == get_settings().llm_budget_exhausted_notice
+    )
+    assert _inject_auth_context(_request(False))["llm_budget_exhausted_notice"] is None
