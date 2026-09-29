@@ -104,7 +104,12 @@ class ExternalServiceError(AppError):
 
 
 class LLMCompleteError(ExternalServiceError):
-    """Fallo en LLMClient.complete() tras persistir la fila en `llm_calls`."""
+    """Fallo en LLMClient.complete() tras persistir la fila en `llm_calls`.
+
+    ``message`` es seguro para logs y respuestas (tipo de fallo, sin contenido).
+    ``raw_error`` es el texto técnico del SDK: puede incluir la respuesta cruda
+    del modelo, así que solo se persiste en BD (RLS), nunca en logs.
+    """
 
     def __init__(
         self,
@@ -112,6 +117,7 @@ class LLMCompleteError(ExternalServiceError):
         *,
         llm_call_id: UUID,
         document_error_code: DocumentErrorCode | None = None,
+        raw_error: str | None = None,
     ) -> None:
         details: dict[str, object] = {"llm_call_id": str(llm_call_id)}
         if document_error_code is not None:
@@ -120,6 +126,12 @@ class LLMCompleteError(ExternalServiceError):
         self.llm_call_id = llm_call_id
         # Motivo estructurado para mark_failed (p. ej. provider_overload).
         self.document_error_code = document_error_code
+        self.raw_error = raw_error
+
+    @property
+    def persisted_error(self) -> str:
+        """Texto para `error` del documento: el técnico si existe (la UI lo traduce)."""
+        return self.raw_error or self.message
 
 
 _INTERNAL_MESSAGE_MARKERS = (

@@ -142,7 +142,7 @@ async def process_insurance(
                 db,
                 insurance_id=insurance_uuid,
                 tenant_id=tenant_uuid,
-                error=str(exc.message)[:500],
+                error=exc.persisted_error[:500],
                 llm_call_id=exc.llm_call_id,
                 error_code=exc.document_error_code or DocumentErrorCode.extraction_failed,
             )

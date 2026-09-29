@@ -36,7 +36,8 @@ def _skip_if_provider_key_missing(provider: str) -> None:
 
 
 def _skip_if_billing_or_quota_error(exc: LLMCompleteError) -> None:
-    msg = str(exc).lower()
+    # str(exc) es el mensaje seguro; el código 429 / quota viaja en raw_error.
+    msg = exc.persisted_error.lower()
     if any(token in msg for token in ("429", "resource_exhausted", "depleted", "quota")):
         pytest.skip(f"Proveedor LLM sin cuota/créditos disponibles: {exc}")
 

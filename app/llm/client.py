@@ -33,6 +33,7 @@ from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
 from app.llm.embeddings import VoyageEmbedder
 from app.llm.observability import (
+    error_log_fields,
     trace_messages,
     trace_result,
     trace_status_message,
@@ -69,11 +70,14 @@ TaskType = Literal[
 # Clasificación canónica: DocumentErrorCode.provider_overload.
 
 
-def _user_facing_llm_error(raw_error: str) -> str:
-    """Devuelve mensaje amigable si el error es sobrecarga del proveedor, si no el raw."""
-    if is_provider_overload_error(raw_error):
+def _safe_llm_error_message(raw_error: str | None, error_type: str | None, fallback: str) -> str:
+    """Mensaje de LLMCompleteError sin contenido: acaba en logs y tracebacks.
+
+    El texto técnico viaja aparte en ``LLMCompleteError.raw_error``.
+    """
+    if raw_error and is_provider_overload_error(raw_error):
         return PROVIDER_OVERLOAD_USER_MESSAGE
-    return raw_error
+    return f"{fallback} ({error_type})" if error_type else fallback
 
 
 def _llm_error_document_code(raw_error: str | None) -> DocumentErrorCode | None:
@@ -100,23 +104,24 @@ def _log_anthropic_failure(
     task: TaskType,
     model: str,
     tenant_id: str,
-    error: str,
     exc: BaseException | None,
 ) -> None:
-    """Log de error Anthropic muy visible en consola (classify / sql / chat con Claude)."""
+    """Log de error Anthropic muy visible en consola (classify / sql / chat con Claude).
+
+    Sin el mensaje de la excepción ni ``exc_info``: ver ``error_log_fields``.
+    """
     log = logger.bind(
         provider="anthropic",
         task=task,
         model=model,
         tenant_id=tenant_id,
-        error=error,
         hint=(
             "Revisa ANTHROPIC_API_KEY en Infisical. "
             "classify y sql usan Claude por defecto; chat usa Gemini salvo LLM_MODEL_CHAT."
         ),
     )
     if exc is not None:
-        log.error(event, exc_type=type(exc).__name__, exc_info=exc)
+        log.error(event, **error_log_fields(exc))
     else:
         log.error(event)
 
@@ -452,7 +457,6 @@ class LLMClient:
                     task=task,
                     model=model,
                     tenant_id=str(tenant_id),
-                    error=error,
                     exc=None,
                 )
             else:
@@ -478,17 +482,16 @@ class LLMClient:
                             task=task,
                             model=model,
                             tenant_id=str(tenant_id),
-                            error=error,
                             exc=exc,
                         )
                     else:
-                        logger.exception(
+                        logger.error(
                             "llm.complete_failed",
                             task=task,
                             model=model,
                             provider=provider,
                             tenant_id=str(tenant_id),
-                            error=error,
+                            **error_log_fields(exc),
                         )
         finally:
             # El bloque finally se ejecuta SIEMPRE: en éxito y en error.
@@ -551,9 +554,10 @@ class LLMClient:
         assert llm_call is not None
         if status == "error":
             raise LLMCompleteError(
-                _user_facing_llm_error(error) if error else "LLM call failed",
+                _safe_llm_error_message(error, error_type, "LLM call failed"),
                 llm_call_id=llm_call.id,
                 document_error_code=_llm_error_document_code(error),
+                raw_error=error,
             )
 
         assert result is not None
@@ -678,12 +682,12 @@ class LLMClient:
             status = "error"
             error = str(exc)[:1000]
             error_type = type(exc).__name__
-            logger.exception(
+            logger.error(
                 "llm.transcribe_failed",
                 model=model,
                 tenant_id=str(tenant_id),
                 mime_type=mime_type,
-                error=error,
+                **error_log_fields(exc),
             )
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -732,9 +736,10 @@ class LLMClient:
         assert llm_call is not None
         if status == "error":
             raise LLMCompleteError(
-                _user_facing_llm_error(error) if error else "Transcription failed",
+                _safe_llm_error_message(error, error_type, "Transcription failed"),
                 llm_call_id=llm_call.id,
                 document_error_code=_llm_error_document_code(error),
+                raw_error=error,
             )
 
         return transcript
@@ -830,11 +835,12 @@ class LLMClient:
                 status = "error"
                 error = str(exc)[:1000]
                 error_type = type(exc).__name__
-                logger.exception(
+                logger.error(
                     "llm.embed_batch_failed",
                     batch_idx=batch_idx,
                     batch_size=len(batch),
                     tenant_id=str(tenant_id),
+                    **error_log_fields(exc),
                 )
                 raise
             finally:

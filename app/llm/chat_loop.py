@@ -21,7 +21,12 @@ from app.core.document_processing_errors import (
     PROVIDER_OVERLOAD_USER_MESSAGE,
     is_provider_overload_error,
 )
-from app.llm.observability import trace_messages, trace_status_message, trace_text
+from app.llm.observability import (
+    error_log_fields,
+    trace_messages,
+    trace_status_message,
+    trace_text,
+)
 from app.llm.pricing import compute_cost_eur
 from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
@@ -230,11 +235,12 @@ async def run_tool_loop(
             status = "error"
             error = str(exc)[:1000]
             error_type = type(exc).__name__
-            logger.exception(
+            logger.error(
                 "chat_loop.turn_failed",
                 iteration=iteration + 1,
                 provider=provider,
                 model=model,
+                **error_log_fields(exc),
             )
             # Sobrecarga del proveedor (tras reintentos): mensaje específico, no genérico.
             final_text = (

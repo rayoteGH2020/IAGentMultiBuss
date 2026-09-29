@@ -18,6 +18,8 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from app.llm.observability import error_log_fields
+
 logger = structlog.get_logger(__name__)
 
 # Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
@@ -79,7 +81,7 @@ def log_transient_retry(
         "model": model,
         "attempt": retry_state.attempt_number,
         "next_sleep_s": next_sleep,
-        "error": str(exc)[:200] if exc else None,
+        **(error_log_fields(exc) if exc else {}),
     }
     if provider == "anthropic":
         logger.warning("anthropic_llm_retry", **payload)
