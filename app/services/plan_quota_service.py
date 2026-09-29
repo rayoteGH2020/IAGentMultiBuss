@@ -350,7 +350,7 @@ async def record_llm_cost(
     tenant_id: UUID,
     cost_eur: Decimal,
 ) -> None:
-    """Suma coste real a ``usage_meter`` tras una llamada LLM exitosa."""
+    """Suma coste real a ``usage_meter`` tras una llamada LLM (con éxito o fallida)."""
     if cost_eur <= 0:
         return
     await usage_meter_service.add_llm_cost_eur(db, tenant_id=tenant_id, delta=cost_eur)

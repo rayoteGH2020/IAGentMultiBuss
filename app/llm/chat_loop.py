@@ -269,6 +269,12 @@ async def run_tool_loop(
             db.add(llm_call)
             await db.flush()
             llm_call_ids.append(llm_call.id)
+            # El chat también consume el presupuesto de IA del plan (usage_meter),
+            # igual que complete(); incluidos los turnos fallidos con tokens.
+            if cost > 0:
+                from app.services import plan_quota_service
+
+                await plan_quota_service.record_llm_cost(db, tenant_id=tenant_id, cost_eur=cost)
             if ctx.thread_id is not None and tools_this_turn:
                 from app.services import audit_service
 

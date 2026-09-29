@@ -19,6 +19,7 @@ import instructor
 import structlog
 from anthropic import AsyncAnthropic
 from google import genai
+from instructor.core.hooks import Hooks
 from langfuse.types import TraceContext
 from pydantic import BaseModel
 
@@ -203,6 +204,30 @@ def _extract_token_usage(raw: Any) -> tuple[int, int]:
     return 0, 0
 
 
+class _AttemptUsage:
+    """Suma los tokens de cada intento de Instructor, reintentos incluidos.
+
+    Instructor 1.15 solo acumula el uso entre reintentos para OpenAI y
+    Anthropic; con Gemini la respuesta final trae solo el último intento, y si
+    se agotan los reintentos no hay respuesta final. El hook
+    ``completion:response`` se emite con la respuesta de cada intento antes de
+    que Instructor sume el uso sobre ella, así que la foto se toma ahí.
+    """
+
+    def __init__(self) -> None:
+        self.attempts = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.hooks = Hooks()
+        self.hooks.on("completion:response", self._on_response)
+
+    def _on_response(self, response: Any) -> None:
+        in_t, out_t = _extract_token_usage(response)
+        self.attempts += 1
+        self.input_tokens += in_t
+        self.output_tokens += out_t
+
+
 # Tareas que no ganan calidad con el razonamiento del modelo y sí pagan su
 # latencia y coste. Medido en extracción (invoices_v1): con thinking dinámico
 # p50 15,6 s; con thinking mínimo ~2,5 s sin perder precisión.
@@ -301,12 +326,14 @@ class LLMClient:
         typed_messages: list[ChatCompletionMessageParam],
         response_model: type[T],
         max_retries: int,
+        hooks: Hooks | None = None,
     ) -> tuple[T, Any]:
         """Una sola llamada al SDK del proveedor. Sin reintentos de transporte.
 
         `max_retries` se propaga a Instructor para los reintentos de validación
         de schema (independientes de los reintentos por error HTTP que aplica
-        _invoke_sdk si el flag está activo).
+        _invoke_sdk si el flag está activo). `hooks` son hooks de Instructor
+        solo para esta llamada (p. ej. ``_AttemptUsage``).
         """
         if provider == "anthropic":
             # create_with_completion: método de Instructor que devuelve
@@ -321,6 +348,7 @@ class LLMClient:
                     messages=typed_messages,
                     response_model=response_model,
                     max_retries=max_retries,
+                    hooks=hooks,
                     max_tokens=4096,
                 ),
             )
@@ -335,6 +363,7 @@ class LLMClient:
                 messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                hooks=hooks,
                 **extra,
             ),
         )
@@ -348,6 +377,7 @@ class LLMClient:
         typed_messages: list[ChatCompletionMessageParam],
         response_model: type[T],
         max_retries: int,
+        hooks: Hooks | None = None,
     ) -> tuple[T, Any]:
         """Invoca el SDK, opcionalmente con reintentos para errores transitorios.
 
@@ -364,6 +394,7 @@ class LLMClient:
                 typed_messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                hooks=hooks,
             )
 
         # Tras agotar reintentos relanza la excepción original (no RetryError):
@@ -376,6 +407,7 @@ class LLMClient:
                 typed_messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                hooks=hooks,
             ),
             max_attempts=self._settings.llm_retry_max_attempts,
             max_wait_seconds=self._settings.llm_retry_max_wait_seconds,
@@ -434,6 +466,7 @@ class LLMClient:
         result: T | None = None
         raw: Any = None
         llm_call: LLMCall | None = None
+        usage = _AttemptUsage()
 
         try:
             from app.services import entitlement_service, plan_quota_service
@@ -468,9 +501,20 @@ class LLMClient:
                         typed_messages=typed_messages,
                         response_model=response_model,
                         max_retries=max_retries,
+                        hooks=usage.hooks,
                     )
-                    input_tokens, output_tokens = _extract_token_usage(raw)
+                    # Suma de todos los intentos (reintentos de Instructor
+                    # incluidos). Sin intentos registrados (SDK simulado en
+                    # tests), se usa la respuesta final.
+                    input_tokens, output_tokens = (
+                        (usage.input_tokens, usage.output_tokens)
+                        if usage.attempts
+                        else _extract_token_usage(raw)
+                    )
                 except Exception as exc:
+                    # Los intentos que llegaron a responder consumieron tokens
+                    # aunque la validación fallase: cuentan en coste y budget.
+                    input_tokens, output_tokens = usage.input_tokens, usage.output_tokens
                     status = "error"
                     # Truncado a 1000 chars: el error puede contener la respuesta
                     # completa del LLM si Instructor falla al parsear el schema.
@@ -520,7 +564,9 @@ class LLMClient:
             db.add(llm_call)
             await db.flush()
 
-            if status == "ok" and cost > 0:
+            # También en error: un fallo con tokens procesados se paga igual
+            # (spec de planes §4.2). Errores sin tokens cuestan 0 y no suman.
+            if cost > 0:
                 from app.services import plan_quota_service
 
                 await plan_quota_service.record_llm_cost(
