@@ -26,6 +26,7 @@ from app.services import (
     audit_service,
     chat_tool_runner,
     entitlement_service,
+    llm_budget_alert_service,
     plan_quota_service,
     usage_meter_service,
 )
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _RATE_TTL_SECONDS = 86400
+ACTION_CHAT_BUDGET_CUTOFF = "chat.budget_cutoff"
 
 # Patrones obvios de exfiltración / jailbreak (prefiltro barato antes del LLM).
 _PROMPT_EXFIL_MARKERS: tuple[str, ...] = (
@@ -389,6 +391,43 @@ async def _persist_turn_messages(
     return last_assistant
 
 
+async def _reply_budget_cutoff(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    thread: ChatThread,
+) -> str:
+    """Respuesta fija sin LLM cuando el gasto de IA del mes llega al corte del chat.
+
+    Reserva el resto del presupuesto para la extracción de documentos y avisa
+    al admin (con tope de frecuencia en ``llm_budget_alert_service``).
+    """
+    text = await llm_budget_alert_service.chat_cutoff_message(db, tenant_id)
+    db.add(
+        ChatMessage(
+            tenant_id=tenant_id,
+            thread_id=thread.id,
+            role=ChatMessageRole.assistant,
+            content=text,
+            created_at=await _next_message_created_at(db, tenant_id=tenant_id, thread_id=thread.id),
+        )
+    )
+    thread.updated_at = datetime.now(tz=UTC)
+    await db.flush()
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=thread.user_id,
+        action=ACTION_CHAT_BUDGET_CUTOFF,
+        resource_type=audit_service.RESOURCE_CHAT_THREAD,
+        resource_id=thread.id,
+        metadata={"thread_id": str(thread.id)},
+    )
+    await llm_budget_alert_service.notify_chat_cutoff(tenant_id)
+    logger.info("chat.budget_cutoff_reply", thread_id=str(thread.id), tenant_id=str(tenant_id))
+    return text
+
+
 def _chunk_text(text: str, *, chunk_size: int) -> list[str]:
     if not text:
         return [""]
@@ -497,6 +536,9 @@ async def _run_assistant_turn(
     """Ejecuta el loop LLM y persiste assistant/tool; asume historial ya en BD."""
     settings = get_settings()
     thread = await get_thread(db, tenant_id=tenant_id, user_id=user_id, thread_id=thread_id)
+    if await llm_budget_alert_service.chat_cutoff_reached(db, tenant_id):
+        yield await _reply_budget_cutoff(db, tenant_id=tenant_id, thread=thread)
+        return
     history = await _load_history(db, tenant_id=tenant_id, thread_id=thread_id)
     company_name = await _tenant_company_name(db, tenant_id)
     system_prompt = build_chat_system_prompt(company_name=company_name, settings=settings)

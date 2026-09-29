@@ -352,3 +352,74 @@ async def test_run_assistant_turn_yields_chunked_reply(
         chunks.append(part)
 
     assert "".join(chunks) == "Respuesta"
+
+
+@pytest.mark.asyncio
+async def test_run_assistant_turn_stops_at_chat_budget_cutoff(
+    chat_schema_ready: None,
+    usage_meter_schema_ready: None,
+    audit_schema_ready: None,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Al 90 % del presupuesto de IA el chat responde fijo, sin LLM, y avisa al admin."""
+    from app.core.db import set_tenant_context
+    from app.models import ChatMessage, ChatMessageRole, Tenant
+    from app.services import llm_budget_alert_service, usage_meter_service
+    from sqlalchemy import select
+
+    tenant = Tenant(name="Budget tenant")
+    db_session.add(tenant)
+    user = User(email=f"u-{uuid4().hex[:8]}@test.local")
+    db_session.add(user)
+    await db_session.flush()
+    await set_tenant_context(db_session, str(tenant.id))
+    thread = ChatThread(tenant_id=tenant.id, user_id=user.id)
+    db_session.add(thread)
+    await db_session.flush()
+
+    usage = await llm_budget_alert_service.get_budget_usage(db_session, tenant.id)
+    assert usage.budget is not None and usage.budget > 0
+    await usage_meter_service.add_llm_cost_eur(
+        db_session, tenant_id=tenant.id, delta=usage.budget * Decimal("0.95")
+    )
+
+    def _no_llm() -> object:
+        raise AssertionError("el chat no debe llamar al LLM tras el corte")
+
+    monkeypatch.setattr("app.services.chat_service.get_llm_client", _no_llm)
+    notify = AsyncMock()
+    monkeypatch.setattr(llm_budget_alert_service, "notify_chat_cutoff", notify)
+
+    chunks = [
+        part
+        async for part in chat_service._run_assistant_turn(
+            db_session, tenant_id=tenant.id, user_id=user.id, thread_id=thread.id
+        )
+    ]
+
+    reply = "".join(chunks)
+    assert reply == llm_budget_alert_service.build_chat_cutoff_message(None, None)
+    notify.assert_awaited_once_with(tenant.id)
+    stored = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.thread_id == thread.id,
+                ChatMessage.role == ChatMessageRole.assistant,
+            )
+        )
+    ).scalar_one()
+    assert stored.content == reply
+    assert stored.llm_call_id is None
+    from app.models import AuditLog
+
+    audit = (
+        await db_session.execute(
+            select(AuditLog).where(
+                AuditLog.tenant_id == tenant.id,
+                AuditLog.action == chat_service.ACTION_CHAT_BUDGET_CUTOFF,
+            )
+        )
+    ).scalar_one()
+    assert audit.resource_id == thread.id
+    assert audit.user_id == user.id

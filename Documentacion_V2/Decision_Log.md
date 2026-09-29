@@ -315,3 +315,22 @@ Consecuencia:
 - **D011 sigue vigente** mientras no se retome el analista: sin feature `analytics` en el catalogo, sin rutas ni runners de la tarea `sql`. AGENTS.md §7, `arquitectura.md` y `app/llm/client.py` no se tocan.
 - Al retomarlo: nueva decision que sustituya a D011. Diferencia de alcance a tener en cuenta: D011 descartaba BI/SQL sobre la **BD externa del cliente**; la especificacion plantea un analista sobre los **datos del propio tenant en la app** (facturas, tickets, contratos), en solo lectura y con RLS.
 - Mientras tanto, Premium se ofrece con las mismas funcionalidades que Avanzado y limites mayores (D012). En la especificacion, `analytics` y `analytics_questions_per_month` quedan como fase posterior y no entran en el calculo del presupuesto de Premium.
+
+## D019 - Presupuesto de IA: aviso al 80 % y corte del chat al 90 %
+
+Decision (cerrada 2026-09-29): el presupuesto mensual de IA (`llm_budget_eur_month`) es unico para toda la IA del tenant. Para que el chat no agote lo que necesita la extraccion de documentos:
+
+- **80 %**: al cruzarlo con cualquier gasto de IA, email al admin del tenant (rol `admin` activo; no co_admin), una vez por mes.
+- **90 %**: el chat de la app deja de llamar al LLM y responde: "En estos momentos no puedo responderte, ponte en contacto con nosotros y te ayudaremos (telefono - email)". El telefono y el email salen de los metadatos publicos de la organizacion en Clerk (`contact_phone`, `contact_email`), con cache de 1 h. Tras esa respuesta se notifica al admin como maximo una vez cada 24 h y 3 veces por mes, y queda `chat.budget_cutoff` en `audit_log`.
+- **100 %**: sin cambios, `ensure_llm_budget` bloquea el resto de la IA.
+
+Motivo:
+
+- Tras P2b-14 el coste del chat cuenta en el presupuesto; sin corte, el chat podia agotarlo y bloquear la extraccion sin bloquearse a si mismo.
+- Clerk no tiene telefono ni email de organizacion: los metadatos publicos son un contacto del negocio que no depende de quien sea el admin.
+
+Consecuencia:
+
+- `app/services/llm_budget_alert_service.py`, job ARQ `send_llm_budget_alert` (email fuera de la peticion) y comprobacion en `chat_service._run_assistant_turn`.
+- Umbrales y frecuencia configurables: `LLM_BUDGET_WARN_RATIO` (0,8), `CHAT_BUDGET_CUTOFF_RATIO` (0,9), `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` (86400), `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` (3).
+- Pendiente: mismo corte en el asistente de canales (Backlog P2b-17), interfaz de consumo y avisos (P2b-18) y rellenar los metadatos en Clerk (P2b-19, ops).

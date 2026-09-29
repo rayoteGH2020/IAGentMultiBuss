@@ -12,6 +12,7 @@ from arq import func as arq_func
 from arq.connections import RedisSettings
 
 from app.config import get_settings
+from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.contract_jobs import process_contract
 from app.jobs.insurance_jobs import process_insurance
@@ -38,6 +39,7 @@ class WorkerSettings:
         process_insurance,
         arq_func(index_knowledge_document, timeout=600),
         arq_func(process_channel_message, timeout=120),
+        send_llm_budget_alert,
     ]
 
     # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el

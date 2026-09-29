@@ -50,6 +50,10 @@ async def list_organizations(limit: int = 100, offset: int = 0) -> dict[str, Any
     return await _request("GET", "/organizations", params={"limit": limit, "offset": offset})
 
 
+async def get_organization(clerk_org_id: str) -> dict[str, Any]:
+    return await _request("GET", f"/organizations/{clerk_org_id}")
+
+
 # --- Users ---
 
 

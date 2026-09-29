@@ -44,6 +44,21 @@ def pytest_configure(config: pytest.Config) -> None:
         pass
 
 
+@pytest.fixture(autouse=True)
+def _fresh_redis_client() -> Any:
+    """Descarta el cliente Redis global (``app.core.cache``) tras cada test.
+
+    Cada test async corre en su propio event loop y el cliente global queda
+    atado al loop del test que lo creó; reutilizarlo en otro loop falla al
+    escribir en el socket. Desde que ``record_llm_cost`` consulta Redis
+    (aviso del 80 % del presupuesto) cualquier test con coste LLM lo crea.
+    """
+    yield
+    from app.core import cache
+
+    cache._client = None
+
+
 @pytest.fixture
 async def invoices_migration_applied(rls_database_url: str) -> None:
     """SKIP si Postgres no tiene la tabla `invoices` (migración p09 pendiente)."""

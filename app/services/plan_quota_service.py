@@ -47,7 +47,7 @@ from app.models.membership import Membership
 from app.schemas.channel import ChannelIntegrationStatus
 from app.schemas.entitlements import QuotaUsage
 from app.schemas.knowledge import KnowledgeDocumentStatus
-from app.services import usage_meter_service
+from app.services import llm_budget_alert_service, usage_meter_service
 
 logger = structlog.get_logger(__name__)
 
@@ -354,6 +354,7 @@ async def record_llm_cost(
     if cost_eur <= 0:
         return
     await usage_meter_service.add_llm_cost_eur(db, tenant_id=tenant_id, delta=cost_eur)
+    await llm_budget_alert_service.maybe_warn_budget(db, tenant_id)
 
 
 async def get_usage_snapshot(

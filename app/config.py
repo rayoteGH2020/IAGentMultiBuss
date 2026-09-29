@@ -261,6 +261,15 @@ class Settings(BaseSettings):
     # no válido): 2 = hasta 3 llamadas al LLM. Tope de producto (spec de planes
     # §4.2): cada reintento cuenta en el presupuesto de IA, por eso le=2.
     llm_extraction_max_retries: int = Field(default=2, ge=0, le=2)
+    # Presupuesto mensual de IA (llm_budget_eur_month), único para todo el
+    # tenant. Al cruzar warn_ratio: email al admin (1 vez/mes). Desde
+    # cutoff_ratio el chat responde con mensaje fijo sin LLM para reservar el
+    # resto a la extracción; se notifica al admin 1 vez cada interval y como
+    # máximo max_per_month veces. Al 100 % bloquea toda la IA.
+    llm_budget_warn_ratio: float = Field(default=0.8, gt=0, lt=1)
+    chat_budget_cutoff_ratio: float = Field(default=0.9, gt=0, le=1)
+    chat_cutoff_notify_interval_seconds: int = Field(default=86_400, gt=0)
+    chat_cutoff_notify_max_per_month: int = Field(default=3, ge=0)
 
     # Google Calendar OAuth (Paso 17)
     # Defaults vacíos: la app arranca sin integración; /settings/integrations
