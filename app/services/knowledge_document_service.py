@@ -39,7 +39,13 @@ ACTION_KNOWLEDGE_FAQ_CREATE = "knowledge.faq_create"
 ACTION_KNOWLEDGE_FAQ_EDIT = "knowledge.faq_edit"
 ACTION_KNOWLEDGE_DELETE = "knowledge.delete"
 ACTION_KNOWLEDGE_REINDEX = "knowledge.reindex"
+ACTION_KNOWLEDGE_VIEW = "knowledge.view"
+ACTION_KNOWLEDGE_DOWNLOAD = "knowledge.download"
 RESOURCE_KNOWLEDGE_DOCUMENT = "knowledge_document"
+
+# La URL prefirmada solo se usa en el redirect inmediato de /knowledge/{id}/file:
+# vida corta para que no sirva como enlace reutilizable sin pasar por la auditoría.
+DOWNLOAD_URL_TTL_SECONDS = 60
 
 # Zonas del modal de subida: igual que /documents/upload.
 MAX_FILES_PER_UPLOAD = 10
@@ -273,13 +279,21 @@ async def get_faq_edit_context(
     *,
     tenant_id: UUID,
     document_id: UUID,
+    user_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None = None,
 ) -> tuple[KnowledgeDocumentRead, list[FaqPair]]:
-    """Documento FAQ y pares Q/A para el panel de edición (sin ORM en rutas)."""
-    doc = await get_document(
+    """Documento FAQ y pares Q/A para el panel de edición (sin ORM en rutas).
+
+    Muestra el contenido del FAQ, así que se audita como ``knowledge.view``.
+    """
+    doc = await get_document(db, tenant_id=tenant_id, document_id=document_id)
+    await _log_view(
         db,
         tenant_id=tenant_id,
         document_id=document_id,
-        include_download_url=False,
+        user_id=user_id,
+        section="faq",
+        request_ctx=request_ctx,
     )
     pairs = get_faq_pairs_from_content(doc.faq_content)
     return doc, pairs
@@ -323,27 +337,83 @@ async def get_document(
     *,
     tenant_id: UUID,
     document_id: UUID,
-    include_download_url: bool = True,
 ) -> KnowledgeDocumentRead:
-    """Detalle de un documento. Incluye URL presignada de descarga si se solicita."""
-    row = (
-        await db.execute(
-            select(KnowledgeDocument).where(
-                KnowledgeDocument.id == document_id,
-                KnowledgeDocument.tenant_id == tenant_id,
-            )
-        )
-    ).scalar_one_or_none()
+    """Lectura interna de un documento, sin auditar (refrescos tras una acción).
 
-    if row is None:
-        raise NotFoundError(f"KnowledgeDocument {document_id} not found")
+    Para mostrarlo a un usuario usar ``view_document``; para el fichero, ``download_url``.
+    """
+    row = await _get_orm(db, tenant_id=tenant_id, document_id=document_id)
+    return KnowledgeDocumentRead.model_validate(row)
 
-    result = KnowledgeDocumentRead.model_validate(row)
-    if include_download_url:
-        storage = get_storage()
-        result.download_url = await storage.presigned_url_get(row.source_file_key)
 
-    return result
+async def view_document(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_id: UUID,
+    user_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> KnowledgeDocumentRead:
+    """Detalle de un documento para la UI; deja ``knowledge.view`` en audit_log."""
+    doc = await get_document(db, tenant_id=tenant_id, document_id=document_id)
+    await _log_view(
+        db,
+        tenant_id=tenant_id,
+        document_id=document_id,
+        user_id=user_id,
+        section="detail",
+        request_ctx=request_ctx,
+    )
+    return doc
+
+
+async def download_url(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_id: UUID,
+    user_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> str:
+    """URL prefirmada de vida corta del original; deja ``knowledge.download`` en audit_log.
+
+    Raises:
+        NotFoundError: el documento no existe en el tenant.
+    """
+    row = await _get_orm(db, tenant_id=tenant_id, document_id=document_id)
+    url = await get_storage().presigned_url_get(row.source_file_key, ttl=DOWNLOAD_URL_TTL_SECONDS)
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_DOWNLOAD,
+        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
+        resource_id=document_id,
+        metadata={"kind": row.kind.value, "mime": row.source_mime},
+        request_ctx=request_ctx,
+    )
+    return url
+
+
+async def _log_view(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_id: UUID,
+    user_id: UUID,
+    section: str,
+    request_ctx: audit_service.AuditRequestContext | None,
+) -> None:
+    await audit_service.log_action(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=ACTION_KNOWLEDGE_VIEW,
+        resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
+        resource_id=document_id,
+        metadata={"section": section},
+        request_ctx=request_ctx,
+    )
 
 
 async def mark_indexing(

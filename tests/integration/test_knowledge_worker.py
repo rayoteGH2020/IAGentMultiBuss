@@ -127,7 +127,7 @@ async def test_index_knowledge_document_worker_full_flow(
     db_session.expire_all()
 
     refreshed = await knowledge_document_service.get_document(
-        db_session, tenant_id=tenant_id, document_id=doc_id, include_download_url=False
+        db_session, tenant_id=tenant_id, document_id=doc_id
     )
     assert refreshed.status == KnowledgeDocumentStatus.ready
     assert refreshed.chunk_count > 0

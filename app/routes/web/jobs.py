@@ -218,7 +218,6 @@ async def knowledge_job_status_row(
         db,
         tenant_id=tenant.id,
         document_id=document_id,
-        include_download_url=False,
     )
     logger.debug(
         "jobs.knowledge_status",

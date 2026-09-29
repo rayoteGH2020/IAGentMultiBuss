@@ -18,7 +18,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -28,6 +28,7 @@ from app.core.templating import render
 from app.core.uploads import UploadValidationError, read_upload_limited
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_feature
 from app.jobs.queue import enqueue_knowledge_indexing
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.knowledge import (
     KnowledgeDocumentFilters,
     KnowledgeDocumentKind,
@@ -325,7 +326,7 @@ def _sync_list_ctx() -> dict[str, object]:
 async def knowledge_faq_edit(
     request: Request,
     document_id: UUID,
-    _user: CurrentUser,
+    user: CurrentUser,
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -334,6 +335,8 @@ async def knowledge_faq_edit(
         db,
         tenant_id=tenant.id,
         document_id=document_id,
+        user_id=user.id,
+        request_ctx=audit_request_context(request),
     )
     pairs_json = json.dumps([p.model_dump() for p in pairs])
     return render(
@@ -376,7 +379,7 @@ async def knowledge_faq_update(
     await enqueue_knowledge_indexing(doc_orm.id, tenant.id, replace_existing=True)
 
     doc_read = await knowledge_document_service.get_document(
-        db, tenant_id=tenant.id, document_id=document_id, include_download_url=False
+        db, tenant_id=tenant.id, document_id=document_id
     )
     return render(
         request,
@@ -390,14 +393,16 @@ async def knowledge_faq_update(
 async def knowledge_detail(
     request: Request,
     document_id: UUID,
-    _user: CurrentUser,
+    user: CurrentUser,
     tenant: CurrentTenant,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    doc = await knowledge_document_service.get_document(
+    doc = await knowledge_document_service.view_document(
         db,
         tenant_id=tenant.id,
         document_id=document_id,
+        user_id=user.id,
+        request_ctx=audit_request_context(request),
     )
     return render(
         request,
@@ -405,6 +410,25 @@ async def knowledge_detail(
         partial="components/knowledge_detail_panel.html",
         ctx={"document": doc},
     )
+
+
+@router.get("/{document_id}/file")
+async def knowledge_download(
+    request: Request,
+    document_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Audita la descarga y redirige a una URL prefirmada de vida corta."""
+    url = await knowledge_document_service.download_url(
+        db,
+        tenant_id=tenant.id,
+        document_id=document_id,
+        user_id=user.id,
+        request_ctx=audit_request_context(request),
+    )
+    return RedirectResponse(url=url, status_code=302)
 
 
 @router.post("/{document_id}/reindex")
@@ -425,7 +449,6 @@ async def knowledge_reindex(
         db,
         tenant_id=tenant.id,
         document_id=doc_orm.id,
-        include_download_url=False,
     )
     return render(
         request,

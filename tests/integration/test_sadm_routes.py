@@ -325,3 +325,42 @@ def test_sadm_orgs_page_is_readonly_copy(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "Clerk Dashboard" in r.text
     assert "Nueva organización" not in r.text
     assert 'hx-post="/sadm/organizations"' not in r.text
+
+
+def test_sadm_open_original_passes_viewer_for_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El acceso SADM al original llega al servicio con el user_id del superadmin."""
+    from unittest.mock import AsyncMock, patch
+
+    admin_org = f"org_admin_{uuid4().hex[:8]}"
+    user_sub = f"user_{uuid4().hex[:12]}"
+    monkeypatch.setenv("ADMIN_CLERK_ORG_ID", admin_org)
+    monkeypatch.setenv("SUPERADMIN_CLERK_USER_IDS", "")
+    _clear_settings_cache()
+    monkeypatch.setattr(
+        "app.core.middleware.try_resolve_clerk_session",
+        _fake_session_with_org(org_id=admin_org, user_sub=user_sub),
+    )
+    original = AsyncMock(return_value="https://r2.test/original?signed=1")
+    document_id = uuid4()
+
+    from app.main import app
+
+    with (
+        patch(
+            "app.routes.web.admin.documents.document_override_service.original_file_url",
+            original,
+        ),
+        TestClient(app, raise_server_exceptions=True) as client,
+    ):
+        r = client.get(
+            f"/sadm/documents/invoice/{document_id}/file",
+            headers={"Authorization": "Bearer fake-jwt", "user-agent": "sadm-ua"},
+            follow_redirects=False,
+        )
+
+    assert r.status_code == 302
+    assert r.headers["location"] == "https://r2.test/original?signed=1"
+    kwargs = original.await_args.kwargs
+    assert kwargs["document_id"] == document_id
+    assert kwargs["viewer_id"] is not None
+    assert kwargs["request_ctx"].user_agent == "sadm-ua"

@@ -47,6 +47,7 @@ from app.models import (
     TicketStatus,
 )
 from app.services import (
+    audit_service,
     contract_service,
     insurance_service,
     invoice_service,
@@ -61,6 +62,16 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 DocumentKindLiteral = Literal["invoice", "ticket", "contract", "insurance"]
+
+# Acceso de staff de plataforma a documentos de un cliente: se registra en el
+# audit_log del tenant dueño (user_id = superadmin) para que quede a su vista.
+ACTION_SADM_DOCUMENT_REVIEW = "sadm.document.review"
+ACTION_SADM_DOCUMENT_ORIGINAL_VIEWED = "sadm.document.original_viewed"
+ACTION_SADM_DOCUMENT_PROCESSING_AUTHORIZED = "sadm.document.processing_authorized"
+RESOURCE_DOCUMENT = "document"
+
+# El original se abre con el redirect inmediato de /sadm/documents/.../file.
+ORIGINAL_URL_TTL_SECONDS = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,24 +250,74 @@ async def build_review(
     )
 
 
+async def review_document(
+    db: AsyncSession,
+    *,
+    kind: DocumentKindLiteral,
+    document_id: UUID,
+    viewer_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None = None,
+) -> RejectedDocumentReview:
+    """Ficha de revisión para la consola SADM; deja ``sadm.document.review``."""
+    review = await build_review(db, kind=kind, document_id=document_id)
+    await _log_sadm_access(
+        db,
+        document=review.document,
+        action=ACTION_SADM_DOCUMENT_REVIEW,
+        user_id=viewer_id,
+        request_ctx=request_ctx,
+        metadata={"pages": review.pages},
+    )
+    return review
+
+
 async def original_file_url(
     db: AsyncSession,
     *,
     kind: DocumentKindLiteral,
     document_id: UUID,
+    viewer_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None = None,
 ) -> str:
-    """URL prefirmada del documento original, para revisarlo antes de decidir."""
+    """URL prefirmada de vida corta del original; deja ``sadm.document.original_viewed``."""
     document = await get_rejected_document(db, kind=kind, document_id=document_id)
     key = _source_key(document)
-    storage = get_storage()
-    url = await storage.presigned_url_get(key)
-    logger.info(
-        "sadm.document.original_viewed",
-        tenant_id=str(document.tenant_id),
-        document_kind=kind,
-        document_id=str(document_id),
+    url = await get_storage().presigned_url_get(key, ttl=ORIGINAL_URL_TTL_SECONDS)
+    await _log_sadm_access(
+        db,
+        document=document,
+        action=ACTION_SADM_DOCUMENT_ORIGINAL_VIEWED,
+        user_id=viewer_id,
+        request_ctx=request_ctx,
     )
     return url
+
+
+async def _log_sadm_access(
+    db: AsyncSession,
+    *,
+    document: RejectedDocument,
+    action: str,
+    user_id: UUID,
+    request_ctx: audit_service.AuditRequestContext | None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    """Escribe en el audit_log del tenant dueño del documento.
+
+    La sesión SADM no tiene tenant: se fija el del documento para que la política
+    de aislamiento valide el INSERT (el flag de lectura cross-tenant no cubre escrituras).
+    """
+    await set_tenant_context(db, str(document.tenant_id))
+    await audit_service.log_action(
+        db,
+        tenant_id=document.tenant_id,
+        user_id=user_id,
+        action=action,
+        resource_type=RESOURCE_DOCUMENT,
+        resource_id=document.id,
+        metadata={"kind": document.kind, **(metadata or {})},
+        request_ctx=request_ctx,
+    )
 
 
 async def authorize_processing(
@@ -266,6 +327,7 @@ async def authorize_processing(
     document_id: UUID,
     authorized_by: UUID,
     reason: str | None = None,
+    request_ctx: audit_service.AuditRequestContext | None = None,
 ) -> RejectedDocumentReview:
     """Autoriza el procesado saltándose los límites de negocio.
 
@@ -291,7 +353,18 @@ async def authorize_processing(
 
     # A partir de aquí se escribe: contexto de tenant explícito para que la
     # política de aislamiento normal valide cada INSERT/UPDATE.
-    await set_tenant_context(db, str(document.tenant_id))
+    await _log_sadm_access(
+        db,
+        document=document,
+        action=ACTION_SADM_DOCUMENT_PROCESSING_AUTHORIZED,
+        user_id=authorized_by,
+        request_ctx=request_ctx,
+        metadata={
+            "pages": review.pages,
+            "estimated_cost_eur": str(review.estimate.provider_cost_eur),
+            "reason": reason,
+        },
+    )
 
     await processing_charge_service.create_authorized_charge(
         db,

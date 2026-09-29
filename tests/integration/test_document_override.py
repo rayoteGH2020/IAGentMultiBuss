@@ -18,6 +18,7 @@ from app.core.db import set_tenant_context
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import ValidationError
 from app.models import (
+    AuditLog,
     DocTypeCode,
     Invoice,
     InvoiceStatus,
@@ -27,8 +28,9 @@ from app.models import (
     User,
 )
 from app.services import doc_type_service, document_override_service
+from app.services.audit_service import AuditRequestContext
 from pypdf import PdfWriter
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -54,8 +56,8 @@ class _FakeStorage:
         self.downloaded.append(key)
         return self.payload
 
-    async def presigned_url_get(self, key: str, expires_in: int = 900) -> str:
-        _ = expires_in
+    async def presigned_url_get(self, key: str, ttl: int | None = None) -> str:
+        self.ttl = ttl
         return f"https://r2.test/{key}?signed=1"
 
 
@@ -95,6 +97,7 @@ async def _superadmin_user(db: AsyncSession) -> User:
 async def _cleanup(db: AsyncSession, *, tenant_id: UUID, user_id: UUID) -> None:
     """Borra lo que quedó comprometido por el commit del servicio."""
     await set_tenant_context(db, str(tenant_id))
+    await db.execute(delete(AuditLog).where(AuditLog.tenant_id == tenant_id))
     await db.execute(delete(ProcessingCharge).where(ProcessingCharge.tenant_id == tenant_id))
     await db.execute(delete(Invoice).where(Invoice.tenant_id == tenant_id))
     await db.execute(delete(User).where(User.id == user_id))
@@ -163,21 +166,67 @@ async def test_original_file_url_is_presigned(
     tenant = await tenant_factory()
     await set_tenant_context(db_session, str(tenant.id))
     invoice = await _rejected_invoice(db_session, tenant)
+    admin = await _superadmin_user(db_session)
+    storage = _FakeStorage(_pdf_bytes(1))
 
-    monkeypatch.setattr(
-        document_override_service,
-        "get_storage",
-        lambda: _FakeStorage(_pdf_bytes(1)),
-    )
+    monkeypatch.setattr(document_override_service, "get_storage", lambda: storage)
 
     url = await document_override_service.original_file_url(
         db_session,
         kind="invoice",
         document_id=invoice.id,
+        viewer_id=admin.id,
     )
 
     assert url.startswith("https://r2.test/")
     assert invoice.source_file_key in url
+    assert storage.ttl == document_override_service.ORIGINAL_URL_TTL_SECONDS
+    row = await _single_audit(db_session, tenant.id, "sadm.document.original_viewed")
+    assert row.user_id == admin.id
+    assert row.resource_id == invoice.id
+    assert row.metadata_ == {"kind": "invoice"}
+
+
+async def test_review_document_audits_superadmin_access(
+    invoices_schema_ready: None,
+    processing_charges_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    invoice = await _rejected_invoice(db_session, tenant)
+    admin = await _superadmin_user(db_session)
+    monkeypatch.setattr(
+        document_override_service, "get_storage", lambda: _FakeStorage(_pdf_bytes(3))
+    )
+    # Sesión SADM real: sin tenant (el servicio fija el del documento para escribir).
+    await db_session.execute(text("SELECT set_config('app.current_tenant', '', true)"))
+
+    review = await document_override_service.review_document(
+        db_session,
+        kind="invoice",
+        document_id=invoice.id,
+        viewer_id=admin.id,
+        request_ctx=AuditRequestContext(ip="10.0.0.1", user_agent="pytest"),
+    )
+
+    assert review.pages == 3
+    row = await _single_audit(db_session, tenant.id, "sadm.document.review")
+    assert row.user_id == admin.id
+    assert row.resource_type == "document"
+    assert row.metadata_ == {"kind": "invoice", "pages": 3}
+    assert row.ip == "10.0.0.1"
+
+
+async def _single_audit(db: AsyncSession, tenant_id: UUID, action: str) -> AuditLog:
+    await set_tenant_context(db, str(tenant_id))
+    return (
+        await db.execute(
+            select(AuditLog).where(AuditLog.tenant_id == tenant_id, AuditLog.action == action)
+        )
+    ).scalar_one()
 
 
 async def test_authorize_processing_requeues_and_records_charge(
@@ -238,6 +287,11 @@ async def test_authorize_processing_requeues_and_records_charge(
         # El coste real llega en settle_charge, cuando el worker termina.
         assert charge.provider_cost_eur is None
         assert charge.estimated_cost_eur > 0
+
+        audit = await _single_audit(db_session, tenant.id, "sadm.document.processing_authorized")
+        assert audit.user_id == admin.id
+        assert audit.metadata_["pages"] == 6
+        assert audit.metadata_["reason"] == "Factura anual del cliente clave"
     finally:
         await _cleanup(db_session, tenant_id=tenant.id, user_id=admin.id)
 

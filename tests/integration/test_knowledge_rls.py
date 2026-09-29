@@ -100,7 +100,6 @@ async def test_rls_tenant_isolation(
             db_session,
             tenant_id=tenant_b.id,
             document_id=doc_a_id,
-            include_download_url=False,
         )
 
     # Verificar también con query directa que la tabla está filtrada.
@@ -183,7 +182,7 @@ async def test_scanned_pdf_marks_document_failed(
     db_session.expire_all()
 
     refreshed = await knowledge_document_service.get_document(
-        db_session, tenant_id=tenant_id, document_id=doc_id, include_download_url=False
+        db_session, tenant_id=tenant_id, document_id=doc_id
     )
     assert refreshed.status == KnowledgeDocumentStatus.failed
     assert refreshed.error_message is not None

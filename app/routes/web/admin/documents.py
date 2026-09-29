@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
 from app.deps import CurrentUser, SuperAdmin, get_db_no_tenant
+from app.routes.web.audit_context import audit_request_context
 from app.services import document_override_service, processing_charge_service
 
 log = structlog.get_logger(__name__)
@@ -43,13 +44,16 @@ async def review_document(
     request: Request,
     kind: DocumentKindPath,
     document_id: UUID,
+    user: CurrentUser,
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
-    review = await document_override_service.build_review(
+    review = await document_override_service.review_document(
         db,
         kind=kind,
         document_id=document_id,
+        viewer_id=user.id,
+        request_ctx=audit_request_context(request),
     )
     return render(
         request,
@@ -61,8 +65,10 @@ async def review_document(
 
 @router.get("/{kind}/{document_id}/file")
 async def open_original(
+    request: Request,
     kind: DocumentKindPath,
     document_id: UUID,
+    user: CurrentUser,
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> RedirectResponse:
@@ -71,6 +77,8 @@ async def open_original(
         db,
         kind=kind,
         document_id=document_id,
+        viewer_id=user.id,
+        request_ctx=audit_request_context(request),
     )
     return RedirectResponse(url=url, status_code=302)
 
@@ -91,6 +99,7 @@ async def authorize_processing(
         document_id=document_id,
         authorized_by=user.id,
         reason=reason.strip() or None,
+        request_ctx=audit_request_context(request),
     )
     # authorize_processing hace commit: la nueva transacción arranca sin flag
     # de lectura cross-tenant, así que hay que reactivarlo antes de releer.
