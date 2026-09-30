@@ -36,7 +36,7 @@ No sustituir sin aprobacion explicita:
 - ARQ sobre Redis.
 - `httpx` async.
 - Jinja2, HTMX y Alpine.js.
-- Tailwind CSS 4 CLI standalone.
+- Tailwind CSS 3.4 CLI standalone (`tailwind.config.js`). Migracion a v4 despues del producto minimo (D028).
 - PostgreSQL 16+ con pgvector.
 - Cloudflare R2 via `boto3`.
 - Clerk con Organizations.

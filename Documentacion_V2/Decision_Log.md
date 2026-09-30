@@ -191,7 +191,7 @@ Consecuencia:
 
 - Migracion `p67_plans_basic_adv_prem_01` (remap tenants + reseed entitlements).
 - Alias legacy: `medium`→`basic`, `high`→`advanced`, `total`→`premium`.
-- Actualizar Stripe Price IDs a los tres codigos nuevos.
+- ~~Actualizar Stripe Price IDs a los tres codigos nuevos.~~ Sin efecto: Stripe retirado (D016).
 
 ## D013 - Despliegue con Docker Compose + Caddy (no Coolify)
 
@@ -332,13 +332,13 @@ Ampliacion (2026-09-29):
 Motivo:
 
 - Tras P2b-14 el coste del chat cuenta en el presupuesto; sin corte, el chat podia agotarlo y bloquear la extraccion sin bloquearse a si mismo.
-- Clerk no tiene telefono ni email de organizacion: los metadatos publicos son un contacto del negocio que no depende de quien sea el admin.
+- Clerk no tiene telefono ni email de organizacion: los metadatos publicos son un contacto del negocio que no depende de quien sea el admin. *(Sustituido por D020: el contacto es el telefono y el email del admin en `users`.)*
 
 Consecuencia:
 
 - `app/services/llm_budget_alert_service.py`, job ARQ `send_llm_budget_alert` (email fuera de la peticion) y comprobacion en `chat_service._run_assistant_turn`.
 - Umbrales y frecuencia configurables: `LLM_BUDGET_WARN_RATIO` (0,8), `CHAT_BUDGET_CUTOFF_RATIO` (0,9), `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` (86400), `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` (3).
-- Pendiente: mismo corte en el asistente de canales (Backlog P2b-17), interfaz de consumo y avisos (P2b-18) y rellenar los metadatos en Clerk (P2b-19, ops).
+- Pendiente: mismo corte en el asistente de canales (Backlog P2b-17), interfaz de consumo y avisos (P2b-18) y que el admin de cada tenant rellene su telefono en su ficha de miembro (P2b-19, ops; D020).
 
 ## D020 - Telefono de los miembros en `users`, editable solo por el admin del tenant
 
@@ -407,7 +407,7 @@ Motivo:
 
 Consecuencia:
 
-- Se implementa con `plan_quota_service` mensual (paso 3 de §9): nuevo limite en `PLAN_LIMITS` + migracion; el limite de ritmo reutiliza el contador Redis de `rate_limiter.py` con ventana corta.
+- Se implementa con los cupos mensuales de D027 (`monthly_quota_service`; el limite `chat_questions_per_month` ya esta en `PLAN_LIMITS` desde `p77`) en el bloque 4 del cierre del producto minimo; el limite de ritmo reutiliza el contador Redis de `rate_limiter.py` con ventana corta.
 - Mientras tanto, `CHAT_DAILY_MESSAGE_LIMIT` (60 por defecto) recorta Avanzado y Premium: Backlog P2b-24.
 
 ## D024 - Contratos: importes sin IVA por periodicidad y fecha de firma separada
@@ -430,7 +430,7 @@ Consecuencia:
 
 - Migracion `p75_contract_amounts_01`: nuevas columnas y check de `periodicidad`; `importe` se elimina sin traducir (valor ambiguo, sin produccion). En dev: `scripts/reextract_contracts.py`.
 - Chat: `sum_total` de contratos suma `importe_anual`; filtros de importe usan anual o, si es pago unico, el total. Panel: cuota con su periodicidad ("95,00 € / mes").
-- Eval `contracts_v2` (sustituye a `contracts_v1`); en el PR hay que aceptar el cambio de nombre con la etiqueta `eval-regression-accepted` (la baseline de `main` aun tiene `contracts_v1`).
+- Eval `contracts_v2` (sustituye a `contracts_v1`). *(Corregido 2026-09-30: `main` aun no tiene `app/evals/baselines.json`; el workflow usa entonces la baseline del PR, que ya tiene `contracts_v2`, asi que el cambio de nombre no necesita la etiqueta `eval-regression-accepted`.)*
 - Los campos de avisos (renovacion automatica, preaviso, fecha limite de baja) se anadiran como columnas nuevas con P3-6, sin tocar estas.
 
 ## D025 - Proveedor de IA sin saldo (402): mensaje propio y aviso al SADM
@@ -465,16 +465,16 @@ Consecuencia:
 
 ## D027 - Cupos mensuales: periodo, carga inicial, cambios de plan y limites diarios
 
-Decision (cerrada 2026-09-30; bloque 1 implementado): los invitados del soft launch tienen los mismos limites que produccion (spec de planes §3), para que el piloto de datos reales. Reglas:
+Decision (cerrada 2026-09-30; bloque 1 implementado): los invitados del soft launch tienen los mismos limites que produccion (spec de planes §3), para que el piloto de datos reales con los que calibrar esos limites. Reglas:
 
 - **Periodo:** mes natural en hora de Espana (del 1 al ultimo dia) para todos los contadores mensuales y para el presupuesto de IA (`usage_meter` pasa de UTC a hora de Espana). Si el alta no es el dia 1, la factura se prorratea fuera de la app (D016), pero las cuotas y limites son los del mes completo.
 - **Carga inicial de contratos:** la ventana de `contract_uploads_first_period` va del alta al final del primer mes completo (alta 28/10 → hasta 30/11; alta el dia 1 → ese mes). Evita que un alta a final de mes tenga solo unos dias para su carga inicial.
 - **Cambios de plan:** la primera asignacion del SADM es inmediata; las siguientes se programan para el dia 1 del mes siguiente (facturacion por mes completo). Pedir el plan actual anula el cambio pendiente. Subidas urgentes a mitad de mes: ampliacion del cupo del mes desde SADM.
 - **Ampliacion del SADM:** por cupo y solo para el mes en curso (`quota_usage.extra`), registrada en `audit_log` (`sadm.quota_extra_added`). Los overrides permanentes siguen en `entitlements_override`.
 - **Reintentos:** `document_retries_per_month` = 40 / 150 / 400 y maximo 3 reintentos manuales por documento (sustituye a `document_retries_per_day`).
-- **Limites diarios:** se retiran al sustituirlos por los mensuales; solo se conserva un tope de subidas por dia, alto, como freno contra scripts.
+- **Limites diarios:** se retiran al sustituirlos por los mensuales; solo se conserva un tope de subidas de documentos por dia, alto, como freno contra scripts. No afecta a los limites que la spec no sustituye: knowledge (`knowledge_uploads_per_day`, `knowledge_docs_max`), `channel_messages_per_hour`, `voice_notes_per_hour` y `channel_external_slots` siguen como estan.
 - **Borrado diferido y purga de contratos a los 30 dias:** fuera del producto minimo (Backlog P3-8); se mantiene el borrado inmediato.
-- **Contratos (bloque 5):** hash SHA-256 contra duplicados dentro (se reutiliza el del bloque 2; sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, queda en el historico y el chat no lo trata como vigente. La renovacion enlazada automatica (proponer a que contrato renueva) queda fuera del producto minimo y se monta despues sobre ese estado. Motivo: sin ninguna de las dos, un tenant en su maximo de activos no podria subir una renovacion hasta que venciera el contrato anterior, y el chat veria dos contratos vigentes de la misma contraparte (hoy no existe archivar a mano).
+- **Contratos (bloque 5):** hash SHA-256 contra duplicados dentro del mismo tenant (se reutiliza el del bloque 2; sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, queda en el historico y el chat no lo trata como vigente. La renovacion enlazada automatica (proponer a que contrato renueva) queda fuera del producto minimo y se monta despues sobre ese estado. Motivo: sin ninguna de las dos, un tenant en su maximo de activos no podria subir una renovacion hasta que venciera el contrato anterior, y el chat veria dos contratos vigentes de la misma contraparte (hoy no existe archivar a mano).
 
 Motivo:
 
@@ -485,3 +485,17 @@ Consecuencia:
 
 - Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
 - Los limites mensuales estan en el catalogo pero **aun no se aplican**: cada bloque los activa y retira el diario correspondiente (2 facturas/tickets + `quota_pending`, 3 reintentos, 4 chat D023, 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta").
+
+## D028 - Tailwind 3.4 como version vigente; migracion a v4 despues del producto minimo
+
+Decision (cerrada 2026-09-30): la spec (`AGENTS.md` §1, `Arquitectura_V2.md` §3 y §13) decia Tailwind CSS 4, pero el codigo usa **Tailwind 3.4.17** (`@tailwind` en `app/static/css/input.css`, `tailwind.config.js`, `bin/tailwindcss.exe` en dev y `TAILWIND_VERSION=v3.4.17` con checksum en el `Dockerfile`). Se actualiza la spec a 3.4 como desviacion aceptada.
+
+Motivo:
+
+- Migrar a v4 cambia la configuracion (`@theme` en CSS en lugar de `tailwind.config.js`) y obliga a revisar todas las plantillas, sin aportar nada al cierre del producto minimo.
+- La version esta fijada y verificada por checksum en dev y en la imagen: no hay deriva entre entornos.
+
+Consecuencia:
+
+- `Agents.md` (y `CLAUDE.md`, enlace simbolico a el), `Documentacion_V2/AGENTS.md` y `Arquitectura_V2.md` dicen Tailwind 3.4.
+- Migracion a v4: despues del producto minimo (Backlog P2b-29), con nueva entrada en este log.

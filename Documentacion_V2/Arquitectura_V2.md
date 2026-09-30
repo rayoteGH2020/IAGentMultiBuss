@@ -1,8 +1,8 @@
 # Arquitectura_V2
 
-Fecha: 2026-09-14
+Fecha: 2026-09-14 · Actualizado: 2026-09-30
 Estado: **arquitectura vigente del monolito** (el codigo es la fuente de verdad).
-HEAD migraciones: `p64_plans_entitlements_01`.
+HEAD migraciones: `p77_quota_usage_01`.
 
 Si un doc antiguo o un backlog desfasado contradice este fichero o el codigo, gana el codigo + `Documentacion_V2` (ver `Decision_Log.md` D001–D002).
 
@@ -25,7 +25,7 @@ El codigo actual no se descarta (D001). La base contiene:
 - SQLAlchemy 2.0 async + Alembic con RLS (`FORCE ROW LEVEL SECURITY`).
 - Clerk Organizations (auth, memberships, webhooks).
 - SADM (`/sadm/*`) con planes, uso, docs y trazas.
-- Catalogo de planes + gates + cuotas/budgets (Pasos 02–04).
+- Catalogo de planes + gates + cuotas/budgets (Pasos 02–04) + base de cupos mensuales (D027).
 - ARQ workers sobre Redis.
 - Cloudflare R2 (storage).
 - Capa LLM propia (`app/llm/client.py`), prompts versionados, Langfuse metadata-only.
@@ -42,7 +42,7 @@ La V2 corrige la documentacion y fija el orden de evolucion restante.
 | Validacion | Pydantic v2, Instructor |
 | Jobs | ARQ (Redis). No Celery |
 | HTTP | httpx async |
-| UI | Jinja2 + HTMX 2.x + Alpine 3.x + Tailwind 4 (CLI standalone). Sin React/Vue/Svelte |
+| UI | Jinja2 + HTMX 2.x + Alpine 3.x + Tailwind 3.4 (CLI standalone, D028). Sin React/Vue/Svelte |
 | BD | PostgreSQL 16+ con pgvector, pgcrypto |
 | Storage | R2 via boto3 |
 | LLM | SDKs Anthropic/Google/Voyage via cliente propio. No LangChain/LlamaIndex como columna |
@@ -102,7 +102,7 @@ No hay rutas de analytics SQL (D011 — no se implementara). Sin integracion de 
 | Calendario Google/voz | Implementado | OAuth cifrado, voz → evento. Gates `calendar_*`. QA manual pendiente. |
 | Citas internas | Implementado | Scheduling multi-profesional, API find-slots, gates `appointments`. |
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
-| Planes/entitlements | Implementado | D012: `basic`/`advanced`/`premium`; gates; cuotas duros; calendar_* no publicados. |
+| Planes/entitlements | Implementado | D012: `basic`/`advanced`/`premium`; gates; cuotas duros; calendar_* no publicados. Cupos mensuales en catalogo y `quota_usage` (D027); se aplican por bloques (Backlog, cierre del producto minimo). |
 | Analytics SQL | **No implementar** (D011) | Feature retirada del catalogo. Paso08 archivado. Sin rutas ni tablas. |
 | Cobro de planes | **Pendiente de decision** (D016) | Stripe retirado. Plan asignado solo por SADM (`assign_tenant_plan` + historial `tenant_plan_changes`). `/settings/billing` solo lectura. |
 
@@ -124,9 +124,9 @@ No hay rutas de analytics SQL (D011 — no se implementara). Sin integracion de 
 - Knowledge: `knowledge_documents`, `knowledge_chunks`.
 - Chat: `chat_threads`, `chat_messages`.
 - Canales: `channel_integrations`, `conversations`, `channel_messages`, `channel_response_cache`.
-- Calendario/citas: `calendar_integrations`, `appointments`, `professionals`, `professional_specialties`, `professional_working_hours`, `business_hours`, `scheduling_services`, `schedule_exceptions`.
+- Calendario/citas: `calendar_integrations`, `appointments`, `professionals`, `professional_specialties`, `professional_working_hours`, `business_hours`, `services`, `schedule_exceptions`.
 - Observabilidad/coste: `llm_calls`, `audit_log`, `usage_meter`.
-- Planes: `plans`, `plan_entitlements`, `tenant_plan_changes`.
+- Planes: `plans`, `plan_entitlements`, `tenant_plan_changes`, `quota_usage` (cupos mensuales por tenant y mes, D027).
 
 ### 6.3 Deuda de esquema documentada
 
@@ -199,11 +199,13 @@ Gates obligatorios en:
 - services cuando aplica,
 - workers ARQ,
 - webhooks de canal,
-- cuotas (`plan_quota_service`) y budget LLM mensual.
+- cuotas (`plan_quota_service`; mensuales en `monthly_quota_service`, D027) y budget LLM mensual.
 
-Planes seed: `basic`, `medium`, `high`, `total`. Alias legacy `free` → `basic`.
+Planes seed: `basic`, `advanced`, `premium` (D012). Alias legacy: `free`/`medium` → `basic`, `high` → `advanced`, `total` → `premium`.
 
-SADM: `/sadm/plans` asigna `plan_code` y overrides; ver `SADM_V2.md`.
+Periodo: mes natural en hora de Espana para cupos y presupuesto (D027, `app/core/billing_period.py`).
+
+SADM: `/sadm/plans` asigna `plan_code` y overrides; la primera asignacion es inmediata y las siguientes se programan para el dia 1 del mes siguiente (`plan_change_service` + cron `apply_scheduled_plan_changes`). Ampliacion de un cupo solo para el mes en curso (`quota_usage.extra`, auditada). Ver `SADM_V2.md`.
 
 ## 10. SADM
 
@@ -213,7 +215,7 @@ Alcance actual:
 
 - Dashboard.
 - Organizaciones y miembros (read-only).
-- Planes: listado, assign, override entitlements.
+- Planes: listado, assign (cambios programados al mes siguiente), override entitlements, cupos del mes y ampliacion mensual (D027).
 - Documentos rechazados / autorizacion de override de limites.
 - Uso / cargos por tenant.
 - Trazas y uso de chat (metadatos).
@@ -251,8 +253,12 @@ Registro en `app/jobs/settings.py`:
 | `process_insurance` | Extraccion seguros |
 | `index_knowledge_document` | Chunking + embeddings (timeout 600s) |
 | `process_channel_message` | Respuesta canales WA/TG (timeout 120s) |
+| `send_llm_budget_alert` | Emails de presupuesto de IA (80 % admin, 90 % SADM, corte del chat; D019) |
+| `send_llm_provider_billing_alert` | Email al SADM si un proveedor LLM rechaza por saldo (402; D025) |
 
-Cada worker revalida feature de plan y puede devolver `skipped` / `plan_required` sin gastar LLM.
+Crons: `expire_member_removals` (cada 15 min + al arrancar; bajas con fecha efectiva vencida) y `apply_scheduled_plan_changes` (cambios de plan programados, D027).
+
+Cada worker de procesado revalida feature de plan y puede devolver `skipped` / `plan_required` sin gastar LLM.
 
 ## 13. Frontend
 
@@ -261,7 +267,7 @@ No SPA.
 - Server-rendered HTML con Jinja2.
 - HTMX para interacciones servidor (patron pagina/fragmento via `render()`).
 - Alpine solo para estado local pequeno.
-- Tailwind CLI standalone (`static/css/input.css` + `@theme`).
+- Tailwind 3.4 CLI standalone (`static/css/input.css` con `@tailwind` + `tailwind.config.js`; misma version en `bin/tailwindcss.exe` y en el `Dockerfile`). Migracion a v4 (`@theme`) despues del producto minimo (D028).
 - No logica de negocio en templates.
 - No JS manual para negocio.
 - No JSON desde `routes/web` para pintar UI.
@@ -269,7 +275,8 @@ No SPA.
 ## 14. Observabilidad y costes
 
 - `llm_calls`: cada llamada LLM (tokens, coste, latencia, status).
-- `usage_meter`: contadores agregados. `analytics_queries_count` es columna historica sin producto (D011).
+- `usage_meter`: contadores agregados y gasto de IA del mes. `analytics_queries_count` es columna historica sin producto (D011).
+- `quota_usage`: cupos mensuales consumidos y ampliaciones del SADM por tenant y mes (D027).
 - `processing_charges`: cargos/estimaciones de procesamiento documental.
 - `audit_log`: acciones sensibles.
 - Langfuse: trazas metadata-only; nunca documentos, mensajes ni respuestas crudas.
@@ -302,17 +309,17 @@ Checklist go-live: `PasosParaProduccion.md`.
 
 ## 17. Orden estrategico restante
 
-Codigo de Pasos 02–07 esta en el repo (Paso09 Stripe retirado, D016). Lo que queda:
+Codigo de Pasos 02–07 esta en el repo (Paso09 Stripe retirado, D016). Lo que queda, en este orden:
 
-1. Ops: residual Paso00/01 (Infisical staging/prod, rotacion credenciales), QA manual Paso07, soft-launch Paso10.
-2. Decidir el metodo de cobro de los planes (Backlog P3-2, D016).
+1. Cierre del producto minimo: tabla "Cierre del producto minimo" de `Backlog_Priorizado.md` (fuente unica: seguridad P2c 1-3, bloques 2-7 de cupos, cierre del codigo y ops de despliegue de `PasosParaProduccion.md`).
+2. Decidir el metodo de cobro de los planes antes de la produccion comercial (Backlog P3-2, D016).
 3. Deuda documental menor: mantener este fichero y el backlog alineados tras cada cierre.
 
-**No roadmap:** Analytics SQL / modulo 3 (D011).
+**No roadmap:** Analytics SQL / modulo 3 (D011). El analista de Premium sobre datos del tenant queda para despues del producto minimo (D018).
 
 ## 18. Decisiones cerradas
 
-Ver `Decision_Log.md` (D001–D016): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, **plan solo por SADM y Stripe retirado (D016)**, etc.
+Ver `Decision_Log.md` (D001–D027): continuidad del repo, gobernanza Documentacion_V2, sin switcher multi-org, SADM por org admin, identidades solo Clerk, planes antes que Stripe, cuotas por plan, Langfuse metadata-only, **Analytics SQL no se implementa (D011)**, **plan solo por SADM y Stripe retirado (D016)**, presupuesto de IA y cortes (D019, D026), miembros 3/9/20 (D022), chat con cupo mensual (D023), cupos mensuales y cambios de plan programados (D027), etc.
 
 ## 19. Docs V2 a no usar como snapshot de codigo sin revisar
 

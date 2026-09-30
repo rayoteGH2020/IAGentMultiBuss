@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
 Fecha: 2026-08-05 · Actualizado: 2026-09-30
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo de producto cerrado (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1-8) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo. No empezar una fase si la anterior tiene casillas abiertas sin aceptacion explicita. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -15,22 +15,22 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, quitando antes la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1-8: P2c 1-3 de la Fase 1.5 y bloques 2-7) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
 | 6 | Crear **buckets R2** de prod y de backups + tokens R2 separados | Cloudflare | Tu | 2 |
-| 7 | Crear **API keys LLM de prod** (Google, Anthropic, Voyage) con limite de gasto | Consolas proveedores | Tu | 2 |
+| 7 | Crear **API keys LLM de prod** (Google, Anthropic, Voyage) con limite de gasto + clave de Google aparte para CI | Consolas proveedores + GitHub | Tu | 2 |
 | 8 | **Rotar secretos historicos** expuestos en docs antiguos | Todos los proveedores | Tu | 2 |
 | 9 | Endurecer VPS (usuario `deploy`, SSH con clave, ufw) e instalar Docker + Infisical CLI | VPS | Tu | 3 |
 | 10 | Crear **Machine Identity** de Infisical para la VPS y su fichero `/etc/iagent/infisical-identity.conf` | Infisical + VPS | Tu | 4 |
-| 11 | Rellenar **Infisical `prod`** con secretos nuevos (no copiar `dev`) | Infisical | Tu | 5 |
-| 12 | Crear **instancia Clerk Production**: DNS, registro restringido, sin creacion de orgs, webhook, org SADM | Clerk + DNS | Tu | 6 |
+| 11 | Rellenar **Infisical `prod`** con secretos nuevos (no copiar `dev`), incluidos SMTP y `EMAIL_SADM` | Infisical | Tu | 5 |
+| 12 | Crear **instancia Clerk Production**: DNS, registro restringido, sin creacion de orgs, limite de miembros >= 20, webhook (con `user.deleted`), org SADM | Clerk + DNS | Tu | 6 |
 | 13 | Apuntar DNS del dominio a la VPS | Registrador DNS | Tu | 7 |
 | 14 | Crear **tag** y ejecutar `deploy.sh` (primer despliegue) | PC + VPS | Tu | 8 |
 | 15 | Verificar healthchecks, TLS, login y confirmar `azp` del JWT | Navegador + VPS | Tu | 8 |
 | 16 | Programar **backups** (cron) y **probar un restore** fuera de prod | VPS | Tu | 9 |
-| 17 | Dar de alta el primer cliente piloto (org Clerk → invitacion → plan en `/sadm/plans`) | Clerk + SADM | Tu | 10 |
+| 17 | Dar de alta el primer cliente piloto (org Clerk → invitacion → plan en `/sadm/plans` → telefono del admin) | Clerk + SADM | Tu | 10 |
 | 18 | **QA manual** en produccion | Navegador | Tu | 11 |
 | 19 | Verificacion de **seguridad operativa** | VPS + app | Tu | 12 |
 | 20 | **Firma Go/No-Go** y documento de release | `Paso10` | Tu | 13 |
@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-09-30: `p77_quota_usage_01`).
+- [ ] `alembic heads` = un unico head (a 2026-09-30: `p77_quota_usage_01`; los bloques 2-7 y P2c-1 anadiran migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -350,14 +350,22 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 **Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
 
-### 5.8 Opcionales segun alcance (vacias en soft launch)
+### 5.8 Email (obligatorio tambien en soft launch)
 
-- SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS`/`SMTP_SSL`) y `EMAIL_SADM` para avisos de usuarios sin org.
+SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS`/`SMTP_SSL`) y `EMAIL_SADM`. Sin SMTP:
+
+- las solicitudes de alta y de baja de miembros desde `/settings/members` fallan (`smtp_not_configured`): la baja es un derecho RGPD del cliente;
+- no salen los avisos de presupuesto de IA (80 % al admin, 90 % al SADM, D019), ni el aviso de proveedor sin saldo (D025), ni el de usuarios sin organizacion.
+
+Comprobar tras el deploy: pedir una alta de prueba desde `/settings/members` del tenant piloto y ver que llega a `EMAIL_SADM`.
+
+### 5.9 Opcionales segun alcance (vacias en soft launch)
+
 - WhatsApp: `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`.
 - Google Calendar: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` (redirect URI de prod en Google Cloud).
 - `METRICS_TOKEN` (Caddy bloquea `/metrics` desde Internet igualmente).
 
-- [ ] Variables 5.1–5.4 y 5.6 rellenadas.
+- [ ] Variables 5.1–5.4, 5.6 y 5.8 rellenadas.
 - [ ] Ningun valor copiado de `dev`.
 
 ---
@@ -371,7 +379,8 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 5. Configure → Paths / redirect URLs → `https://app.<dominio>`.
 6. Webhooks → Add endpoint `https://app.<dominio>/api/webhooks/clerk`, eventos:
    - `organizationMembership.created`, `organizationMembership.updated`, `organizationMembership.deleted`
-   - `user.created` y `organization.created` si los usas.
+   - `user.deleted` (obligatorio: anonimiza el usuario local y desactiva sus membresias, D021)
+   - `user.created`, `organization.created` y `organization.deleted` opcionales (crean usuario/tenant antes del primer login; el ultimo solo se registra en el log).
    - Signing secret → `CLERK_WEBHOOK_SECRET` en Infisical `prod`.
 7. API Keys → `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` (de **Production**, `sk_live_`/`pk_live_`). `CLERK_JWKS_URL` = `https://clerk.<dominio>/.well-known/jwks.json` (copiar el que muestra Clerk).
 8. `CLERK_JWT_AZP_ALLOWLIST=https://app.<dominio>` (inferido; sin una allowlist la app **no arranca** en production). Se confirma con un JWT real en la Fase 8.
@@ -523,11 +532,18 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 
 ### 11.4 Planes
 
-Se valida el comportamiento **actual del codigo** (`Planes_Entitlements.md`), no el objetivo de `especificacion-planes-y-cuotas.md`. Lo que aun no esta implementado de la spec va como gap en la Fase 13.
+Se valida el comportamiento del codigo desplegado (`Planes_Entitlements.md`). Esta fase va despues de los bloques 2-7 del cierre del producto minimo (Backlog fila 9); lo que no se haya implementado de la spec va como gap en la Fase 13 y se tachan aqui sus casillas.
 
 - [ ] Sidebar segun plan; URL directa a feature no incluida → denegada.
 - [ ] Cuota bloquea antes de gastar LLM.
-- [ ] Cambio de plan en `/sadm/plans` se refleja.
+- [ ] Primera asignacion de plan en `/sadm/plans` inmediata; un segundo cambio queda programado para el dia 1 del mes siguiente (D027).
+- [ ] Ampliacion de un cupo del mes desde `/sadm/plans/tenants/{id}` se refleja en el cupo y queda en `audit_log` (`sadm.quota_extra_added`).
+- [ ] Facturas + tickets (bloque 2): subir el mismo fichero dos veces → aviso de duplicado sin consumir cupo; con el cupo agotado (tenant de prueba con un override bajo del cupo) el documento queda "pendiente de cupo" y se procesa tras una ampliacion.
+- [ ] Reintentos (bloque 3): tras 3 reintentos manuales el documento muestra "Revision manual" y no ofrece "Reintentar".
+- [ ] Chat (bloque 4): con el cupo del mes agotado (override bajo) responde con el mensaje fijo sin llamar al modelo.
+- [ ] Contratos (bloque 5): "Marcar como sustituido" libera el hueco de activo; un contrato de mas de 100 paginas se rechaza.
+- [ ] Historico (bloque 6): en Basico no se ven facturas ni tickets de hace mas de 12 meses.
+- [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de cada cupo.
 - [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).
 
 ### 11.5 Canales, calendario y billing (solo si entran en el alcance)
@@ -563,7 +579,9 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
   - Langfuse prod aplazado (sin tracing; el coste sigue en `llm_calls`).
   - CSP con `unsafe-inline`/`unsafe-eval` por Alpine.
   - Sin staging: el primer despliegue va directo a prod (mitigacion: backup de `deploy.sh` + restore probado en Fase 9).
-  - Spec de planes no implementada del todo: limites mensuales y `quota_pending` (pasos 3-4 de su §9; hoy limites diarios) y D023 (cuota mensual de chat; mientras, `CHAT_DAILY_MESSAGE_LIMIT`, Fase 5.7). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
+  - Solo si algun bloque 2-7 del cierre no esta hecho al firmar: parte de la spec de planes sin implementar (p. ej. `quota_pending` o D023; si falta D023, `CHAT_DAILY_MESSAGE_LIMIT` alto, Fase 5.7). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
+  - Presupuesto de IA sin ampliacion mensual: solo override permanente del SADM, a retirar a mano (Backlog P2b-27).
+  - Documentos pendientes de cupo sin tope por tenant: el unico freno es el tope diario alto de subidas (Backlog P2b-28).
   - Cobro de planes fuera de la app (D016): factura manual, plan asignado por SADM.
   - WhatsApp/Telegram, Google Calendar y voz sin QA real (fuera de alcance).
   - Knowledge sin limites mensuales: mantiene `knowledge_docs_max` y `knowledge_uploads_per_day` actuales porque la spec de planes aun no los define (§11).
@@ -613,7 +631,7 @@ Redis de prod arranca con `--maxmemory 512mb --maxmemory-policy noeviction` (`de
 
 - no se encolan jobs (documentos y conocimiento se quedan sin procesar);
 - los webhooks (Clerk, WhatsApp, Telegram) fallan al registrar el anti-replay;
-- las cuotas diarias no pueden contar (subidas y chat devuelven error).
+- los limites diarios y de ritmo que siguen en Redis no pueden contar (subidas y chat devuelven error). Los cupos mensuales estan en PostgreSQL (`quota_usage`).
 
 Con el trafico previsto es improbable, pero no hay aviso previo: hay que vigilarlo.
 

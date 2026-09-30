@@ -30,7 +30,7 @@ Si el asistente empieza a generar código sin haber leído los ficheros relevant
 - **HTTP client**: `httpx` async.
 - **Templating**: Jinja2.
 - **Interactividad**: HTMX + Alpine.js. NO React, NO Vue, NO Svelte.
-- **CSS**: Tailwind CSS 4 (CLI standalone).
+- **CSS**: Tailwind CSS 3.4 (CLI standalone, `tailwind.config.js`). Migrar a v4 queda para después del producto mínimo (D028).
 - **BD**: PostgreSQL 16+ con pgvector. NO MongoDB, NO Pinecone, NO Qdrant.
 - **Storage**: Cloudflare R2 vía `boto3`.
 - **LLMs**: SDKs oficiales de Anthropic y Google. Cliente propio en `app/llm/client.py`. NO LangChain ni LlamaIndex como columna vertebral.

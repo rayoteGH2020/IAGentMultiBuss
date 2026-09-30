@@ -10,7 +10,7 @@
 > - seed en `app/core/entitlement_codes.py` y migración `p67`.
 >
 > Este documento **amplía y corrige** ese sistema. No crees un catálogo, un servicio de cuotas ni tablas de planes en paralelo.
-> **No escribas código todavía.** Primero ejecuta la **Fase 1 (análisis de brechas)** y entrega el informe de la sección 10. La implementación empieza solo cuando el informe esté revisado y aprobado.
+> **Estado (2026-09-30):** el análisis de brechas (secciones 5 y 10) se hizo en las revisiones de la especificación y quedó recogido en `Decision_Log.md` (D017–D027) y en la tabla «Cierre del producto mínimo» de `Backlog_Priorizado.md`, que es el plan de implementación vigente. No se generó `docs/analisis-planes-y-cuotas.md`. Cada bloque presenta su diseño antes de escribir código.
 
 ---
 
@@ -99,7 +99,9 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 3.1 Límites comerciales mensuales (los que ve el cliente)
 
-| Limit code (propuesto) | Unidad | Básico | Avanzado | Premium |
+En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contratos. `members_max` aplicado (D022). Sin crear todavía: `history_months` (bloque 6), `assistant_messages_per_month` y `reminders_per_month` (canales, fuera del producto mínimo).
+
+| Limit code | Unidad | Básico | Avanzado | Premium |
 |---|---|---:|---:|---:|
 | `invoices_per_month` | facturas | 40 | 150 | 400 |
 | `tickets_per_month` | tickets | 30 | 80 | 200 |
@@ -118,7 +120,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 |---|---|---:|---:|---:|---|
 | `llm_budget_eur_month` | € de IA al mes | **6** | **15** | **30** | **Tope duro.** Recalibrado: antes era 30/100/250, por encima incluso del precio del Básico. Equivale a un 27-31 % del precio. Con los modelos y costes reales, el peor caso (todos los límites y topes técnicos al 100 %, reintentos incluidos) es de unos 1,75 / 8,40 / 41 €: el presupuesto lo cubre 3,4 y 1,8 veces en Básico y Avanzado. **En Premium el tope es el que limita** (sobre todo por el tope del analista y de los chats); con un uso normal (unos 12 €) no se alcanza. Sin el analista (post producto mínimo, D018), el peor caso de Premium baja a unos 23 € y el presupuesto lo cubre. Ver hoja «Coste por cliente» del Excel |
 | `end_customer_messages_per_day` | mensajes por cliente final | 0 | 30 | 30 | Anti-abuso. Sustituye a `channel_messages_per_hour` |
-| `document_retries_per_month` | reintentos manuales | 40 | 150 | 400 | **Propuesta: sustituye a `document_retries_per_day` (20/80/300),** que permitía unos 600 reintentos al mes en Básico (≈4,7 € de IA). Además, **máximo 3 reintentos manuales por documento** |
+| `document_retries_per_month` | reintentos manuales | 40 | 150 | 400 | **D027: sustituye a `document_retries_per_day` (20/80/300),** que permitía unos 600 reintentos al mes en Básico (≈4,7 € de IA). Además, **máximo 3 reintentos manuales por documento** |
 | `chat_questions_per_month` | preguntas | 400 | 1.500 | 4.000 | **D023.** Un solo cupo mensual para el chat de la app (documentos y conocimiento son el mismo chat y una pregunta puede usar herramientas de ambos). Suma de los antiguos `documents_chat_questions_per_month` (250/1.000/2.500) y `knowledge_chat_questions_per_month` (150/500/1.500). Sin límite comercial; tope técnico de unas 5 veces el uso previsto (80/300/800). Sirve para que el chat no consuma el presupuesto de IA que necesita la extracción |
 | `analytics_questions_per_month` | preguntas | 0 | 0 | 500 | **[Post producto mínimo, D018]** Uso previsto: 200. A ≈0,036 € por pregunta, 500 preguntas son ≈18 € |
 
@@ -136,9 +138,8 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 ## 4. Reglas de negocio
 
 ### 4.1 Periodo de cómputo
-- Los contadores mensuales se reinician en cada **periodo de facturación del tenant**.
-- Mientras no haya cobro implementado, se usa el **mes natural** y queda parametrizable.
-- Los contadores mensuales **deben persistir en PostgreSQL**; Redis sirve como caché o para operaciones atómicas. Verifica en el análisis cómo guarda hoy `plan_quota_service` sus contadores.
+- **Mes natural en hora de España** (del 1 al último día) para todos los contadores mensuales y el presupuesto de IA (D027, `app/core/billing_period.py`). Si el alta no es el día 1, la factura se prorratea fuera de la app, pero las cuotas son las del mes completo.
+- Los contadores mensuales persisten en PostgreSQL (tabla `quota_usage`, `monthly_quota_service`, D027). Los diarios y de ritmo que quedan siguen en Redis.
 
 ### 4.2 Facturas y tickets (bolsa compensable)
 - En la interfaz se muestran dos límites, pero **se controla el total**: `facturas + tickets <= invoices_per_month + tickets_per_month (+ saldo de packs, en la fase posterior)`.
@@ -169,16 +170,16 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - **Dos límites que se aplican a la vez:**
   - `contracts_active_max`: el tamaño de su archivo de contratos.
   - `contract_uploads_per_month`: **cada subida consume un alta, también las renovaciones.** Borrar **no devuelve** el alta.
-- **Carga inicial:** en el **primer periodo**, el límite de altas es `contract_uploads_first_period` (igual al de activos).
-- **Renovación:** consume un alta pero **no ocupa un hueco de contrato activo**. El anterior pasa a sustituido (`lifecycle = replaced`) y se enlaza con `replaces_contract_id`.
+- **Carga inicial:** desde el alta hasta el final del primer mes completo (alta 28/10 → hasta 30/11; alta el día 1 → ese mes), el límite de altas es `contract_uploads_first_period` (igual al de activos) (D027).
+- **Renovación:** consume un alta pero **no ocupa un hueco de contrato activo**. El anterior pasa a sustituido (`lifecycle = replaced`). **Producto mínimo (D027):** botón manual «Marcar como sustituido» en el contrato anterior; el enlace automático con `replaces_contract_id` queda para después.
 - **Por páginas:**
   - Hasta 30 páginas = 1 alta; de 31 a 60 = 2; de 61 a 100 = 3.
   - Más de `contract_max_pages` = se rechaza con un mensaje claro.
   - Los tramos son configurables.
 - **No se reprocesa el mismo fichero:**
   - Se guarda el SHA-256.
-  - Si en **el mismo tenant** existe un contrato con ese hash (activo, sustituido o borrado hace menos de 30 días), se reutilizan la extracción y los embeddings. **No se llama al LLM ni se consume alta.**
-- **Borrado diferido:**
+  - Si en **el mismo tenant** existe un contrato con ese hash (activo, sustituido o borrado hace menos de 30 días), se reutilizan la extracción y los embeddings. **No se llama al LLM ni se consume alta.** En el producto mínimo, sin borrado diferido, solo cuenta el contrato que sigue existiendo (activo o sustituido).
+- **Borrado diferido [Post producto mínimo, Backlog P3-8]:** mientras tanto se mantiene el borrado inmediato (borrar no devuelve el alta).
   - Al borrar se rellena `deleted_at` (no hay estado «borrado»); queda oculto y fuera de las búsquedas.
   - A los 30 días se purga (embeddings, datos y fichero en R2).
 - **Extracción al subir (Instructor, `contract_extraction_v2`, D024):** parte contraria, fecha de firma, inicio de vigencia, vencimiento, cuota sin IVA (`importe_periodico`) con su `periodicidad`, importe total, `importe_anual` (calculado) e `iva_incluido`. Renovación automática, preaviso en días y **fecha límite de baja** se añaden con los avisos de contratos **[Post producto mínimo]** (Backlog P3-6).
@@ -195,7 +196,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - **Estado actual:** solo hay topes diarios (plan 100/250/600, plataforma 60 por defecto, 40 por usuario). Se implementa con `plan_quota_service` mensual (paso 3 de §9).
 - **Historial (decidido 2026-09-30, se acepta el comportamiento actual):** se reenvían los últimos 20 mensajes (`chat_history_message_limit`), incluidos los mensajes `tool` con su resultado completo. Una pregunta con herramientas ocupa ≈4 mensajes, así que son ≈4-5 turnos.
   - Los resultados de las herramientas se guardan en `chat_messages.tool_result`: los usan las trazas de chat del SADM y permiten las preguntas de continuación («¿y la segunda?»). Entran en el borrado y el export RGPD de los chats.
-  - Motivo: el coste ya está acotado (máx. observado ≈0,0045 € por pregunta; 250 preguntas del Básico ≈1,1 € frente a 6 € de presupuesto) y quitar los resultados arriesga las continuaciones sin un ahorro relevante.
+  - Motivo: el coste ya está acotado (máx. observado ≈0,0045 € por pregunta; las 400 preguntas del Básico (D023) ≈1,8 € en el peor caso frente a 6 € de presupuesto) y quitar los resultados arriesga las continuaciones sin un ahorro relevante.
   - Descartado: reenviar solo 4 turnos sin resultados de herramientas y la compactación del historial (sería otra llamada al LLM, con coste y prompt propios).
   - Revisar con uso real (Backlog P2b-21): si el historial pesa mucho en hilos largos, recortar el tamaño de los resultados antiguos en lugar de quitarlos.
 - **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`), con herramientas (`run_tool_loop`, desde `chat_service.py`). Coste medido: ≈0,002 € por pregunta (≈2 llamadas por las herramientas; máximo observado ≈0,0045 €).
@@ -260,14 +261,15 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 4.8 Control de coste (`llm_budget_eur_month`)
 - Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `task`, `prompt_version`, tokens y coste (**verificado**). No hay columna `feature`: la función se identifica con `task` + `prompt_version` (el asistente de canales usa `channel_external_v1`; el chat de la app, el prompt de `chat_prompts.py`; el analista, `task="sql"`). El chat de documentos y el de conocimiento son un único chat (`PROMPT_UNIFIED`) y una misma pregunta puede usar herramientas de ambos, así que no se separan por llamada. Los topes de preguntas de §3.2 son contadores de cuota y no dependen de `llm_calls`. Tokens de caché: aplazado (Backlog P2b-20). `plan_quota_service` acumula el gasto del periodo.
-- **Al 80 % del presupuesto:** aviso al dueño y alerta en SADM.
-- **Al 100 %: tope duro.** Se bloquean las funciones que llaman al LLM:
-  - Los documentos quedan pendientes de cupo (`status = quota_pending`).
-  - Los chats muestran un aviso.
-  - El asistente responde con el mensaje fijo.
-  - Nada se pierde.
+- **Umbrales (D019, implementado):**
+  - **80 %:** email al admin del tenant (una vez al mes). Alerta en SADM dentro de la app: pendiente (Backlog P2b-18).
+  - **90 %:** el chat de la app responde con mensaje fijo sin llamar al modelo (contacto del admin, D020) y email al SADM (una vez al mes).
+  - **100 %: tope duro** (`ensure_llm_budget`). Se bloquean las funciones que llaman al LLM y aparece un banner en todas las páginas del panel:
+    - Los documentos fallan con un mensaje reintentable; pasarán a pendientes de cupo (`status = quota_pending`) con el bloque 2 del cierre del producto mínimo.
+    - El asistente de canales responderá con el mensaje fijo (Backlog P2b-17, fuera del producto mínimo).
+    - Nada se pierde.
 - **Ampliación:**
-  - **Ahora:** override manual desde SADM, con un presupuesto extra solo para ese periodo y registrado en `tenant_plan_changes` o en una tabla de overrides existente.
+  - **Ahora:** override del SADM en `entitlements_override`, que es **permanente** (hay que retirarlo a mano). La ampliación solo para el mes en curso (`quota_usage.extra`, D027) cubre los cupos, no el presupuesto de IA: pendiente (Backlog P2b-27).
   - **[Fase posterior]:** packs de ampliación (sección 4.9).
 - Con un uso normal no debería saltar nunca. Si salta a menudo en un cliente, es señal de abuso o de que necesita otro plan.
 
@@ -412,15 +414,15 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 ## 9. Producto mínimo: orden sugerido
 
 1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
-2. Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.
+2. ~~Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.~~ Hecho (P2b-14, D019, D026). Falta la ampliación mensual del presupuesto (Backlog P2b-27).
 3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; falta conectarlo a cada límite (pasos 4 y siguientes).
 4. Cuotas en facturas y tickets (`quota_pending`).
 5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
-7. Usuarios e histórico.
+7. Usuarios (hecho, D022) e histórico (`history_months`, bloque 6).
 8. Interfaz de consumo y avisos.
 9. Trabajos programados: reinicio de periodos y purga de contratos borrados (los avisos de contratos, post producto mínimo).
-10. Asistente: conocimiento en el prompt, cuotas de mensajes y recordatorios, anti-abuso, límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales).
+10. Asistente: cuotas de mensajes y recordatorios, anti-abuso, corte por presupuesto (P2b-17), límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales). **[Post producto mínimo]**: WhatsApp/Telegram quedan fuera del soft launch. El conocimiento en el prompt es una optimización no comprometida (P2b-22).
 11. Analista de datos (Premium). **[Post producto mínimo, D018]**
 12. **[Fase posterior]** Packs, cobro, exportación CSV / Excel, avisos de contratos y niveles de soporte. La integración contable y el envío a gestorías quedan fuera por ahora.
 

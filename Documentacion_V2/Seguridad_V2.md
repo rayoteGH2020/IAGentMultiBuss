@@ -1,6 +1,6 @@
 # Seguridad_V2
 
-Fecha: 2026-08-04
+Fecha: 2026-08-04 · Actualizado: 2026-09-30
 Estado: checklist y modelo de seguridad para todo desarrollo V2.
 
 ## 1. Principio
@@ -143,9 +143,7 @@ Antes de procesar:
 - Fallar cerrado si no se puede inspeccionar.
 - No guardar archivos de cliente en disco local; usar R2.
 
-Riesgo pendiente:
-
-- OCR de imagenes de knowledge debe reutilizar `media_limits` antes de decodificar o enviar al LLM.
+Resuelto: el OCR de imagenes de knowledge reutiliza `media_limits` antes de decodificar o enviar al LLM (Backlog P0-5).
 
 ## 8. Coste y abuso
 
@@ -155,6 +153,7 @@ Toda accion con coste o carga debe tener:
 - cuota por plan,
 - cooldown o dedupe si puede repetirse,
 - budget mensual por tenant,
+- cupo mensual persistente en `quota_usage` cuando el limite es mensual (D027),
 - metricas en `usage_meter`,
 - audit log cuando toque datos de cliente.
 
@@ -168,6 +167,14 @@ Incluye:
 - canales externos,
 - voz.
 - ~~analytics~~ — **no** (D011: modulo 3 Analytics/BI no se implementa).
+
+## 8b. Logs y auditoria
+
+- **Logs sin datos personales:** nunca nombres, emails, telefonos, identificadores de cliente final, nombres de fichero, importes/comercios extraidos ni `str(exc)` de errores que puedan contener contenido. Usar hash HMAC, contadores o tipos. Pendiente de aplicar al codigo existente (Backlog P2c-2), antes del primer cliente real.
+- **`audit_log` solo insercion:** `saas_app` sin `UPDATE`/`DELETE` (Backlog P2c-1, pendiente). La metadata de auditoria tampoco lleva datos personales en claro (el SADM la lee).
+- **IP de auditoria:** solo `request.client.host`, con `--forwarded-allow-ips` limitado a la red interna (Backlog P2c-3, pendiente). Al poner Cloudflare delante: `trusted_proxies` en Caddy (P2c-4).
+- **Ficheros de cliente:** se sirven por una ruta que audita y redirige (302) a una URL prefirmada de vida corta; nunca incrustar URLs prefirmadas en el HTML (`AGENTS.md` §7).
+- Alcance de lo que se audita: `AGENTS.md` §7.
 
 ## 9. CSP y frontend
 
@@ -194,4 +201,5 @@ Plan:
 - [ ] Langfuse metadata-only.
 - [ ] Rate limit/cuota si hay coste.
 - [ ] Audit log si toca datos de cliente.
+- [ ] Logs y metadata de auditoria sin datos personales.
 - [ ] Tests unit/integration/e2e segun riesgo.

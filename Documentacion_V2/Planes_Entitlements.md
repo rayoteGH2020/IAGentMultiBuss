@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-30
 Estado: **implementado en codigo** — catalogo comercial `basic` | `advanced` | `premium`
-(Pasos 02–04 + SADM). Seed: `app/core/entitlement_codes.py`; migraciones `p67` y `p74`.
+(Pasos 02–04 + SADM). Seed: `app/core/entitlement_codes.py`; migraciones `p67`, `p74` (miembros), `p76` (presupuesto de IA) y `p77` (cupos mensuales).
 
 > **Este documento describe el estado actual del codigo.** El objetivo de producto (limites mensuales, presupuesto de IA, cupos, `quota_pending`, etc.) esta en `especificacion-planes-y-cuotas.md`. Este documento se actualiza a medida que se implementa.
 
@@ -87,9 +87,11 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 ## 6. Implementacion
 
 - Resolucion: `entitlement_service` + gates `require_feature`.
-- Cuotas Redis + budget: `plan_quota_service` (duro: hoy bloquea al llegar al techo). La especificacion cambia los documentos a `quota_pending` sin bloquear la subida (§4.2 y §4.3), pendiente de implementar.
-- SADM `/sadm/plans`: assign + override.
-- Unico punto de cambio de plan: `assign_tenant_plan` desde SADM (ningun rol de tenant, D016).
+- Cuotas Redis + budget: `plan_quota_service` (duro: hoy bloquea al llegar al techo). La especificacion cambia los documentos a `quota_pending` sin bloquear la subida (§4.2 y §4.3), pendiente de implementar (bloque 2 del cierre del producto minimo).
+- Cupos mensuales (D027): `monthly_quota_service` + tabla `quota_usage` (consumo atomico por bolsa, bolsa facturas + tickets, devoluciones, mes natural en hora de Espana). Base hecha; cada bloque del cierre lo conecta a su limite y retira el diario correspondiente.
+- Presupuesto de IA (D019, D026): email al admin al 80 %, corte del chat y email al SADM al 90 %, bloqueo de toda la IA al 100 % (`ensure_llm_budget`).
+- SADM `/sadm/plans`: assign + override permanente (`entitlements_override`) + ampliacion de un cupo solo para el mes en curso (`quota_usage.extra`, auditada). El presupuesto de IA no tiene ampliacion mensual: solo override permanente (Backlog P2b-27).
+- Unico punto de cambio de plan: SADM (ningun rol de tenant, D016). La primera asignacion es inmediata; las siguientes se programan para el dia 1 del mes siguiente (`plan_change_service` + cron `apply_scheduled_plan_changes`, D027).
 - Historial: `tenant_plan_changes`.
 
 ## 7. Decisiones
@@ -97,7 +99,10 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 - D011: Analytics no se implementa (vigente hasta retomar el analista de Premium, D018).
 - D012: catalogo Basico / Avanzado / Premium; calendar fuera de oferta; limites duros escalonados.
 - D016: plan asignado solo por SADM; Stripe retirado; cobro pendiente de decidir.
-- D017: historico visible (`history_months`) solo para facturas y tickets; contratos por vigencia. Pendiente de implementar.
+- D017: historico visible (`history_months`) solo para facturas y tickets; contratos por vigencia. Pendiente de implementar (bloque 6).
 - D018: analista de datos de Premium aplazado hasta despues del producto minimo.
+- D019: presupuesto de IA con aviso al 80 % y corte del chat al 90 % (implementado).
 - D022: `members_max` 3 / 9 / 20 (implementado, `p74`).
-- D023: chat con un cupo mensual (`chat_questions_per_month`) y limite de ritmo, sin topes diarios. Pendiente de implementar.
+- D023: chat con un cupo mensual (`chat_questions_per_month`) y limite de ritmo, sin topes diarios. Pendiente de implementar (bloque 4).
+- D026: `llm_budget_eur_month` 6 / 15 / 30 (implementado, `p76`).
+- D027: cupos mensuales, periodo, carga inicial de contratos, cambios de plan programados y retirada de limites diarios (bloque 1 implementado, `p77`).
