@@ -825,7 +825,10 @@ HTTP request encola job → devuelve fragmento con `hx-trigger="every 2s"` apunt
 | Dominio + email | 5€ |
 | **Total infra** | **~150–250€** |
 
-Con 50 clientes a 50€/mes (2.500€ MRR), margen bruto ~90%.
+Ejemplo con 50 clientes (30 Básico, 15 Avanzado, 5 Premium; precios de `Documentacion_V2/especificacion-planes-y-cuotas.md` §2.2): **1.890 € MRR**.
+
+- Uso normal: infraestructura ~150–250 € → margen bruto **~87–92 %**.
+- Peor caso de IA: todos los tenants agotan su presupuesto (30×6 + 15×15 + 5×30 = **555 €**) → margen ~66 %. El presupuesto por tenant (D019) acota ese riesgo.
 
 ### Fase crecimiento (50–500 clientes)
 

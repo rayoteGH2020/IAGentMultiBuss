@@ -388,3 +388,24 @@ Consecuencia:
 - Seed `PLAN_LIMITS` y migracion `p74_members_max_01` (solo `plan_entitlements`; los overrides por tenant no se tocan).
 - Tenants que ya superan el tope: conservan sus miembros; solo se bloquean las altas nuevas (`ensure_member_capacity`, sin cambios). `/settings/members` muestra "X de Y" y un aviso al llegar o superar el tope (`plan_quota_service.get_member_usage`). Excepciones caso a caso con override del SADM. Mismo criterio cuando el SADM baja de plan a un tenant.
 - Clerk limita hoy a 5 miembros por organizacion: hay que subirlo a >= 20 (Backlog P2b-23).
+
+## D023 - Chat de la app: un cupo mensual y limite de ritmo, sin topes diarios
+
+Decision (cerrada 2026-09-30, pendiente de implementar): el chat de la app tiene **un solo cupo mensual** por tenant, `chat_questions_per_month` = **400 / 1.500 / 4.000** (Basico / Avanzado / Premium), que sustituye a `documents_chat_questions_per_month` y `knowledge_chat_questions_per_month` de la especificacion (sus valores sumados). Se eliminan los topes diarios del chat (`chat_messages_per_day` del plan, `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT`) y se sustituyen por un **limite de ritmo por usuario** (≈10 preguntas por minuto o 60 por hora).
+
+- Al 100 % del cupo: mensaje fijo sin llamar al modelo, con la fecha de renovacion y el contacto del admin (como D019). Ampliable con override del SADM. Sin aviso al 80 % (tope tecnico, no comercial).
+- El presupuesto de IA (D019) sigue siendo el tope duro final.
+
+Motivo:
+
+- Documentos y conocimiento son un unico chat (`PROMPT_UNIFIED`): una pregunta puede usar herramientas de ambos y antes de responder no se sabe a que cupo cargarla.
+- Un tope diario pierde lo no usado y bloquea dias de uso intenso aunque el mes vaya holgado. Los topes diarios fueron una solucion de implementacion (contador Redis con TTL) previa a las cuotas mensuales y al presupuesto, no una decision de producto.
+- El limite de ritmo frena scripts o cuentas comprometidas en minutos sin afectar a un uso humano intenso.
+- El cupo no hace falta para el coste total (400 preguntas ≈1,8 € frente a 6 € de presupuesto en Basico); evita que el chat consuma el presupuesto que necesita la extraccion.
+- El antiguo tope de 100 preguntas/dia en Basico (≈3.000/mes) no protegia nada: con el coste medio (≈0,002 €) el chat solo ya gastaba los 6 € del presupuesto, y el corte al 90 % (D019) llegaba antes que el tope.
+- El "uso previsto" del que sale el cupo (80 preguntas/mes en Basico, x5) es una estimacion sin datos y hecha para 1 usuario; con 3 miembros (D022) puede quedarse corto. Se revisa con uso real (Backlog P2b-21); mientras, override del SADM caso a caso.
+
+Consecuencia:
+
+- Se implementa con `plan_quota_service` mensual (paso 3 de §9): nuevo limite en `PLAN_LIMITS` + migracion; el limite de ritmo reutiliza el contador Redis de `rate_limiter.py` con ventana corta.
+- Mientras tanto, `CHAT_DAILY_MESSAGE_LIMIT` (60 por defecto) recorta Avanzado y Premium: Backlog P2b-24.

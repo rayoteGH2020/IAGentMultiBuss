@@ -1,8 +1,10 @@
 # Planes_Entitlements
 
-Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-23 (D012)
+Fecha: 2026-08-04 (diseno) · Actualizado: 2026-09-30
 Estado: **implementado en codigo** — catalogo comercial `basic` | `advanced` | `premium`
-(Pasos 02–04 + SADM). Seed: `app/core/entitlement_codes.py`; migracion `p67`.
+(Pasos 02–04 + SADM). Seed: `app/core/entitlement_codes.py`; migraciones `p67` y `p74`.
+
+> **Este documento describe el estado actual del codigo.** El objetivo de producto (limites mensuales, presupuesto de IA, cupos, `quota_pending`, etc.) esta en `especificacion-planes-y-cuotas.md`. Este documento se actualiza a medida que se implementa.
 
 ## 1. Objetivo
 
@@ -26,14 +28,14 @@ Tres ofertas publicadas:
 
 Regla comercial de limites:
 
-- Los tres planes tienen **techos duros** (no `null` / no ilimitado self-serve).
+- Los tres planes tienen **techos duros** en volumen y coste (no `null` / no ilimitado self-serve). No aplica al **historico visible**, que en Premium no tiene limite (`history_months`, `especificacion-planes-y-cuotas.md` §3.1, D017).
 - Si el uso supera **Avanzado** → upgrade a **Premium**.
 - Si el uso supera **Premium** → contrato custom / override SADM (no oferta self-serve).
 
 Fuera de catalogo publicado (codigo conservado, no evolucionar ni publicitar):
 
 - `calendar_google`, `calendar_voice` (D012).
-- `analytics` (D011 — no implementar).
+- `analytics` (D011 vigente). El analista de datos para Premium queda para despues del producto minimo (D018, `especificacion-planes-y-cuotas.md` §4.5); al retomarlo, decision nueva que sustituya a D011.
 
 Alias legacy: `free`/`medium` → `basic`; `high` → `advanced`; `total` → `premium`.
 
@@ -58,7 +60,11 @@ Pendiente / ops:
 
 \* Disponible solo via override SADM si hace falta un piloto interno; no marketing.
 
-## 4. Limites duros (propuesta D012)
+## 4. Limites duros en el seed actual (D012)
+
+> **Cifras vigentes de producto: `especificacion-planes-y-cuotas.md` §3** (limites mensuales, presupuesto de IA 6 / 15 / 30 EUR, chat D023, etc.).
+> Esta tabla describe lo que hoy tiene el seed del codigo (`PLAN_LIMITS`). Se alinea con la especificacion en el paso 1 de su §9; hasta entonces difieren, sobre todo `llm_budget_eur_month` (30 / 100 / 250 aqui) y los limites diarios, que la especificacion sustituye por mensuales.
+> Excepcion ya alineada: `members_max` 3 / 9 / 20 (D022, migracion `p74`).
 
 | Limit code | Unidad | Basico | Avanzado | Premium |
 | --- | --- | ---: | ---: | ---: |
@@ -73,28 +79,24 @@ Pendiente / ops:
 | `llm_budget_eur_month` | EUR | 30 | 100 | 250 |
 | `channel_external_slots` | integraciones | 0 | 2 | 2 |
 
-## 5. Precios orientativos (sin IVA)
+## 5. Precios
 
-Hipotesis inicial; revisar con `llm_calls` / SADM tras 2–4 semanas.
-
-| Plan | Precio piloto sugerido | Objetivo | Techo LLM |
-| --- | ---: | ---: | ---: |
-| Basico | 59–79 EUR/mes | 79–99 EUR/mes | 30 EUR |
-| Avanzado | 149–179 EUR/mes | 179–199 EUR/mes | 100 EUR |
-| Premium | 249–299 EUR/mes | 299–349 EUR/mes | 250 EUR |
-
-Anual: ~2 meses de descuento. Setup WA/TG: 99–299 EUR opcional.
+Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EUR al mes sin IVA; anual = 10 mensualidades). Sustituyen a la hipotesis inicial de D012 (59–349 EUR/mes), que queda descartada.
 
 ## 6. Implementacion
 
 - Resolucion: `entitlement_service` + gates `require_feature`.
-- Cuotas Redis + budget: `plan_quota_service` (duro: bloquea al techo).
+- Cuotas Redis + budget: `plan_quota_service` (duro: hoy bloquea al llegar al techo). La especificacion cambia los documentos a `quota_pending` sin bloquear la subida (§4.2 y §4.3), pendiente de implementar.
 - SADM `/sadm/plans`: assign + override.
 - Unico punto de cambio de plan: `assign_tenant_plan` desde SADM (ningun rol de tenant, D016).
 - Historial: `tenant_plan_changes`.
 
 ## 7. Decisiones
 
-- D011: Analytics no se implementa.
+- D011: Analytics no se implementa (vigente hasta retomar el analista de Premium, D018).
 - D012: catalogo Basico / Avanzado / Premium; calendar fuera de oferta; limites duros escalonados.
 - D016: plan asignado solo por SADM; Stripe retirado; cobro pendiente de decidir.
+- D017: historico visible (`history_months`) solo para facturas y tickets; contratos por vigencia. Pendiente de implementar.
+- D018: analista de datos de Premium aplazado hasta despues del producto minimo.
+- D022: `members_max` 3 / 9 / 20 (implementado, `p74`).
+- D023: chat con un cupo mensual (`chat_questions_per_month`) y limite de ritmo, sin topes diarios. Pendiente de implementar.
