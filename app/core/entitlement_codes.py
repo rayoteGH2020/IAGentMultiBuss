@@ -181,7 +181,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("0"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("3"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("30"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("6"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("0"),
     },
     PLAN_CODE_ADVANCED: {
@@ -193,7 +193,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("80"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("9"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("100"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("15"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
     },
     PLAN_CODE_PREMIUM: {
@@ -205,7 +205,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("200"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("20"),
-        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("250"),
+        LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("30"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
     },
 }

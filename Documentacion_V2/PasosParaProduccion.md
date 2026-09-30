@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-09-30: `p75_contract_amounts_01`).
+- [ ] `alembic heads` = un unico head (a 2026-09-30: `p76_llm_budget_01`).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -434,7 +434,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p75_contract_amounts_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p76_llm_budget_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -560,7 +560,7 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
   - Langfuse prod aplazado (sin tracing; el coste sigue en `llm_calls`).
   - CSP con `unsafe-inline`/`unsafe-eval` por Alpine.
   - Sin staging: el primer despliegue va directo a prod (mitigacion: backup de `deploy.sh` + restore probado en Fase 9).
-  - Spec de planes no implementada del todo: seed §9 (presupuesto LLM 6/15/30 € frente a 30/100/250 en codigo) y D023 (cuota mensual de chat; mientras, `CHAT_DAILY_MESSAGE_LIMIT`, Fase 5.7).
+  - Spec de planes no implementada del todo: limites mensuales y `quota_pending` (pasos 3-4 de su §9; hoy limites diarios) y D023 (cuota mensual de chat; mientras, `CHAT_DAILY_MESSAGE_LIMIT`, Fase 5.7). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
   - Cobro de planes fuera de la app (D016): factura manual, plan asignado por SADM.
   - WhatsApp/Telegram, Google Calendar y voz sin QA real (fuera de alcance).
 - [ ] Firma en `Paso10_QA_Release_Produccion.md` (seccion "Registro de releases", con su plantilla).

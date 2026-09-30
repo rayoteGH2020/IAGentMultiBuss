@@ -76,7 +76,9 @@ async def test_basic_has_knowledge_premium_excludes_calendar(
     assert premium_ents.has(FEATURE_ANALYTICS) is False
     assert advanced_ents.has(FEATURE_APPOINTMENTS) is True
     assert basic_ents.limit(LIMIT_DOCUMENTS_PER_DAY) == Decimal("50")
-    assert premium_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) == Decimal("250")
+    assert basic_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) == Decimal("6")
+    assert advanced_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) == Decimal("15")
+    assert premium_ents.limit(LIMIT_LLM_BUDGET_EUR_MONTH) == Decimal("30")
 
 
 @pytest.mark.asyncio

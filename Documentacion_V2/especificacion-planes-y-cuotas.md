@@ -411,7 +411,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 
 ## 9. Producto mínimo: orden sugerido
 
-1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month`. `analytics` en Premium se añade al retomar el analista (D018).
+1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
 2. Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.
 3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable.
 4. Cuotas en facturas y tickets (`quota_pending`).

@@ -54,9 +54,10 @@ def test_advanced_and_premium_share_features_differ_limits() -> None:
     assert catalog_features_for(PLAN_CODE_ADVANCED) == catalog_features_for(PLAN_CODE_PREMIUM)
     assert FEATURE_APPOINTMENTS in catalog_features_for(PLAN_CODE_ADVANCED)
     assert FEATURE_CALENDAR_GOOGLE not in catalog_features_for(PLAN_CODE_PREMIUM)
-    assert catalog_limits_for(PLAN_CODE_BASIC)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("30")
-    assert catalog_limits_for(PLAN_CODE_ADVANCED)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("100")
-    assert catalog_limits_for(PLAN_CODE_PREMIUM)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("250")
+    # D026: presupuesto de IA 6 / 15 / 30 EUR (spec planes §3.2).
+    assert catalog_limits_for(PLAN_CODE_BASIC)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("6")
+    assert catalog_limits_for(PLAN_CODE_ADVANCED)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("15")
+    assert catalog_limits_for(PLAN_CODE_PREMIUM)[LIMIT_LLM_BUDGET_EUR_MONTH] == Decimal("30")
     assert catalog_limits_for(PLAN_CODE_PREMIUM)[LIMIT_DOCUMENTS_PER_DAY] == Decimal("800")
 
 

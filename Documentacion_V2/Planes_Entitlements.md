@@ -63,8 +63,8 @@ Pendiente / ops:
 ## 4. Limites duros en el seed actual (D012)
 
 > **Cifras vigentes de producto: `especificacion-planes-y-cuotas.md` §3** (limites mensuales, presupuesto de IA 6 / 15 / 30 EUR, chat D023, etc.).
-> Esta tabla describe lo que hoy tiene el seed del codigo (`PLAN_LIMITS`). Se alinea con la especificacion en el paso 1 de su §9; hasta entonces difieren, sobre todo `llm_budget_eur_month` (30 / 100 / 250 aqui) y los limites diarios, que la especificacion sustituye por mensuales.
-> Excepcion ya alineada: `members_max` 3 / 9 / 20 (D022, migracion `p74`).
+> Esta tabla describe lo que hoy tiene el seed del codigo (`PLAN_LIMITS`). Difiere de la especificacion en los limites diarios, que esta sustituye por mensuales (pasos 3-4 de su §9 y D023, pendientes).
+> Ya alineados: `members_max` 3 / 9 / 20 (D022, migracion `p74`) y `llm_budget_eur_month` 6 / 15 / 30 (D026, migracion `p76`).
 
 | Limit code | Unidad | Basico | Avanzado | Premium |
 | --- | --- | ---: | ---: | ---: |
@@ -76,7 +76,7 @@ Pendiente / ops:
 | `channel_messages_per_hour` | mensajes/cliente | 0 | 80 | 200 |
 | `voice_notes_per_hour` | notas | 0 | 0 | 0 |
 | `members_max` | seats | 3 | 9 | 20 |
-| `llm_budget_eur_month` | EUR | 30 | 100 | 250 |
+| `llm_budget_eur_month` | EUR | 6 | 15 | 30 |
 | `channel_external_slots` | integraciones | 0 | 2 | 2 |
 
 ## 5. Precios

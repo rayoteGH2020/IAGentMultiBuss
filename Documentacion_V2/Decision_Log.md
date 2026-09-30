@@ -446,3 +446,19 @@ Decision (cerrada 2026-09-30, implementada): cuando un proveedor LLM rechaza por
 Motivo: caso real en dev (2026-09-30), creditos de Google AI Studio agotados; con clientes reales nadie se habria enterado.
 
 Consecuencia: `document_processing_errors.provider_error_code` / `provider_error_user_message`, `app/llm/provider_alerts.py`, `app/services/llm_provider_alert_service.py`, `app/jobs/provider_alert_jobs.py`.
+
+## D026 - Presupuesto mensual de IA por plan: 6 / 15 / 30 EUR
+
+Decision (cerrada 2026-09-30, implementada): `llm_budget_eur_month` = **6 / 15 / 30 EUR** (Basico / Avanzado / Premium), segun `especificacion-planes-y-cuotas.md` §3.2 y paso 1 de su §9. Sustituye a 30 / 100 / 250 (seed p67).
+
+Motivo:
+
+- El presupuesto es un **techo**, no el gasto esperado. Debe quedar por encima del uso normal (Basico ≈1,2-1,7 EUR/mes medido en dev, muestra pequena) y por debajo de lo que deja margen con el precio (22 / 49 / 99 EUR sin IVA).
+- Con 30 EUR en Basico, un tenant con uso anomalo (script, cuenta comprometida o uso intensivo sostenido dentro de los limites diarios actuales) podia costar en IA mas que el precio del plan.
+
+Consecuencia:
+
+- Seed `PLAN_LIMITS` y migracion `p76_llm_budget_01` (solo `plan_entitlements`; los overrides por tenant no se tocan).
+- Al 100 % se bloquea toda llamada al LLM (`ensure_llm_budget`): los documentos fallan con "Has alcanzado el presupuesto mensual de IA de tu plan" y se pueden reintentar en el siguiente periodo; todavia no pasan a `quota_pending` (paso 4 de §9). Avisos y corte del chat sin cambios (D019: 80 % email, 90 % corte del chat).
+- Un tenant que ya haya gastado mas del nuevo tope en el mes en curso queda bloqueado hasta el siguiente periodo o hasta un override del SADM en `/sadm/plans`.
+- La cifra de uso normal sale de pocas muestras: revisar con trafico real (coste por tenant en `/sadm` y `llm_calls`) y ajustar por override o nuevo seed.
