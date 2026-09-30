@@ -104,7 +104,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 | `assistant_messages_per_month` | mensajes enviados por el asistente | 0 | 800 | 2.500 |
 | `reminders_per_month` | recordatorios de cita | 0 | 200 | 600 |
 | `members_max` | usuarios | 1 | 3 | 10 |
-| `history_months` | meses visibles | 12 | 36 | sin límite |
+| `history_months` | meses visibles (facturas y tickets; contratos por vigencia, D017) | 12 | 36 | sin límite |
 
 ### 3.2 Control de coste y protección técnica (el cliente no los ve)
 
@@ -202,17 +202,22 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 4.6 Asistente para clientes finales (WhatsApp / Telegram, Avanzado y Premium)
 - **Qué hace:** responde con el conocimiento del negocio y gestiona citas (crear, modificar, cancelar, consultar).
-- **Conocimiento en el prompt, sin RAG:**
-  - El perfil del negocio (preguntas frecuentes, servicios, tarifas, horarios, formas de pago) ocupa 2.000-5.000 tokens y va entero en el prompt.
-  - Si supera unos 8.000 tokens, se recurre a la búsqueda sobre `knowledge`.
-  - **Estado actual (verificado):** el conocimiento no va en el prompt. El asistente lo consulta con las herramientas de `build_channel_registry` (`search_knowledge`, búsqueda semántica sobre fragmentos indexados con `voyage-3-lite`) y reenvía los últimos 10 mensajes de la conversación, solo texto.
+- **Diseño actual (verificado):**
+  - El conocimiento no va en el prompt: el asistente lo consulta con `run_tool_loop` y las herramientas de `build_channel_registry` (`search_knowledge`, búsqueda semántica sobre los fragmentos indexados de los documentos de conocimiento con `voyage-3-lite`).
+  - Reenvía los últimos 10 mensajes de la conversación, solo texto.
+  - La caché semántica de respuestas guarda una respuesta solo si su confianza supera `channel_cache_min_confidence`; la confianza sale de la puntuación de las citas de `search_knowledge` (`channel_chat_service.py`).
 - **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`, `channel_chat_service.py`), el mismo que el chat de la app. Los embeddings de `voyage-3-lite` se usan también como caché de respuestas de los canales. Coste estimado: ≈0,003 € por mensaje (2 llamadas de ≈4.000 / 150 tokens + 1 embedding). **Sin medir todavía:** tomar la media real de `llm_calls` en cuanto haya tráfico.
 - **Prompt caching:**
-  - Gemini aplica caché implícita cuando el inicio del prompt se repite; no hace falta marcar nada. Para aprovecharla:
-  - **Orden fijo del prompt:** herramientas de citas → instrucciones (`.txt` versionado) → conocimiento del negocio → historial → mensaje nuevo. **Nada variable antes del historial:** ni fecha, ni hora, ni nombre del cliente final, ni identificadores de petición. La fecha y la disponibilidad van con el mensaje nuevo.
-  - **El conocimiento se serializa de forma determinista:** mismo orden de campos, orden estable de listas y sin espacios variables. Se guarda la versión serializada y su hash, y solo se regenera cuando el dueño edita el conocimiento.
+  - Gemini aplica caché implícita cuando el inicio del prompt se repite; no hace falta marcar nada. Para no impedirla: **nada variable antes del historial** (ni fecha, ni hora, ni nombre del cliente final, ni identificadores de petición); la fecha y la disponibilidad van con el mensaje nuevo.
   - **A verificar** en la documentación de Google: tamaño mínimo para que se aplique la caché implícita con `gemini-3.5-flash-lite` y descuento que aplica. Tokens de caché en `llm_calls`: aplazado (Backlog P2b-20).
   - El Excel **no cuenta ningún descuento por caché**: si existe, el coste real será menor.
+- **Posible optimización futura, no comprometida (Backlog P2b-22): conocimiento en el prompt.**
+  - Idea: meter el conocimiento del negocio entero en el prompt en lugar de buscarlo con la herramienta. Ahorra la llamada de ida y vuelta a `search_knowledge` y aprovecha mejor la caché implícita, a cambio de 2.000-5.000 tokens más por llamada. Ahorro estimado ≈30-40 % por mensaje sobre ≈0,003 €, sin medir.
+  - Es un **rediseño** de algo que funciona. Condiciones antes de hacerlo:
+    - Medición real en `llm_calls` que lo justifique.
+    - Decidir de dónde sale el «perfil del negocio»: hoy el conocimiento son documentos subidos troceados en fragmentos, sin perfil estructurado ni límite de tamaño. Crear una entidad de perfil o concatenar fragmentos (con búsqueda como respaldo si pasa de ≈8.000 tokens, lo que deja dos caminos que mantener).
+    - Redefinir la confianza de la caché semántica, que hoy depende de las citas de `search_knowledge`: sin citas la caché no se llenaría.
+  - Si se hace: orden fijo del prompt (herramientas de citas → instrucciones `.txt` versionado → conocimiento → historial → mensaje nuevo) y conocimiento serializado de forma determinista (orden estable, sin espacios variables, versión serializada con hash que solo se regenera cuando el dueño lo edita).
   - Si alguna vez se enruta el asistente a un modelo de Anthropic, aplican sus reglas (marca `cache_control` explícita y mínimo de tokens por modelo).
 - **Citas con herramientas (tool use):** el modelo propone; la **disponibilidad, los solapamientos y el horario se validan en el código**. Verifica qué existe ya en `appointments`.
 - **Cuotas:**
@@ -233,7 +238,10 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 4.7 Usuarios e histórico
 - `members_max` se controla al invitar en Clerk (webhook o comprobación previa).
+- **`history_months` (D017):** oculta facturas y tickets con fecha de emisión anterior al límite. Los contratos activos o pendientes de vencer son siempre visibles, buscables en el chat y avisables; tras vencer o ser sustituidos, se aplica el mismo límite contado desde su fecha de fin.
+- Las pólizas seguirán la regla de los contratos cuando se resuelva su encaje en los planes (aparcado).
 - El histórico más antiguo que `history_months` **no se borra**, solo se oculta. Si el cliente sube de plan, vuelve a verse.
+- Aún no implementado (`history_months` no existe en el código, 2026-09-30): implementarlo ya con esta regla.
 
 ### 4.8 Control de coste (`llm_budget_eur_month`)
 - Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `task`, `prompt_version`, tokens y coste (**verificado**). No hay columna `feature`: la función se identifica con `task` + `prompt_version` (el asistente de canales usa `channel_external_v1`; el chat de la app, el prompt de `chat_prompts.py`; el analista, `task="sql"`). El chat de documentos y el de conocimiento son un único chat (`PROMPT_UNIFIED`) y una misma pregunta puede usar herramientas de ambos, así que no se separan por llamada. Los topes de preguntas de §3.2 son contadores de cuota y no dependen de `llm_calls`. Tokens de caché: aplazado (Backlog P2b-20). `plan_quota_service` acumula el gasto del periodo.
