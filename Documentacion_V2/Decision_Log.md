@@ -499,3 +499,27 @@ Consecuencia:
 
 - `Agents.md` (y `CLAUDE.md`, enlace simbolico a el), `Documentacion_V2/AGENTS.md` y `Arquitectura_V2.md` dicen Tailwind 3.4.
 - Migracion a v4: despues del producto minimo (Backlog P2b-29), con nueva entrada en este log.
+
+## D029 - Registro de actividad en BD (`activity_log`), separado de `audit_log`
+
+Decision (cerrada 2026-09-30, pendiente de implementar; fila 1b del cierre del producto minimo): una tabla `activity_log` registra por donde pasa la ejecucion de la app para poder corregir y mejorar durante el piloto. Consulta solo por SQL (sin pantalla en el SADM por ahora).
+
+- **Filas** (`kind`): `request` (plantilla de ruta, metodo, estado, duracion, HTMX), `job` (nombre del job ARQ, intento, resultado, duracion), `event` (cada `log.info/warning/error` del codigo, capturado por un procesador de structlog, con modulo, funcion y linea) y `error` (excepcion no controlada: tipo y fichero:linea:funcion del frame mas profundo de `app/`).
+- **Identificadores en todas:** `tenant_id`, `user_id` (id interno), `request_id`, `job_id` y `parent_request_id` (propagado al encolar desde `app/jobs/queue.py`, enlaza el job con la peticion que lo lanzo).
+- **Sin datos personales ni contenido:** de los datos extra de cada evento solo se guardan claves de una lista permitida (ids, codigos, estados, conteos, duraciones); nunca mensajes de excepcion, nombres, emails, nombres de fichero, importes, IP, parametros de URL ni cuerpos. No se registran DEBUG, `/static`, `/health` ni el polling HTMX de estado.
+- **Escritura:** buffer en memoria acotado por proceso (API y worker), volcado en bloque cada ~2 s fuera de la transaccion de la peticion; si falla, la app sigue. No se usa Redis (`noeviction`, 512 MB: una avalancha de eventos podria tumbar la cola ARQ).
+- **Seguridad:** RLS por tenant; `saas_app` solo `INSERT`; la purga la hace una funcion `SECURITY DEFINER` que solo borra filas mas antiguas que la retencion, lanzada por un cron ARQ.
+- **Retencion:** `ACTIVITY_LOG_RETENTION_DAYS`, 90 por defecto; `0` = no se purga nunca.
+
+Motivo:
+
+- Hoy el recorrido del usuario no queda en ningun sitio: `audit_log` excluye a proposito navegacion, listados y polling (AGENTS.md §7), los logs de consola se rotan en dias (Docker 10 MB x 5) y no hay un identificador que una peticion, logs y jobs.
+- Separada de `audit_log`: este es forense, sin ruido y solo insercion (P2c-1); mezclar actividad de depuracion rompe ambas reglas.
+- Capturar los eventos de structlog reutiliza los ~270 puntos de log que ya existen sin tocarlos.
+
+Consecuencia:
+
+- Migracion nueva (tabla, indices por fecha, tenant y `request_id`, RLS, permisos, funcion de purga), middleware de peticion, hooks `on_job_start`/`after_job_end` de ARQ, procesador de structlog y cron de purga; tests de lista permitida (sin datos personales), RLS y purga.
+- Nota en AGENTS.md §7 que distinga auditoria (`audit_log`) de actividad (`activity_log`).
+- `user_id` es dato personal: retencion limitada y mencion en la politica de privacidad.
+- Volumen estimado: 1-3 millones de filas al mes con 10 usuarios; revisar con uso real.

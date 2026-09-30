@@ -348,6 +348,8 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 `DOCUMENT_MAX_IMAGE_EDGE_PX=20000`, `DOCUMENT_MAX_IMAGE_PIXELS=40000000`, `KNOWLEDGE_MAX_FILE_SIZE_BYTES=15728640`. No usar los valores bajos de las pruebas manuales de Paso01.
 
+**Registro de actividad (D029, cuando este implementado):** `ACTIVITY_LOG_RETENTION_DAYS=90` (dias que se conservan las filas de `activity_log`; `0` = no purgar).
+
 **Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
 
 ### 5.8 Email (obligatorio tambien en soft launch)

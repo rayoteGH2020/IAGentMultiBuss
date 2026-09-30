@@ -13,6 +13,7 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | --- | --- | --- | --- | ---: |
 | 0 | Base de cupos mensuales (bloque 1) | Tabla `quota_usage`, consumo atomico y devoluciones, mes natural, ampliacion del SADM por mes, cambios de plan programados | **Hecho** (`67220be`) | — |
 | 1 | Seguridad P2c 1-3 | `audit_log` solo insercion, datos personales fuera de los logs, IP de auditoria. Antes que los bloques: fija la norma de logs sin datos personales y P2c-2 toca el flujo de subida del bloque 2 | Pendiente | 0,5 |
+| 1b | Registro de actividad en BD (D029) | Tabla `activity_log` para seguir la ejecucion y localizar errores, consultada solo por SQL: una fila por peticion (`request`: plantilla de ruta, metodo, estado, duracion, HTMX), por job ARQ (`job`: nombre, intento, resultado, duracion), por cada `log.info/warning/error` del codigo (`event`: nombre, nivel, modulo, funcion, linea) y por excepcion no controlada (`error`: tipo y fichero:linea:funcion de `app/`, sin mensaje). Todas con `tenant_id`, `user_id`, `request_id`, `job_id` y `parent_request_id` (enlaza el job con la peticion que lo lanzo). Datos extra solo de una lista permitida (ids, codigos, estados, conteos, duraciones); sin IP, parametros de URL, cuerpos ni DEBUG; excluye `/static`, `/health` y polling HTMX. Buffer en memoria por proceso volcado en bloque cada ~2 s (no Redis: `noeviction`). RLS; `saas_app` solo inserta; purga por funcion `SECURITY DEFINER` + cron con `ACTIVITY_LOG_RETENTION_DAYS` (90 por defecto, 0 = no purgar). Va tras la fila 1 para que los bloques 2-7 y el piloto queden registrados | Pendiente | 1,5-2 |
 | 2 | Facturas y tickets (bloque 2) | Bolsa 40 + 30; se consume al extraer bien y se devuelve al descartar; `quota_pending` y job que los procesa al renovarse el cupo o tras una ampliacion; aviso al 80 %; hash SHA-256 contra duplicados; `documents_per_day` queda solo como freno alto contra scripts | Pendiente | 1,5-2 |
 | 3 | Reintentos (bloque 3) | 40 al mes y maximo 3 por documento; al agotarlos, `failed` con "Revision manual" en la interfaz; se retira `document_retries_per_day` | Pendiente | 0,5 |
 | 4 | Chat (bloque 4) | 400 preguntas al mes (D023), limite de ritmo por usuario y mensaje al 100 %; se retiran los tres topes diarios del chat (cierra P2b-24) | Pendiente | 1 |
@@ -22,7 +23,7 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2; cierra P2b-10), fusionar el PR #1 en `main` (el tag de produccion sale de `main`) | Pendiente | 0,5 |
 | 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13, en dos tandas. **Tanda A, desde ya y en paralelo a las filas 1-8 (Fases 2-7, no dependen del codigo):** dominio, VPS, buckets R2, claves LLM de prod y clave de Google aparte para CI (P2b-2), rotacion de secretos (P0-1), endurecer la VPS, Machine Identity de Infisical, Infisical `prod` con SMTP y `EMAIL_SADM` y sin `LLM_MODEL_*` para que rijan los modelos del codigo (P2b-1), Clerk prod con limite de miembros por organizacion >= 20 (P2b-23) y webhook con `user.deleted` (D021), DNS. **Tanda B, despues de la fila 8 (Fases 8-13):** repaso de la Fase 5 por si los bloques anadieron variables, primer deploy, backups y restore probado, alta del piloto con telefono del admin (P2b-19), QA manual de la Fase 11 con alcance Clerk/R2/documentos/chat/planes (P1-7), verificacion de seguridad y firma en `Paso10` | Pendiente (ops) | 1-2 |
 
-Codigo pendiente: unos 7,5-9 dias.
+Codigo pendiente: unos 9-11 dias.
 
 ### Orden de ejecucion
 
@@ -31,12 +32,13 @@ Codigo pendiente: unos 7,5-9 dias.
 **Codigo (asistente), en este orden:**
 
 1. **Fila 1, seguridad P2c 1-3.** Primero porque fija la norma de logs sin datos personales para todo lo que viene, y P2c-2 toca el flujo de subida del bloque 2.
-2. **Filas 2 -> 3, facturas y tickets y reintentos.** Mismo flujo de documentos, seguidas.
-3. **Fila 4, chat.**
-4. **Fila 5, contratos.** Reutiliza el hash SHA-256 del bloque 2.
-5. **Fila 6, historico.**
-6. **Fila 7, consumo en "Mi cuenta".** Al final, para mostrar todos los cupos ya aplicados.
-7. **Fila 8, cierre del codigo.** Suite completa, smoke con `saas_app` y fusion del PR #1 en `main`.
+2. **Fila 1b, registro de actividad (D029).** Despues de P2c porque aplica su norma de logs sin datos personales; antes de los bloques para que todo lo nuevo quede registrado.
+3. **Filas 2 -> 3, facturas y tickets y reintentos.** Mismo flujo de documentos, seguidas.
+4. **Fila 4, chat.**
+5. **Fila 5, contratos.** Reutiliza el hash SHA-256 del bloque 2.
+6. **Fila 6, historico.**
+7. **Fila 7, consumo en "Mi cuenta".** Al final, para mostrar todos los cupos ya aplicados.
+8. **Fila 8, cierre del codigo.** Suite completa, smoke con `saas_app` y fusion del PR #1 en `main`.
 
 **Ops (usuario), fila 9 en dos tandas:**
 
