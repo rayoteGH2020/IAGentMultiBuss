@@ -39,6 +39,7 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Paso09_Billing_Stripe.md` | Historico: Stripe — **RETIRADO** (D016). Cobro de planes pendiente de decidir. |
 | `Paso10_QA_Release_Produccion.md` | QA manual, release y operacion de produccion. |
 | `Paso11_Despliegue_VPS.md` | Despliegue en VPS con Docker Compose + Caddy (D013). |
+| `Paso12_ConexionWa_Tel_Calendario.md` | Citas por WhatsApp/Telegram sobre el modulo interno de citas (D030). Pendiente, fuera del producto minimo. |
 | `PasosParaProduccion.md` | Checklist consolidada de go-live (variables, Clerk, infra, QA, rollback). |
 
 ## Estado del repositorio observado

@@ -556,6 +556,7 @@ Se valida el comportamiento del codigo desplegado (`Planes_Entitlements.md`). Es
 
 - [ ] Google OAuth con callback de prod; voz → evento.
 - [ ] WhatsApp / Telegram con firma real y replay = no-op (`Paso01` §4).
+- [ ] Citas por WhatsApp / Telegram solo con `Paso12` cerrado (D030): validacion manual de su §9 (reserva, aislamiento entre clientes, antelacion minima de 24 h, cita del centro vista por WhatsApp, cache sin datos de citas).
 - [ ] Cobro de planes: pendiente de decidir metodo (D016, Backlog P3-2). Stripe retirado; no configurar `STRIPE_*`.
 
 ---
@@ -666,7 +667,7 @@ docker compose -f /opt/iagent/deploy/docker-compose.prod.yml exec -T redis \
 | --- | --- |
 | Langfuse prod | Instancia self-hosted (web, worker, ClickHouse, Redis, S3) o decision alternativa en `Decision_Log`; claves en Infisical |
 | Cobro de planes | Decidir metodo de cobro (D016, Backlog P3-2). Stripe retirado del codigo; el plan lo asigna el SADM en `/sadm/plans` |
-| WhatsApp / Telegram | Credenciales, webhook a URL prod, QA real + replay |
+| WhatsApp / Telegram | Credenciales, webhook a URL prod, QA real + replay; citas por canal con `Paso12` cerrado (D030) |
 | Google Calendar / voz | OAuth client de prod con redirect URI; no se publicita (D012) |
 | CSP estricta | Migrar a `@alpinejs/csp` y quitar `unsafe-inline`/`unsafe-eval` (Paso01 §6) |
 | Staging | Mismo compose en otra VPS con Infisical `staging` (secretos propios, `APP_ENV=staging`) para ensayar releases. Hasta entonces el entorno `staging` de Infisical queda vacio |

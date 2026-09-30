@@ -523,3 +523,27 @@ Consecuencia:
 - Nota en AGENTS.md §7 que distinga auditoria (`audit_log`) de actividad (`activity_log`).
 - `user_id` es dato personal: retencion limitada y mencion en la politica de privacidad.
 - Volumen estimado: 1-3 millones de filas al mes con 10 usuarios; revisar con uso real.
+
+## D030 - Citas por WhatsApp y Telegram sobre el modulo interno de citas
+
+Decision (cerrada 2026-09-30, pendiente de implementar; `Paso12_ConexionWa_Tel_Calendario.md`, fuera del producto minimo): el asistente de canales gestiona citas sobre el modulo interno (`appointments`, horario del centro, profesionales, servicios) y deja de usar Google Calendar.
+
+- **Google Calendar fuera de los canales:** se retiran las tools `calendar_tools` del registry del canal. El codigo de Google Calendar de la app (`/calendar`, voz) se conserva sin evolucionar (D012).
+- **Identidad del cliente final:** `(channel, customer_identifier)` del webhook (telefono E.164 en WhatsApp, `chat_id` en Telegram), nunca un dato que proponga el modelo. Toda lectura o cambio de citas desde el canal filtra por esa identidad.
+- **Citas creadas en la app:** en WhatsApp el cliente ve, cambia y cancela tambien las citas cuyo telefono normalizado (E.164) coincide con su numero, porque Meta lo verifica. En Telegram, solo las creadas desde ese chat (el telefono lo escribe el cliente).
+- **Antelacion minima:** cambiar o cancelar desde el canal exige `channel_min_notice_hours` por tenant, **24 h por defecto**, editable por el admin en `/settings/business-hours`. Dentro del plazo, el asistente da el telefono del negocio. No afecta a la app ni a la creacion de citas.
+- **Estado inicial:** las citas del canal nacen `scheduled`; el centro las confirma en la app si trabaja asi.
+- **Sin `appointments`** (p. ej. override): el canal no expone tools de citas.
+
+Motivo:
+
+- Avanzado y Premium venden citas + WhatsApp/Telegram (D012), pero el canal reservaba en Google Calendar, fuera de oferta.
+- Las tools de Google Calendar del canal listaban y cancelaban citas de todo el tenant sin filtrar por cliente: un cliente final podia ver o cancelar citas ajenas.
+- Permitir cambiar la proxima cita por WhatsApp aunque la diera el centro por telefono es el uso esperado en clinicas y centros.
+
+Consecuencia:
+
+- Migracion `p78` en `appointments`: `channel`, `channel_customer_id`, `client_phone_normalized` (con backfill) e indices.
+- Tools nuevas de la familia `scheduling` sobre `internal_appointment_service` y `appointment_slot_service`; prompt `channel_external_v2`.
+- Las respuestas de turnos con tools de citas no entran en la cache semantica del canal.
+- Normalizador E.164 (España por defecto) con la dependencia `phonenumbers` (aprobada 2026-09-30, AGENTS §1): cubre tambien numeros extranjeros.

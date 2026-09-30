@@ -233,7 +233,9 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
     - Redefinir la confianza de la caché semántica, que hoy depende de las citas de `search_knowledge`: sin citas la caché no se llenaría.
   - Si se hace: orden fijo del prompt (herramientas de citas → instrucciones `.txt` versionado → conocimiento → historial → mensaje nuevo) y conocimiento serializado de forma determinista (orden estable, sin espacios variables, versión serializada con hash que solo se regenera cuando el dueño lo edita).
   - Si alguna vez se enruta el asistente a un modelo de Anthropic, aplican sus reglas (marca `cache_control` explícita y mínimo de tokens por modelo).
-- **Citas con herramientas (tool use):** el modelo propone; la **disponibilidad, los solapamientos y el horario se validan en el código**. Verifica qué existe ya en `appointments`.
+- **Citas con herramientas (tool use):** el modelo propone; la **disponibilidad, los solapamientos y el horario se validan en el código**.
+  - **Estado (verificado 2026-09-30):** el módulo de citas internas existe (horario del centro, excepciones, profesionales con especialidades, servicios, `appointments` con restricción GiST contra solapes por profesional), pero el canal **no lo usa**: sus tools de citas van a Google Calendar (fuera de oferta, D012) y no filtran por cliente final.
+  - **Diseño acordado (D030, `Paso12_ConexionWa_Tel_Calendario.md`):** tools sobre el módulo interno (servicios, profesionales, huecos, crear, ver, cambiar y cancelar); identidad del cliente final tomada del webhook; en WhatsApp el cliente gestiona también las citas creadas en la app con su número; antelación mínima por tenant para cambiar o cancelar (24 h por defecto); los turnos con citas no entran en la caché semántica.
 - **Cuotas:**
   - Se consume 1 de `assistant_messages_per_month` por mensaje enviado y 1 de `reminders_per_month` por recordatorio.
   - **Al 80 %:** aviso al dueño.
@@ -422,7 +424,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 7. Usuarios (hecho, D022) e histórico (`history_months`, bloque 6).
 8. Interfaz de consumo y avisos.
 9. Trabajos programados: reinicio de periodos y purga de contratos borrados (los avisos de contratos, post producto mínimo).
-10. Asistente: cuotas de mensajes y recordatorios, anti-abuso, corte por presupuesto (P2b-17), límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales). **[Post producto mínimo]**: WhatsApp/Telegram quedan fuera del soft launch. El conocimiento en el prompt es una optimización no comprometida (P2b-22).
+10. Asistente: cuotas de mensajes y recordatorios, anti-abuso, corte por presupuesto (P2b-17), límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales). Requisito previo: conectar las citas del canal al módulo interno (`Paso12`, D030). **[Post producto mínimo]**: WhatsApp/Telegram quedan fuera del soft launch. El conocimiento en el prompt es una optimización no comprometida (P2b-22).
 11. Analista de datos (Premium). **[Post producto mínimo, D018]**
 12. **[Fase posterior]** Packs, cobro, exportación CSV / Excel, avisos de contratos y niveles de soporte. La integración contable y el envío a gestorías quedan fuera por ahora.
 
@@ -451,4 +453,4 @@ Crea `docs/analisis-planes-y-cuotas.md` con:
 - **Registrar la decisión nueva** que sustituya a D011 **al retomar el analista** (D018).
 - **Premium:** con todos los topes al 100 % el coste de IA (≈41 €) supera el presupuesto de 30 €. ¿Se deja que el tope limite, se sube el presupuesto o se bajan los topes del analista y los chats? Durante el producto mínimo, sin analista (D018), el peor caso es de unos 23 € y no hay problema; decidir al retomarlo.
 - ~~**`document_retries_per_month`:** confirmar que sustituye al límite diario, con máximo 3 reintentos por documento.~~ **Resuelto (D027):** sí, 40 / 150 / 400 al mes y máximo 3 por documento.
-- **Citas simultáneas:** ¿se admiten (varios profesionales o gabinetes)? ¿Hace falta el concepto de «profesional» o «recurso» en `appointments`?
+- ~~**Citas simultáneas:** ¿se admiten (varios profesionales o gabinetes)? ¿Hace falta el concepto de «profesional» o «recurso» en `appointments`?~~ **Resuelto en el código (p30):** existe `professionals` (con especialidades y horario propio); se admiten citas simultáneas de profesionales distintos y la restricción `ex_appointments_no_overlap` impide solapes del mismo profesional. No hay concepto de gabinete o sala.

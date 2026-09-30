@@ -60,7 +60,7 @@ Codigo pendiente: unos 9-11 dias.
 
 Sin cambios en el producto minimo: knowledge mantiene sus limites actuales (la spec no le fija limites mensuales, §11; gap aceptado en la Fase 13). El paso 9 de la spec §9 no necesita bloque propio: el reinicio de periodos es automatico, el job de `quota_pending` va en el bloque 2 y la purga esta aplazada (P3-8).
 
-Fuera del producto minimo (anotado): staging, cobro de planes (P3-2), WhatsApp/Telegram, Google Calendar y voz, Langfuse prod, analista Premium (P3-1b), purga de contratos (P3-8), `llm_calls` borrados con el documento (P2b-26), CSP estricta (P2c-6).
+Fuera del producto minimo (anotado): staging, cobro de planes (P3-2), WhatsApp/Telegram (con citas por canal, P2-6 / Paso12), Google Calendar y voz, Langfuse prod, analista Premium (P3-1b), purga de contratos (P3-8), `llm_calls` borrados con el documento (P2b-26), CSP estricta (P2c-6).
 
 ## P0 - Seguridad y control de coste
 
@@ -96,6 +96,7 @@ Fuera del producto minimo (anotado): staging, cobro de planes (P3-2), WhatsApp/T
 | 3 | Cache semantica canales + invalidacion | **Hecho** |
 | 4 | Alertas de coste por turnos chat/tools | Parcial: emails al admin (80 %) y al SADM (90 %), corte del chat al 90 % y banner al 100 % hechos (D019); avisos dentro de la app en el bloque 7 del cierre del producto minimo |
 | 5 | Prompts contratos/seguros | **Hecho** base (Paso06) |
+| 6 | Citas por WhatsApp/Telegram sobre el modulo interno de citas (D030, `Paso12_ConexionWa_Tel_Calendario.md`). Hoy el canal usa Google Calendar (fuera de oferta, D012) y sus tools listan y cancelan citas de todo el tenant sin filtrar por cliente final: **no activar citas por canal para clientes reales hasta cerrar este item** | **Post producto minimo** (2026-09-30; bloqueante antes de activar WhatsApp/Telegram con citas) |
 
 ## P2b - Modelos LLM, evals y deuda de extraccion (2026-09-25)
 

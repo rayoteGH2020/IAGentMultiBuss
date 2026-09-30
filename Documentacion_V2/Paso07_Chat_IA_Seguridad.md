@@ -55,6 +55,7 @@ Objetivo: endurecer todas las superficies conversacionales antes de ampliar alca
 - [x] Confidence threshold.
 - [x] Escalado/fallback si baja confianza.
 - [x] Cache semantica no cruza tenants ni queda obsoleta indefinidamente.
+- [ ] Citas por canal aisladas por cliente final y sobre el modulo interno: `Paso12` (D030). Hoy las tools de Google Calendar del canal no filtran por cliente.
 
 ### Voz
 
@@ -92,7 +93,8 @@ Pendiente con tu sesion (actualizado 2026-09-30; la checklist esta solo en `Paso
 
 - Chat con citas y Langfuse sin contenido: Fase 11.3.
 - SADM asigna plan y la feature denegada no aparece ni abre: Fase 11.4.
-- WhatsApp, Telegram y voz → Google Calendar reales: fuera del soft launch ("Aplazado").
+- WhatsApp y Telegram reales: fuera del soft launch ("Aplazado"). Las citas por canal pasan del Google Calendar actual al modulo interno de citas en `Paso12_ConexionWa_Tel_Calendario.md` (D030); hasta cerrarlo no se activan para clientes reales.
+- Voz → Google Calendar real: fuera del soft launch ("Aplazado"; fuera de oferta, D012).
 
 ## Criterios de aceptacion
 

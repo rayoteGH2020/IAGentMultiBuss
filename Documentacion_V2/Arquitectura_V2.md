@@ -98,9 +98,9 @@ No hay rutas de analytics SQL (D011 — no se implementara). Sin integracion de 
 | Documentos | Implementado | Facturas, tickets, contratos, seguros. Tipo verificado, quality gate, multi-IVA, `processing_charges` (Paso06). |
 | Chat documental | Implementado | Tools tipadas, citas verificadas, cuota user+tenant, anti-exfil (Paso07). |
 | Knowledge/RAG | Implementado | Upload/OCR/FAQ, retrieval hibrido, embeddings Voyage, aislamiento tenant (Paso07). |
-| Canales WA/TG | Implementado | Integraciones, jobs, firma, body limit, dedupe Redis, gates. QA manual prod pendiente. |
+| Canales WA/TG | Implementado (citas: pendiente) | Integraciones, jobs, firma, body limit, dedupe Redis, gates, conocimiento. Las citas del canal usan hoy Google Calendar y no filtran por cliente final; pasan al modulo de citas internas en Paso12 (D030). QA manual prod pendiente. |
 | Calendario Google/voz | Implementado | OAuth cifrado, voz → evento. Gates `calendar_*`. QA manual pendiente. |
-| Citas internas | Implementado | Scheduling multi-profesional, API find-slots, gates `appointments`. |
+| Citas internas | Implementado | Scheduling multi-profesional (horario del centro, excepciones, profesionales con especialidades y horario propio, servicios), sin solapes por profesional (GiST), API find-slots, gates `appointments`. Solo desde la app; conexion con WhatsApp/Telegram en Paso12 (D030). |
 | SADM | Implementado | Orgs/miembros RO; usage; docs rechazados; chat traces/usage; **planes** assign/override. Identidades solo Clerk (D005). |
 | Planes/entitlements | Implementado | D012: `basic`/`advanced`/`premium`; gates; cuotas duros; calendar_* no publicados. Cupos mensuales en catalogo y `quota_usage` (D027); se aplican por bloques (Backlog, cierre del producto minimo). |
 | Analytics SQL | **No implementar** (D011) | Feature retirada del catalogo. Paso08 archivado. Sin rutas ni tablas. |

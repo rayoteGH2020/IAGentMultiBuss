@@ -42,6 +42,7 @@ Alias legacy: `free`/`medium` → `basic`; `high` → `advanced`; `total` → `p
 Pendiente / ops:
 
 - Metodo de cobro de los planes: **pendiente de decidir** (D016, Backlog P3-2). Stripe retirado.
+- Citas por WhatsApp/Telegram (parte de `appointments` + `channel_*` en Avanzado y Premium): hoy el canal solo resuelve bien el conocimiento; las citas pasan al modulo interno en `Paso12_ConexionWa_Tel_Calendario.md` (D030, Backlog P2-6). Al cerrarlo, actualizar la descripcion de Avanzado aqui y en `PLAN_META`.
 
 ## 3. Features
 
@@ -106,3 +107,4 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 - D023: chat con un cupo mensual (`chat_questions_per_month`) y limite de ritmo, sin topes diarios. Pendiente de implementar (bloque 4).
 - D026: `llm_budget_eur_month` 6 / 15 / 30 (implementado, `p76`).
 - D027: cupos mensuales, periodo, carga inicial de contratos, cambios de plan programados y retirada de limites diarios (bloque 1 implementado, `p77`).
+- D030: citas por WhatsApp/Telegram sobre el modulo interno, identidad del cliente final desde el webhook y antelacion minima de 24 h por tenant para cambiar o cancelar (pendiente, Paso12).

@@ -95,6 +95,7 @@ Casos:
 - Clerk: Svix, idempotencia, sync de org/user/membership updated/deleted.
 - WhatsApp: HMAC `X-Hub-Signature-256`, dedupe por message id.
 - Telegram: secret token, dedupe por update id.
+- Canales (WhatsApp/Telegram), tools con datos del cliente final: la identidad (`channel` + `customer_identifier`) sale siempre del webhook, nunca del modelo, y toda lectura o cambio de citas filtra por ella (D030). **Riesgo abierto hasta cerrar `Paso12`:** las tools de citas actuales (Google Calendar) listan y cancelan citas de todo el tenant; no activar citas por canal para clientes reales antes.
 - Pagos: sin proveedor (D016, Stripe retirado). Si se integra uno: firma del proveedor, body limit y dedupe anti-replay como el resto de webhooks.
 
 ## 6. LLM y Langfuse
