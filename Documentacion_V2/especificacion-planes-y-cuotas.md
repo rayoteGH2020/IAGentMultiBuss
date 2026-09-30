@@ -413,7 +413,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 
 1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
 2. Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.
-3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable.
+3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; falta conectarlo a cada límite (pasos 4 y siguientes).
 4. Cuotas en facturas y tickets (`quota_pending`).
 5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.

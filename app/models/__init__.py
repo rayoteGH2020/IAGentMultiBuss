@@ -48,6 +48,7 @@ from app.models.processing_charge import ProcessingCharge, ProcessingChargeStatu
 from app.models.professional import Professional
 from app.models.professional_specialty import ProfessionalSpecialty
 from app.models.professional_working_hour import ProfessionalWorkingHour
+from app.models.quota_usage import QuotaUsage
 from app.models.schedule_exception import ScheduleException
 from app.models.scheduling_service import SchedulingService
 from app.models.tenant import Tenant
@@ -99,6 +100,7 @@ __all__ = [
     "Professional",
     "ProfessionalSpecialty",
     "ProfessionalWorkingHour",
+    "QuotaUsage",
     "ScheduleException",
     "SchedulingService",
     "Tenant",

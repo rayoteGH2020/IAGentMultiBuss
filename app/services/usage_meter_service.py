@@ -2,25 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.billing_period import current_period_start
 from app.models.usage_meter import UsageMeter
 
 if TYPE_CHECKING:
+    from datetime import date, datetime
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def current_billing_period(*, now: datetime | None = None) -> date:
-    """Primer dia del mes calendario del instante dado (UTC)."""
-    instant = now or datetime.now(tz=UTC)
-    return date(instant.year, instant.month, 1)
+    """Primer dia del mes natural en curso, en hora de España (D027)."""
+    return current_period_start(now)
 
 
 async def get_meter(

@@ -165,8 +165,14 @@ async def assign_tenant_plan(
     reason: str | None = None,
     source: str = SOURCE_SADM,
     metadata: dict[str, Any] | None = None,
+    force_record: bool = False,
 ) -> Tenant:
-    """Asigna ``plan_code`` al tenant. Punto unico de cambio de plan (solo SADM)."""
+    """Asigna ``plan_code`` al tenant en el acto. Punto unico de escritura del plan.
+
+    El SADM entra por ``plan_change_service.request_plan_change`` (D027: solo la
+    primera asignacion es inmediata). ``force_record`` deja historial y audit
+    aunque el plan no cambie (primera asignacion del plan por defecto).
+    """
     code = normalize_plan_code(plan_code)
     if code not in PLAN_CODES:
         raise ValidationError(f"Plan code '{plan_code}' is not valid")
@@ -179,7 +185,7 @@ async def assign_tenant_plan(
         tenant.plan = plan.code
         await db.flush()
     await set_tenant_context(db, str(tenant.id))
-    if plan_changed:
+    if plan_changed or force_record:
         db.add(
             TenantPlanChange(
                 tenant_id=tenant.id,

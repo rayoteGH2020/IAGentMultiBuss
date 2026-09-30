@@ -40,7 +40,7 @@ from app.schemas.entitlements import (
     PlanSummary,
     QuotaUsage,
 )
-from app.services import plan_service
+from app.services import plan_change_service, plan_service
 
 log = get_logger(__name__)
 
@@ -187,7 +187,10 @@ def apply_kill_switch(base: Entitlements, disabled_features: list[str]) -> Entit
 
 
 def resolve_plan_code_for_tenant(tenant: Tenant) -> str:
-    """Prefer ``plan_code``; cae a ``plan`` legacy (free -> basic)."""
+    """Plan efectivo: cambio programado ya vencido (D027) o ``plan_code`` (legacy ``plan``)."""
+    due = plan_change_service.due_scheduled_plan_code(tenant)
+    if due is not None:
+        return normalize_plan_code(due)
     raw = getattr(tenant, "plan_code", None) or tenant.plan
     return normalize_plan_code(raw)
 

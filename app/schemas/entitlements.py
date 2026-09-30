@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime  # noqa: TC003 — Pydantic los requiere en runtime
 from decimal import Decimal
 from uuid import UUID  # noqa: TC003 — Pydantic requiere UUID en runtime
 
@@ -101,6 +102,22 @@ class EntitlementsOverride(BaseModel):
         if unknown:
             raise ValueError(f"unknown limit codes in override: {', '.join(unknown)}")
         return value
+
+
+class ScheduledPlanChange(BaseModel):
+    """Cambio de plan pendiente en ``tenants.settings['scheduled_plan_change']`` (D027).
+
+    Los cambios de plan tras la primera asignación se aplican el día 1 del mes
+    siguiente (``effective_date``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_code: str
+    effective_date: date
+    requested_by: UUID | None = None
+    requested_at: datetime
+    reason: str | None = None
 
 
 class PlanRead(BaseModel):

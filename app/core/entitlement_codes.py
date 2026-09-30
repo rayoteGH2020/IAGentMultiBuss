@@ -94,6 +94,17 @@ LIMIT_MEMBERS_MAX: Final = "members_max"
 LIMIT_LLM_BUDGET_EUR_MONTH: Final = "llm_budget_eur_month"
 LIMIT_CHANNEL_EXTERNAL_SLOTS: Final = "channel_external_slots"
 
+# Límites mensuales (spec planes §3, D027). Periodo = mes natural en hora de
+# España (app/core/billing_period.py); contadores en `quota_usage`.
+LIMIT_INVOICES_PER_MONTH: Final = "invoices_per_month"
+LIMIT_TICKETS_PER_MONTH: Final = "tickets_per_month"
+LIMIT_DOCUMENT_RETRIES_PER_MONTH: Final = "document_retries_per_month"
+LIMIT_CHAT_QUESTIONS_PER_MONTH: Final = "chat_questions_per_month"
+LIMIT_CONTRACT_UPLOADS_PER_MONTH: Final = "contract_uploads_per_month"
+LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Final = "contract_uploads_first_period"
+LIMIT_CONTRACTS_ACTIVE_MAX: Final = "contracts_active_max"
+LIMIT_CONTRACT_MAX_PAGES: Final = "contract_max_pages"
+
 LIMIT_CODES: Final[frozenset[str]] = frozenset(
     {
         LIMIT_DOCUMENTS_PER_DAY,
@@ -106,13 +117,50 @@ LIMIT_CODES: Final[frozenset[str]] = frozenset(
         LIMIT_MEMBERS_MAX,
         LIMIT_LLM_BUDGET_EUR_MONTH,
         LIMIT_CHANNEL_EXTERNAL_SLOTS,
+        LIMIT_INVOICES_PER_MONTH,
+        LIMIT_TICKETS_PER_MONTH,
+        LIMIT_DOCUMENT_RETRIES_PER_MONTH,
+        LIMIT_CHAT_QUESTIONS_PER_MONTH,
+        LIMIT_CONTRACT_UPLOADS_PER_MONTH,
+        LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD,
+        LIMIT_CONTRACTS_ACTIVE_MAX,
+        LIMIT_CONTRACT_MAX_PAGES,
     }
 )
+
+# Límites que se cuentan por periodo en `quota_usage` (el SADM puede ampliarlos
+# solo para el mes en curso).
+MONTHLY_QUOTA_CODES: Final[frozenset[str]] = frozenset(
+    {
+        LIMIT_INVOICES_PER_MONTH,
+        LIMIT_TICKETS_PER_MONTH,
+        LIMIT_DOCUMENT_RETRIES_PER_MONTH,
+        LIMIT_CHAT_QUESTIONS_PER_MONTH,
+        LIMIT_CONTRACT_UPLOADS_PER_MONTH,
+        LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD,
+    }
+)
+
+# Bolsa compensable (spec §4.2): facturas y tickets se muestran por separado pero
+# se controla el total. Los límites que no aparecen aquí son su propia bolsa.
+_DOCUMENTS_BAG: Final = (LIMIT_INVOICES_PER_MONTH, LIMIT_TICKETS_PER_MONTH)
+MONTHLY_QUOTA_BAGS: Final[dict[str, tuple[str, ...]]] = {
+    LIMIT_INVOICES_PER_MONTH: _DOCUMENTS_BAG,
+    LIMIT_TICKETS_PER_MONTH: _DOCUMENTS_BAG,
+}
+
+
+def monthly_quota_bag(code: str) -> tuple[str, ...]:
+    """Códigos que comparten tope con ``code`` (él mismo si no está en una bolsa)."""
+    return MONTHLY_QUOTA_BAGS.get(code, (code,))
+
 
 ENTITLEMENT_KIND_FEATURE: Final = "feature"
 ENTITLEMENT_KIND_LIMIT: Final = "limit"
 
 OVERRIDE_SETTINGS_KEY: Final = "entitlements_override"
+# Cambio de plan programado para el día 1 del mes siguiente (D027).
+SCHEDULED_PLAN_CHANGE_KEY: Final = "scheduled_plan_change"
 
 FEATURE_UI_LABELS: Final[dict[str, str]] = {
     FEATURE_DOCUMENTS: "Documentos",
@@ -143,6 +191,17 @@ LIMIT_UI_LABELS: Final[dict[str, str]] = {
     LIMIT_CHANNEL_EXTERNAL_SLOTS: "Canales de mensajería conectados",
     LIMIT_CHANNEL_MESSAGES_PER_HOUR: "Mensajes por cliente y hora en canales",
     LIMIT_MEMBERS_MAX: "Miembros del equipo",
+}
+
+# Nombre visible de los cupos mensuales (SADM; «Mi cuenta» los mostrará cuando
+# cada uno se aplique, D027).
+MONTHLY_QUOTA_UI_LABELS: Final[dict[str, str]] = {
+    LIMIT_INVOICES_PER_MONTH: "Facturas al mes",
+    LIMIT_TICKETS_PER_MONTH: "Tickets al mes",
+    LIMIT_DOCUMENT_RETRIES_PER_MONTH: "Reintentos de procesado al mes",
+    LIMIT_CHAT_QUESTIONS_PER_MONTH: "Preguntas de chat al mes",
+    LIMIT_CONTRACT_UPLOADS_PER_MONTH: "Altas de contratos al mes",
+    LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: "Altas de contratos en la carga inicial",
 }
 
 # Única fuente del nombre visible del plan (UI cliente, SADM y seed de `plans.name`).
@@ -183,6 +242,14 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_MEMBERS_MAX: Decimal("3"),
         LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("6"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("0"),
+        LIMIT_INVOICES_PER_MONTH: Decimal("40"),
+        LIMIT_TICKETS_PER_MONTH: Decimal("30"),
+        LIMIT_DOCUMENT_RETRIES_PER_MONTH: Decimal("40"),
+        LIMIT_CHAT_QUESTIONS_PER_MONTH: Decimal("400"),
+        LIMIT_CONTRACT_UPLOADS_PER_MONTH: Decimal("5"),
+        LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("15"),
+        LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("15"),
+        LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
     },
     PLAN_CODE_ADVANCED: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("200"),
@@ -195,6 +262,14 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_MEMBERS_MAX: Decimal("9"),
         LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("15"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
+        LIMIT_INVOICES_PER_MONTH: Decimal("150"),
+        LIMIT_TICKETS_PER_MONTH: Decimal("80"),
+        LIMIT_DOCUMENT_RETRIES_PER_MONTH: Decimal("150"),
+        LIMIT_CHAT_QUESTIONS_PER_MONTH: Decimal("1500"),
+        LIMIT_CONTRACT_UPLOADS_PER_MONTH: Decimal("10"),
+        LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("40"),
+        LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("40"),
+        LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
     },
     PLAN_CODE_PREMIUM: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("800"),
@@ -207,6 +282,14 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_MEMBERS_MAX: Decimal("20"),
         LIMIT_LLM_BUDGET_EUR_MONTH: Decimal("30"),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: Decimal("2"),
+        LIMIT_INVOICES_PER_MONTH: Decimal("400"),
+        LIMIT_TICKETS_PER_MONTH: Decimal("200"),
+        LIMIT_DOCUMENT_RETRIES_PER_MONTH: Decimal("400"),
+        LIMIT_CHAT_QUESTIONS_PER_MONTH: Decimal("4000"),
+        LIMIT_CONTRACT_UPLOADS_PER_MONTH: Decimal("30"),
+        LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("100"),
+        LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("100"),
+        LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
     },
 }
 

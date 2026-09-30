@@ -462,3 +462,25 @@ Consecuencia:
 - Al 100 % se bloquea toda llamada al LLM (`ensure_llm_budget`): los documentos fallan con "Has alcanzado el presupuesto mensual de IA de tu plan" y se pueden reintentar en el siguiente periodo; todavia no pasan a `quota_pending` (paso 4 de §9). Avisos y corte del chat sin cambios (D019: 80 % email, 90 % corte del chat).
 - Un tenant que ya haya gastado mas del nuevo tope en el mes en curso queda bloqueado hasta el siguiente periodo o hasta un override del SADM en `/sadm/plans`.
 - La cifra de uso normal sale de pocas muestras: revisar con trafico real (coste por tenant en `/sadm` y `llm_calls`) y ajustar por override o nuevo seed.
+
+## D027 - Cupos mensuales: periodo, carga inicial, cambios de plan y limites diarios
+
+Decision (cerrada 2026-09-30; bloque 1 implementado): los invitados del soft launch tienen los mismos limites que produccion (spec de planes §3), para que el piloto de datos reales. Reglas:
+
+- **Periodo:** mes natural en hora de Espana (del 1 al ultimo dia) para todos los contadores mensuales y para el presupuesto de IA (`usage_meter` pasa de UTC a hora de Espana). Si el alta no es el dia 1, la factura se prorratea fuera de la app (D016), pero las cuotas y limites son los del mes completo.
+- **Carga inicial de contratos:** la ventana de `contract_uploads_first_period` va del alta al final del primer mes completo (alta 28/10 → hasta 30/11; alta el dia 1 → ese mes). Evita que un alta a final de mes tenga solo unos dias para su carga inicial.
+- **Cambios de plan:** la primera asignacion del SADM es inmediata; las siguientes se programan para el dia 1 del mes siguiente (facturacion por mes completo). Pedir el plan actual anula el cambio pendiente. Subidas urgentes a mitad de mes: ampliacion del cupo del mes desde SADM.
+- **Ampliacion del SADM:** por cupo y solo para el mes en curso (`quota_usage.extra`), registrada en `audit_log` (`sadm.quota_extra_added`). Los overrides permanentes siguen en `entitlements_override`.
+- **Reintentos:** `document_retries_per_month` = 40 / 150 / 400 y maximo 3 reintentos manuales por documento (sustituye a `document_retries_per_day`).
+- **Limites diarios:** se retiran al sustituirlos por los mensuales; solo se conserva un tope de subidas por dia, alto, como freno contra scripts.
+- **Borrado diferido y purga de contratos a los 30 dias:** fuera del producto minimo (Backlog P3-8); se mantiene el borrado inmediato.
+
+Motivo:
+
+- Probar con los limites diarios actuales validaria un modelo que se va a sustituir y los datos del piloto no servirian para calibrar los mensuales.
+- Mes natural = mismo periodo para facturacion, cupos y presupuesto; sin periodos distintos por tenant en SADM.
+
+Consecuencia:
+
+- Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
+- Los limites mensuales estan en el catalogo pero **aun no se aplican**: cada bloque los activa y retira el diario correspondiente (2 facturas/tickets + `quota_pending`, 3 reintentos, 4 chat D023, 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta").

@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-09-30: `p76_llm_budget_01`).
+- [ ] `alembic heads` = un unico head (a 2026-09-30: `p77_quota_usage_01`).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -434,7 +434,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p76_llm_budget_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p77_quota_usage_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 

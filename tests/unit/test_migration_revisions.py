@@ -43,3 +43,19 @@ def test_llm_budget_migration_matches_plan_seed() -> None:
         code: Decimal(value) for code, value in new_values.items()
     }
     assert set(new_values) == set(PLAN_LIMITS)
+
+
+def test_monthly_limits_migration_matches_plan_seed() -> None:
+    """p77 inserta en BD los mismos límites mensuales que el seed ``PLAN_LIMITS`` (D027)."""
+    from decimal import Decimal
+
+    from app.core.entitlement_codes import PLAN_LIMITS
+
+    script = _script_directory().get_revision("p77_quota_usage_01")
+    assert script is not None
+    new_limits: dict[str, dict[str, int]] = script.module._NEW_LIMITS
+    assert set(new_limits) == set(PLAN_LIMITS)
+    for plan_code, limits in new_limits.items():
+        assert {code: PLAN_LIMITS[plan_code][code] for code in limits} == {
+            code: Decimal(value) for code, value in limits.items()
+        }

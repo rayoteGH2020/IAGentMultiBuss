@@ -65,6 +65,7 @@ Pendiente / ops:
 > **Cifras vigentes de producto: `especificacion-planes-y-cuotas.md` §3** (limites mensuales, presupuesto de IA 6 / 15 / 30 EUR, chat D023, etc.).
 > Esta tabla describe lo que hoy tiene el seed del codigo (`PLAN_LIMITS`). Difiere de la especificacion en los limites diarios, que esta sustituye por mensuales (pasos 3-4 de su §9 y D023, pendientes).
 > Ya alineados: `members_max` 3 / 9 / 20 (D022, migracion `p74`) y `llm_budget_eur_month` 6 / 15 / 30 (D026, migracion `p76`).
+> Limites mensuales de la spec §3 (facturas, tickets, reintentos, chat, contratos) en el catalogo desde `p77` (D027), aun sin aplicar: se activan por bloques y entonces se retiran los diarios de esta tabla.
 
 | Limit code | Unidad | Basico | Avanzado | Premium |
 | --- | --- | ---: | ---: | ---: |

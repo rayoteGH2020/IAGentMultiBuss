@@ -19,6 +19,7 @@ from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
 from app.jobs.membership_jobs import expire_member_removals
+from app.jobs.plan_jobs import apply_scheduled_plan_changes
 from app.jobs.provider_alert_jobs import send_llm_provider_billing_alert
 from app.jobs.ticket_jobs import process_ticket
 
@@ -51,6 +52,14 @@ class WorkerSettings:
         cron(
             expire_member_removals,
             minute={0, 15, 30, 45},
+            run_at_startup=True,
+            unique=True,
+        ),
+        # Cambios de plan programados para el día 1 (D027). Cada hora y al
+        # arrancar; hasta que corre, el plan nuevo ya rige por lectura.
+        cron(
+            apply_scheduled_plan_changes,
+            minute={5},
             run_at_startup=True,
             unique=True,
         ),
