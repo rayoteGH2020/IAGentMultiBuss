@@ -63,7 +63,7 @@
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
             <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
           </svg>
-          Pendiente
+          {{ status | status_label }}
         </span>
       {% elif status == "indexing" %}
         <span class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600">
@@ -71,17 +71,17 @@
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
             <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
           </svg>
-          Indexando
+          {{ status | status_label }}
         </span>
       {% elif status == "ready" %}
         <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
           <span class="h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
-          Listo
+          {{ status | status_label }}
         </span>
       {% elif status == "failed" %}
         <span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-700">
           <span class="h-2 w-2 rounded-full bg-red-500 shrink-0" aria-hidden="true"></span>
-          Error
+          {{ status | status_label }}
         </span>
       {% endif %}
     </td>

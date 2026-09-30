@@ -34,13 +34,13 @@
         <dt class="text-xs font-medium text-slate-500">Estado</dt>
         <dd class="mt-0.5">
           {% if status == "pending" %}
-            <span class="text-slate-500">Pendiente</span>
+            <span class="text-slate-500">{{ status | status_label }}</span>
           {% elif status == "indexing" %}
-            <span class="text-blue-600">Indexando…</span>
+            <span class="text-blue-600">{{ status | status_label }}…</span>
           {% elif status == "ready" %}
-            <span class="text-emerald-700 font-medium">Listo</span>
+            <span class="text-emerald-700 font-medium">{{ status | status_label }}</span>
           {% elif status == "failed" %}
-            <span class="text-red-700 font-medium">Error</span>
+            <span class="text-red-700 font-medium">{{ status | status_label }}</span>
           {% endif %}
         </dd>
       </div>

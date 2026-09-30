@@ -31,6 +31,7 @@ from app.core.permissions import (
 )
 from app.core.scheduling_granularity import slot_minute_options
 from app.core.scheduling_ui import format_range_label
+from app.core.status_labels import status_label
 from app.schemas.scheduling import sanitize_professional_color
 
 # Instancia a nivel de módulo: Jinja2 cachea las plantillas compiladas en
@@ -66,6 +67,7 @@ templates.env.globals["home_path_for_role"] = home_path_for_role
 templates.env.globals["is_manager_role"] = is_manager_role
 templates.env.globals["is_org_admin_role"] = is_org_admin_role
 templates.env.filters["role_label"] = role_label
+templates.env.filters["status_label"] = status_label
 # Nombre del plan en cualquier plantilla: {{ tenant.plan_code | plan_label }}.
 templates.env.filters["plan_label"] = plan_ui_name
 

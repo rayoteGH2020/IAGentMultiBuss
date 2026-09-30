@@ -112,7 +112,7 @@
       <span class="text-slate-600">Estado</span>
       <select name="status" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
         {% for st in statuses %}
-        <option value="{{ st.value }}" {% if appointment.status == st %}selected{% endif %}>{{ st.value }}</option>
+        <option value="{{ st.value }}" {% if appointment.status == st %}selected{% endif %}>{{ st | status_label }}</option>
         {% endfor %}
       </select>
     </label>

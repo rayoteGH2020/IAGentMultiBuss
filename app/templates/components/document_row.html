@@ -90,7 +90,7 @@
           {% endif %}
           {% include "components/document_type_icon.html" %}
           <span class="font-medium text-slate-700">{{ document.doc_type_label }}</span>
-          <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100">{{ document.status }}</span>
+          <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100">{{ document.status | status_label }}</span>
           <span class="text-slate-500">{% if document.can_retry %}Procesado interrumpido{% else %}Procesando{% endif %}</span>
           <span class="text-slate-400 line-clamp-2 break-all max-w-[18rem]"
                 title="{{ document.source_filename or '' }}">

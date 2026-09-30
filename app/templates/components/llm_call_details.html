@@ -9,7 +9,7 @@
     <div class="llm-call-details-item">
       <p class="llm-call-details-label">Estado</p>
       <p class="llm-call-details-value">
-        <span class="llm-call-status llm-call-status--{{ call.status }}">{{ call.status }}</span>
+        <span class="llm-call-status llm-call-status--{{ call.status }}">{{ call.status | status_label }}</span>
       </p>
     </div>
     <div class="llm-call-details-item">
