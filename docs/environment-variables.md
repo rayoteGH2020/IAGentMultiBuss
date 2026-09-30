@@ -64,6 +64,7 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `CHAT_CUTOFF_NOTIFY_INTERVAL_SECONDS` | No | Intervalo mínimo entre avisos al admin tras el corte del chat. Default `86400` (24 h). |
 | `CHAT_CUTOFF_NOTIFY_MAX_PER_MONTH` | No | Máximo de avisos al admin por el corte del chat en un mes. Default `3`. Al cruzar `CHAT_BUDGET_CUTOFF_RATIO` también se avisa al SADM (`EMAIL_SADM`) una vez al mes, con nombre y apellido del admin (Clerk) y su email y teléfono (tabla `users`, D020). |
 | `LLM_BUDGET_EXHAUSTED_NOTICE` | No | Texto del banner que ven todos los usuarios del tenant en todas las páginas del panel cuando el gasto de IA del mes llega al 100 % del presupuesto. Tiene un texto por defecto en `app/config.py`. |
+| `EMAIL_SADM` | No | Email del superadmin para avisos de plataforma: usuarios sin organizacion, presupuesto de IA de un tenant al 90 % y **proveedor de IA sin saldo o con la facturacion bloqueada (HTTP 402)**, este ultimo como mucho una vez cada 6 h por proveedor. Vacio = no se envian (queda un warning en logs). |
 | `LLM_EXTRACTION_MAX_RETRIES` | No | Reintentos automáticos de Instructor por extracción de documento cuando la respuesta no cumple el schema. Default `2` (hasta 3 llamadas); admite `0`-`2`, con tope 2 por regla de producto (`especificacion-planes-y-cuotas.md` §4.2). El worker no repite la extracción si se reinicia a mitad (`app/jobs/extraction_guard.py`). |
 
 ### Observabilidad (Langfuse)

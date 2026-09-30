@@ -432,3 +432,17 @@ Consecuencia:
 - Chat: `sum_total` de contratos suma `importe_anual`; filtros de importe usan anual o, si es pago unico, el total. Panel: cuota con su periodicidad ("95,00 € / mes").
 - Eval `contracts_v2` (sustituye a `contracts_v1`); en el PR hay que aceptar el cambio de nombre con la etiqueta `eval-regression-accepted` (la baseline de `main` aun tiene `contracts_v1`).
 - Los campos de avisos (renovacion automatica, preaviso, fecha limite de baja) se anadiran como columnas nuevas con P3-6, sin tocar estas.
+
+## D025 - Proveedor de IA sin saldo (402): mensaje propio y aviso al SADM
+
+Decision (cerrada 2026-09-30, implementada): cuando un proveedor LLM rechaza por saldo agotado o facturacion (HTTP 402; Google lo devuelve como `RESOURCE_EXHAUSTED` "prepayment credits are depleted"; Anthropic "credit balance is too low"), la app:
+
+- Lo clasifica como `provider_billing`, distinto de la saturacion (`provider_overload`, 429/503). Antes el `RESOURCE_EXHAUSTED` caia en saturacion y el usuario veia "el servidor de IA tiene muchas solicitudes", que invitaba a reintentar sin sentido.
+- Muestra "El servicio de IA no esta disponible en este momento. Ya se ha avisado al administrador; podras volver a intentarlo cuando se restablezca" (documentos y chat).
+- Avisa al SADM por email (`EMAIL_SADM`), como mucho una vez cada 6 h por proveedor (Redis NX + job ARQ `send_llm_provider_billing_alert`), sin datos de clientes.
+- El documento queda **reintentable**: tras recargar, el usuario lo reintenta sin pasar por el SADM.
+- No se reintenta automaticamente (402 no es transitorio).
+
+Motivo: caso real en dev (2026-09-30), creditos de Google AI Studio agotados; con clientes reales nadie se habria enterado.
+
+Consecuencia: `document_processing_errors.provider_error_code` / `provider_error_user_message`, `app/llm/provider_alerts.py`, `app/services/llm_provider_alert_service.py`, `app/jobs/provider_alert_jobs.py`.
