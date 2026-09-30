@@ -62,7 +62,7 @@
 | Feature code | Básico | Avanzado | Premium | Notas |
 |---|:---:|:---:|:---:|---|
 | `documents` | Sí | Sí | Sí | Facturas y tickets (extracción, conciliación, exportación) y contratos |
-| `documents_chat` | Sí | Sí | Sí | Preguntas sobre los documentos y contratos del dueño (RAG) |
+| `documents_chat` | Sí | Sí | Sí | Preguntas sobre los documentos y contratos del dueño (con herramientas sobre los datos extraídos, sin búsqueda vectorial) |
 | `knowledge` | Sí | Sí | Sí | Conocimiento del negocio: preguntas frecuentes, servicios, tarifas, horarios, formas de pago |
 | `knowledge_chat` | Sí | Sí | Sí | Chat interno del dueño sobre ese conocimiento |
 | `appointments` | No | Sí | Sí | Citas: crear, modificar, cancelar y consultar |
@@ -110,12 +110,12 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 | Limit code | Unidad | Básico | Avanzado | Premium | Notas |
 |---|---|---:|---:|---:|---|
-| `llm_budget_eur_month` | € de IA al mes | **6** | **15** | **30** | **Tope duro.** Recalibrado: antes era 30/100/250, por encima incluso del precio del Básico. Equivale a un 27-31 % del precio. Con los modelos y costes reales, el peor caso (todos los límites y topes técnicos al 100 %, reintentos incluidos) es de unos 1,75 / 8,40 / 40 €: el presupuesto lo cubre 3,4 y 1,8 veces en Básico y Avanzado. **En Premium el tope es el que limita** (sobre todo por el tope del analista y de los chats); con un uso normal (unos 12 €) no se alcanza. Ver hoja «Coste por cliente» del Excel |
+| `llm_budget_eur_month` | € de IA al mes | **6** | **15** | **30** | **Tope duro.** Recalibrado: antes era 30/100/250, por encima incluso del precio del Básico. Equivale a un 27-31 % del precio. Con los modelos y costes reales, el peor caso (todos los límites y topes técnicos al 100 %, reintentos incluidos) es de unos 1,75 / 8,40 / 41 €: el presupuesto lo cubre 3,4 y 1,8 veces en Básico y Avanzado. **En Premium el tope es el que limita** (sobre todo por el tope del analista y de los chats); con un uso normal (unos 12 €) no se alcanza. Ver hoja «Coste por cliente» del Excel |
 | `end_customer_messages_per_day` | mensajes por cliente final | 0 | 30 | 30 | Anti-abuso. Sustituye a `channel_messages_per_hour` |
 | `document_retries_per_month` | reintentos manuales | 40 | 150 | 400 | **Propuesta: sustituye a `document_retries_per_day` (20/80/300),** que permitía unos 600 reintentos al mes en Básico (≈4,7 € de IA). Además, **máximo 3 reintentos manuales por documento** |
 | `documents_chat_questions_per_month` | preguntas | 250 | 1.000 | 2.500 | Sin límite comercial; tope técnico de unas 5 veces el uso previsto (50/200/500) |
 | `knowledge_chat_questions_per_month` | preguntas | 150 | 500 | 1.500 | Igual: tope técnico de unas 5 veces el uso previsto (30/100/300) |
-| `analytics_questions_per_month` | preguntas | 0 | 0 | 500 | Uso previsto: 200. A ≈0,034 € por pregunta, 500 preguntas son ≈17 € |
+| `analytics_questions_per_month` | preguntas | 0 | 0 | 500 | Uso previsto: 200. A ≈0,036 € por pregunta, 500 preguntas son ≈18 € |
 
 **Límites diarios actuales.** `documents_per_day`, `knowledge_uploads_per_day` y `chat_messages_per_day` **dejan de ser la referencia**; los sustituyen los mensuales.
 - En el análisis, indica si conviene conservar alguno solo como freno a ráfagas (por ejemplo, con un valor de 3 veces el mensual dividido entre 30).
@@ -181,19 +181,22 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 4.4 Chat documental y chat de conocimiento (dueño, en la app)
 - Cuenta **cada pregunta con su respuesta**.
-- Solo se reenvían los **últimos 4 turnos** (pregunta y respuesta). **Nunca se guardan ni se reenvían los fragmentos del RAG** en el historial.
+- **Historial (decidido 2026-09-30, se acepta el comportamiento actual):** se reenvían los últimos 20 mensajes (`chat_history_message_limit`), incluidos los mensajes `tool` con su resultado completo. Una pregunta con herramientas ocupa ≈4 mensajes, así que son ≈4-5 turnos.
+  - Los resultados de las herramientas se guardan en `chat_messages.tool_result`: los usan las trazas de chat del SADM y permiten las preguntas de continuación («¿y la segunda?»). Entran en el borrado y el export RGPD de los chats.
+  - Motivo: el coste ya está acotado (máx. observado ≈0,0045 € por pregunta; 250 preguntas del Básico ≈1,1 € frente a 6 € de presupuesto) y quitar los resultados arriesga las continuaciones sin un ahorro relevante.
+  - Descartado: reenviar solo 4 turnos sin resultados de herramientas y la compactación del historial (sería otra llamada al LLM, con coste y prompt propios).
+  - Revisar con uso real (Backlog P2b-21): si el historial pesa mucho en hilos largos, recortar el tamaño de los resultados antiguos en lugar de quitarlos.
 - **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`), con herramientas (`run_tool_loop`, desde `chat_service.py`). Coste medido: ≈0,002 € por pregunta (≈2 llamadas por las herramientas; máximo observado ≈0,0045 €).
 - **Reformulación:** solo si el chat busca **antes** de llamar al modelo. Con `run_tool_loop` es el propio modelo quien formula la búsqueda al llamar a la herramienta, así que la reformulación previa sobra. **A verificar en el análisis** cómo se construye hoy la búsqueda.
 - **Sin prompt caching explícito.**
   - La parte fija de estos chats son las instrucciones y la definición de las herramientas. Los resultados de búsqueda cambian en cada pregunta.
   - Gemini aplica su propia caché implícita cuando el inicio del prompt se repite; no hay que marcar nada. Solo hay que mantener **el orden fijo** (instrucciones y herramientas primero, idénticas en cada llamada; historial y pregunta al final) para no impedirla.
-  - Registrar en `llm_calls` los tokens de caché que devuelva la API, si los devuelve, para medir el efecto real.
-- Se compacta el historial solo si pasa de 8 turnos o de 4.000 tokens.
+  - Tokens de caché en `llm_calls`: **aplazado** (Backlog P2b-20). No afecta al presupuesto, que ya se cobra con los tokens reales.
 
 ### 4.5 Analista de datos (Premium)
 - Feature `analytics` y dependencia `require_feature("analytics")`. Se oculta en los demás planes.
-- **Modelo:** tarea `sql` → `claude-sonnet-4-6` (reservada y sin uso desde D011). Cada llamada se registra en `llm_calls` con `feature="analytics"`.
-- **Coste estimado:** ≈0,034 € por pregunta (8.000 / 1.000 tokens, con la tarifa de Sonnet de 3 $ / 15 $ por millón). **A verificar:** añadir `claude-sonnet-4-6` a `pricing.py` si no está, y medir con los primeros usos.
+- **Modelo:** tarea `sql` → `claude-sonnet-4-6` (reservada y sin uso desde D011). Cada llamada se registra en `llm_calls` con `task="sql"`, que solo usa el analista: no hace falta columna `feature`.
+- **Coste estimado:** ≈0,036 € por pregunta (8.000 / 1.000 tokens, con la tarifa de Sonnet de `pricing.py`: 2,80 / 14,00 € por millón, equivalente a 3 $ / 15 $). **A verificar:** medir con los primeros usos.
 - **Prompt caching:** la descripción del esquema de datos es fija y puede pasar del mínimo que exige Anthropic para cachear. Si lo pasa, marcar `cache_control` al final del esquema; comprobar el mínimo de `claude-sonnet-4-6` en la documentación de Anthropic.
 - **Solo lectura:** consultas contra una vista o esquema con permisos de solo lectura, filtrado por `tenant_id`. Validar el SQL generado antes de ejecutarlo (sin DML ni DDL, con límite de filas y tiempo).
 
@@ -202,13 +205,13 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - **Conocimiento en el prompt, sin RAG:**
   - El perfil del negocio (preguntas frecuentes, servicios, tarifas, horarios, formas de pago) ocupa 2.000-5.000 tokens y va entero en el prompt.
   - Si supera unos 8.000 tokens, se recurre a la búsqueda sobre `knowledge`.
-  - **A verificar:** cómo está implementado hoy `knowledge` y si ya usa RAG.
+  - **Estado actual (verificado):** el conocimiento no va en el prompt. El asistente lo consulta con las herramientas de `build_channel_registry` (`search_knowledge`, búsqueda semántica sobre fragmentos indexados con `voyage-3-lite`) y reenvía los últimos 10 mensajes de la conversación, solo texto.
 - **Modelo:** `gemini-3.5-flash-lite` (tarea `chat`, `channel_chat_service.py`), el mismo que el chat de la app. Los embeddings de `voyage-3-lite` se usan también como caché de respuestas de los canales. Coste estimado: ≈0,003 € por mensaje (2 llamadas de ≈4.000 / 150 tokens + 1 embedding). **Sin medir todavía:** tomar la media real de `llm_calls` en cuanto haya tráfico.
 - **Prompt caching:**
   - Gemini aplica caché implícita cuando el inicio del prompt se repite; no hace falta marcar nada. Para aprovecharla:
   - **Orden fijo del prompt:** herramientas de citas → instrucciones (`.txt` versionado) → conocimiento del negocio → historial → mensaje nuevo. **Nada variable antes del historial:** ni fecha, ni hora, ni nombre del cliente final, ni identificadores de petición. La fecha y la disponibilidad van con el mensaje nuevo.
   - **El conocimiento se serializa de forma determinista:** mismo orden de campos, orden estable de listas y sin espacios variables. Se guarda la versión serializada y su hash, y solo se regenera cuando el dueño edita el conocimiento.
-  - **A verificar** en la documentación de Google: tamaño mínimo para que se aplique la caché implícita con `gemini-3.5-flash-lite` y descuento que aplica. Registrar en `llm_calls` los tokens de caché que devuelva la API.
+  - **A verificar** en la documentación de Google: tamaño mínimo para que se aplique la caché implícita con `gemini-3.5-flash-lite` y descuento que aplica. Tokens de caché en `llm_calls`: aplazado (Backlog P2b-20).
   - El Excel **no cuenta ningún descuento por caché**: si existe, el coste real será menor.
   - Si alguna vez se enruta el asistente a un modelo de Anthropic, aplican sus reglas (marca `cache_control` explícita y mínimo de tokens por modelo).
 - **Citas con herramientas (tool use):** el modelo propone; la **disponibilidad, los solapamientos y el horario se validan en el código**. Verifica qué existe ya en `appointments`.
@@ -233,7 +236,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - El histórico más antiguo que `history_months` **no se borra**, solo se oculta. Si el cliente sube de plan, vuelve a verse.
 
 ### 4.8 Control de coste (`llm_budget_eur_month`)
-- Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `feature`, tokens (incluidos los de caché si la API los devuelve) y coste. `llm_calls` ya guarda tokens y coste por llamada; **verificar** que guarda también `tenant_id` y `feature`. `plan_quota_service` acumula el gasto del periodo.
+- Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `task`, `prompt_version`, tokens y coste (**verificado**). No hay columna `feature`: la función se identifica con `task` + `prompt_version` (el asistente de canales usa `channel_external_v1`; el chat de la app, el prompt de `chat_prompts.py`; el analista, `task="sql"`). El chat de documentos y el de conocimiento son un único chat (`PROMPT_UNIFIED`) y una misma pregunta puede usar herramientas de ambos, así que no se separan por llamada. Los topes de preguntas de §3.2 son contadores de cuota y no dependen de `llm_calls`. Tokens de caché: aplazado (Backlog P2b-20). `plan_quota_service` acumula el gasto del periodo.
 - **Al 80 % del presupuesto:** aviso al dueño y alerta en SADM.
 - **Al 100 %: tope duro.** Se bloquean las funciones que llaman al LLM:
   - Los documentos pasan a `pendiente_cupo`.
@@ -280,12 +283,12 @@ Para cada punto, indica si **ya está cubierto**, **cubierto en parte** o **no c
    - ¿Permite una bolsa compartida entre dos límites (facturas + tickets)?
    - ¿Persiste en PostgreSQL o solo en Redis?
    - ¿Tiene avisos al 80 %?
-3. **Presupuesto de LLM:** `llm_calls` ya guarda tokens y coste por llamada (con las tarifas de `pricing.py`). ¿Guarda `tenant_id`, `feature` y tokens de caché? ¿Se registran también las llamadas fallidas, la clasificación y los embeddings? ¿Hay un override por tenant en SADM?
+3. **Presupuesto de LLM:** `llm_calls` ya guarda tokens y coste por llamada (con las tarifas de `pricing.py`). Guarda `tenant_id`; la función sale de `task` + `prompt_version` (ver §4.8); tokens de caché aplazados (Backlog P2b-20). ¿Se registran también las llamadas fallidas, la clasificación y los embeddings? ¿Hay un override por tenant en SADM?
 4. **Documentos:** ¿dónde está el punto de «extracción correcta» para consumir cuota? ¿Existe un estado equivalente a `pendiente_cupo`?
 5. **Contratos:** ¿existen como entidad propia o son documentos genéricos? Campos, estados, hash, número de páginas, borrado lógico.
-6. **Knowledge:** estructura actual, si usa RAG, tamaño típico y cómo lo consume hoy el canal de WhatsApp/Telegram.
+6. **Knowledge:** estructura actual y tamaño típico. *Respondido:* búsqueda semántica con la herramienta `search_knowledge`, tanto en el chat de la app como en los canales (ver §4.6).
 7. **Appointments y canales:** qué está implementado (tablas, herramientas del modelo, validación de disponibilidad, recordatorios, plantillas de Meta, derivación a una persona).
-8. **Historial de los chats:** cuántos turnos se reenvían y si se incluyen los fragmentos del RAG.
+8. **Historial de los chats:** *Respondido:* chat de la app, 20 mensajes con los resultados de las herramientas; canales, 10 mensajes solo de texto (ver §4.4).
 9. **Tareas programadas:** planificador existente para avisos de contratos, recordatorios, reinicio de periodos y purgas.
 10. **Usuarios e histórico:** cómo se aplica hoy `members_max` y si existe algún filtro por antigüedad.
 11. **SADM:** qué overrides permite ya (límites, features, presupuesto) y si registra quién y cuándo.
@@ -307,9 +310,10 @@ usage_events (                     -- solo inserciones: auditoría y devolucione
 usage_counters ( tenant_id, period_start, limit_code, used INT,
                  PRIMARY KEY (tenant_id, period_start, limit_code) )
 
--- Coste real del LLM (si llm_calls no tiene estos campos)
-llm_calls + ( tenant_id, feature, model, input_tokens, cached_input_tokens,
-              output_tokens, cost_eur NUMERIC(10,6), langfuse_trace_id )
+-- Coste real del LLM: llm_calls ya tiene tenant_id, task, prompt_version, model,
+-- input_tokens, output_tokens, cost_eur NUMERIC(10,6) y langfuse_trace_id.
+-- Sin columna feature (ver §4.8). Aplazado (Backlog P2b-20):
+llm_calls + ( cached_input_tokens INT )
 
 -- Contratos (añadir a la entidad existente)
 contracts + (
@@ -359,7 +363,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 | `classify` | `claude-haiku-4-5` | Tipo de documento cuando la regla automática no basta | 0,90 / 4,50 |
 | `chat` | `gemini-3.5-flash-lite` | Chat de la app y asistente de WhatsApp/Telegram | 0,28 / 2,30 |
 | `embedding` | `voyage-3-lite` (512 dimensiones) | Conocimiento (indexar y buscar) y caché de respuestas de los canales | 0,018 / — |
-| `sql` | `claude-sonnet-4-6` | Analista (Premium). Reservada, sin uso | ≈2,58 / 12,90 (estimada; a verificar) |
+| `sql` | `claude-sonnet-4-6` | Analista (Premium). Reservada, sin uso | 2,80 / 14,00 |
 | `transcription`, `translate` | `gemini-2.5-flash` | Voz para calendario (fuera de oferta, D012) y traducción (sin uso) | Fuera de este cálculo |
 
 **Coste por operación** (tokens medios reales de `llm_calls` en dev; base limpiada el 28/09/2026, muestra pequeña):
@@ -374,7 +378,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 | Pregunta de chat (≈2 llamadas) | 8 | 3.286 / 96 por llamada | ≈0,002 € (máx. ≈0,0045 €) |
 | Mensaje del asistente (≈2 llamadas) | — | 4.000 / 150 por llamada (**estimado**) | ≈0,003 € |
 | Embedding (búsqueda o indexado) | 5 | 1.034 | ≈0,00002 € |
-| Pregunta al analista | — | 8.000 / 1.000 (**estimado**) | ≈0,034 € |
+| Pregunta al analista | — | 8.000 / 1.000 (**estimado**) | ≈0,036 € |
 
 - La salida de Gemini ya incluye los tokens de razonamiento (`_extract_token_usage` en `client.py`).
 - **Pendiente de medir:** contratos de 30-100 páginas, asistente de canales y analista. Propuesta: ejecutar los evals de extracción (facturas, tickets, contratos, pólizas) y `chat_documents_v2` contra `saas_test` para tener decenas de muestras por tipo (los documentos de los evals son sintéticos y pueden ser más cortos que los reales).
@@ -387,7 +391,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable.
 4. Cuotas en facturas y tickets (`pendiente_cupo`).
 5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
-6. Historial de los chats (sección 4.4).
+6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
 7. Usuarios e histórico.
 8. Interfaz de consumo y avisos.
 9. Trabajos programados: reinicio de periodos, avisos de contratos y purga de contratos borrados.
@@ -419,6 +423,6 @@ Crea `docs/analisis-planes-y-cuotas.md` con:
 - **Documentos de conocimiento:** ¿aplicar el mismo modelo que a los contratos? ¿Con qué límites?
 - **Cuota de alta de WhatsApp/Telegram** (99-299 € en `Planes_Entitlements.md`): ¿se mantiene?
 - **Registrar la decisión nueva** que anula D011 (analista en Premium).
-- **Premium:** con todos los topes al 100 % el coste de IA (≈40 €) supera el presupuesto de 30 €. ¿Se deja que el tope limite, se sube el presupuesto o se bajan los topes del analista y los chats?
+- **Premium:** con todos los topes al 100 % el coste de IA (≈41 €) supera el presupuesto de 30 €. ¿Se deja que el tope limite, se sube el presupuesto o se bajan los topes del analista y los chats?
 - **`document_retries_per_month`:** confirmar que sustituye al límite diario, con máximo 3 reintentos por documento.
 - **Citas simultáneas:** ¿se admiten (varios profesionales o gabinetes)? ¿Hace falta el concepto de «profesional» o «recurso» en `appointments`?
