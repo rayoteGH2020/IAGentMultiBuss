@@ -1,6 +1,6 @@
 # Paso07 - Chat, RAG, canales e IA segura
 
-Estado: **codigo cerrado / QA manual pendiente** (2026-09-23). Suite automatica verde; falta QA real Clerk/R2/Langfuse/Calendar/WA/TG.
+Estado: **codigo cerrado / QA manual pendiente** (2026-09-23). Suite automatica verde; falta QA real con sesion (ver `PasosParaProduccion.md` Fase 11). Canales y Calendar aplazados.
 
 Objetivo: endurecer todas las superficies conversacionales antes de ampliar alcance.
 
@@ -88,15 +88,11 @@ Smoke en `http://127.0.0.1:8000` el mismo dia:
 - `/login` pinta Clerk ("Sign in to MySaas", development mode).
 - `/chat`, `/documents`, `/sadm` y `/calendar` sin cookie devuelven 401; el navegador acaba en `/login`.
 
-Sigue pendiente con tu sesion:
+Pendiente con tu sesion (actualizado 2026-09-30; la checklist esta solo en `PasosParaProduccion.md`):
 
-- [ ] Abrir `/chat`, crear hilo, preguntar por documento.
-- [ ] Ver citations.
-- [ ] Ver Langfuse sin contenido (la instancia local esta levantada: `saas-langfuse-web`).
-- [ ] Enviar WhatsApp real.
-- [ ] Enviar Telegram real.
-- [ ] Crear evento por voz y confirmar en Google Calendar.
-- [ ] SADM: asignar plan en la UI y comprobar que una feature denegada no aparece.
+- Chat con citas y Langfuse sin contenido: Fase 11.3.
+- SADM asigna plan y la feature denegada no aparece ni abre: Fase 11.4.
+- WhatsApp, Telegram y voz → Google Calendar reales: fuera del soft launch ("Aplazado").
 
 ## Criterios de aceptacion
 

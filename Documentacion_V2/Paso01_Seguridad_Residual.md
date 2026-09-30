@@ -236,7 +236,7 @@ Checklist antes de subir de entorno:
 
 ### 4. Webhook body limit y replay
 
-- [x] Limitar body antes de parsear en WhatsApp, Telegram, Clerk y futuro Stripe.
+- [x] Limitar body antes de parsear en WhatsApp, Telegram y Clerk.
 - [x] Deduplicar mensajes WhatsApp por message id.
 - [x] Deduplicar Telegram por update id.
 - [x] Usar Redis `SET NX` con TTL.
@@ -257,7 +257,6 @@ Orden de defensa en cada POST:
    - WhatsApp: `messages[].id`
    - Telegram: `update_id`
    - Clerk: header `svix-id`
-   - Stripe (futuro): `PROVIDER_STRIPE` + event id (constante reservada en `webhook_ingress.py`)
 5. **Job ARQ determinista**: `channel:<canal>:<provider_event_id>` via `enqueue_channel_message(..., provider_event_id=...)`.
 
 Respuestas controladas:
@@ -289,7 +288,7 @@ infisical run -- uv run pytest tests/unit/test_webhook_ingress.py tests/unit/tes
 
 El codigo ya limita el body y hace dedupe en Redis. Estas tareas confirman que **en tu entorno real** (dev/staging/prod) Redis, secretos y proveedores estan alineados. Sin ellas, los tests pasan pero un webhook real puede fallar o procesarse dos veces.
 
-Orden recomendado: Redis → TTL/limites → Clerk (siempre activo) → WhatsApp/Telegram solo si esos canales estan en alcance → Stripe cuando exista billing.
+Orden recomendado: Redis → TTL/limites → Clerk (siempre activo) → WhatsApp/Telegram solo si esos canales estan en alcance.
 
 #### 1. Redis compartido entre API y worker
 
@@ -366,15 +365,15 @@ Tras cambiar variables: reinicia API (y worker si lee la misma config al arranca
 
 **Fallo tipico:** secret mal configurado → 200 silencioso sin encolar (comportamiento fail-closed; no es dedupe). Distinguelo mirando logs `telegram.webhook.invalid_secret`.
 
-#### 6. Stripe (futuro, `Paso09`)
+#### 6. Proveedor de cobro (futuro)
 
-Cuando exista el endpoint Stripe:
+Stripe se retiro del codigo (D016). Si se integra un proveedor de cobro (Backlog P3-2):
 
-- Reutilizar `claim_webhook_event(provider="stripe", event_id=event["id"])` de `webhook_ingress.py`.
+- Reutilizar `claim_webhook_event(provider=..., event_id=...)` de `webhook_ingress.py`.
 - No inventar otra tabla/cola de dedupe.
-- Mismo criterio: firma → claim → efectos; retry de Stripe con el mismo `evt_…` = no-op.
+- Mismo criterio: firma → claim → efectos; retry del mismo evento = no-op.
 
-No hay tarea operativa hoy salvo recordar esta regla al implementar billing.
+No hay tarea operativa hoy.
 
 #### 7. Que mirar en logs (sin pegar payloads)
 
@@ -389,13 +388,12 @@ Busca estos eventos (structlog / logging):
 
 **Nunca** loguees ni pegues en issues el body completo del webhook (PII, tokens, texto del cliente).
 
-#### 8. Checklist rapida antes de staging/prod
+#### 8. Checklist rapida antes de prod
 
 - [x] `/health/redis` OK en el host que sirve webhooks.
-- [x] `WEBHOOK_ALLOW_UNSIGNED=false` en `dev` (2026-09-22). Staging/prod siguen vacios: ver evidencia al final.
-- [ ] Clerk: retry de delivery = no-op en un endpoint real (seccion 3). Cubierto en test, no en el dashboard de Clerk.
-- [ ] Si WA activo: un mensaje + replay OK contra Meta (seccion 4). Cubierto en test de integracion.
-- [ ] Si TG activo: un mensaje + replay OK contra el bot (seccion 5). Cubierto en test de integracion.
+- [x] `WEBHOOK_ALLOW_UNSIGNED=false` en `dev` (2026-09-22). En `prod` lo fija `PasosParaProduccion.md` Fase 5.1 (Settings no arranca con `true`).
+- [ ] Clerk: retry de delivery = no-op en un endpoint real (seccion 3). Cubierto en test; la prueba real se hace en `PasosParaProduccion.md` Fase 8.4.
+- Fuera del soft launch ("Aplazado" en `PasosParaProduccion.md`): mensaje + replay real de WhatsApp (seccion 4) y Telegram (seccion 5). Cubiertos en test de integracion.
 - [x] No hay secretos de webhook en el repo; solo Infisical.
 
 ### 5. OCR de imagenes knowledge
@@ -524,11 +522,10 @@ Si no tienes reindex a mano, puedes saltar este paso: la subida (paso 3) + tests
 
 >>> _Completado: 2026/08/06 16:55 / OK
 
-#### 5. Checklist rapida antes de staging/prod
+#### 5. Checklist rapida antes de prod
 
 - [x] En `dev` (2026-09-22) los limites son los defaults de produccion, no los de prueba: edge `20000`, pixeles `40000000`, bytes `15728640`.
-- [ ] Los mismos limites revisados en Infisical de staging/prod (esos entornos no tienen secretos todavia).
-- [ ] Subida knowledge de imagen OK de humo en staging/prod.
+- [ ] Limites en `prod`: `PasosParaProduccion.md` Fase 5.7. Humo de subida de imagen a knowledge: Fase 11.3.
 - [x] No hay secretos ni dumps de imagen en el repo. Logs de error de un entorno desplegado: pendiente de ese despliegue.
 
 ## Tareas P1
@@ -659,17 +656,7 @@ Sonda de flags (sin imprimir secretos): `infisical run --env=<slug> -- uv run py
 - `APP_BASE_URL` apunta al tunel ngrok, pero `CLERK_JWT_AZP_ALLOWLIST` es `http://localhost:8000`. Un JWT emitido para el tunel no pasa la allowlist.
 - `SECURITY_ALLOWED_HOSTS` es `localhost`, `127.0.0.1` y dos IPs LAN. `create_app()` anade tambien el host de `APP_BASE_URL`, asi que el tunel ngrok entra mientras esa URL siga configurada. Si cambias `APP_BASE_URL` sin actualizar la lista, el host nuevo queda fuera.
 
-**Para cerrar staging (lo haces tu en Infisical, no copiando `dev`):**
-
-1. Crear o rellenar el entorno `staging` con secretos propios (Clerk, LLM, R2, Postgres, Redis, `ENCRYPTION_KEY`, Langfuse). No reutilizar los de `dev`.
-2. `APP_ENV=staging`, `APP_BASE_URL` del host real, `SECURITY_HTTPS_REDIRECT=true`, `SECURITY_HSTS_ENABLED=true`.
-3. `SECURITY_ALLOWED_HOSTS` solo con ese host.
-4. `WEBHOOK_ALLOW_UNSIGNED=false` (si se pone `true`, Settings no arranca).
-5. `LANGFUSE_CAPTURE_CONTENT=false` (igual: Settings no arranca si es `true`).
-6. `CLERK_JWKS_URL` de la instancia de staging y `CLERK_JWT_AZP_ALLOWLIST` (o audience) con el `azp` de un JWT de ese entorno. Sin una de las dos listas, Settings no arranca.
-7. Limites de imagen en defaults (`20000` / `40000000` / `15728640`), no los de la prueba manual.
-8. Repetir la sonda: `infisical run --env=staging -- uv run python` y comprobar la tabla de arriba.
-9. Retry real de un delivery Clerk y, si el canal esta activo, un replay de WhatsApp o Telegram.
+**Cierre (actualizado 2026-09-30):** staging queda aplazado. Rellenar `prod` con secretos propios y verificar estos flags se hace en `PasosParaProduccion.md` Fases 5–8 (variables, allowlist `azp`, limites y retry real de Clerk). Si mas adelante se crea staging, seguir las mismas fases con `APP_ENV=staging` y secretos propios.
 
 ## Criterios de aceptacion
 
@@ -679,7 +666,7 @@ Sonda de flags (sin imprimir secretos): `infisical run --env=<slug> -- uv run py
 - [x] OCR knowledge no puede causar decompression bomb (tests + limites de `dev` en defaults).
 - [x] Langfuse sin contenido de cliente en codigo: capture desactivado y rechazado fuera de development.
 - [x] No hay secretos reales en repo (detect-secrets en el commit `7bc1aea`).
-- [ ] Infisical `staging` y `prod` rellenados con secretos distintos de `dev`.
+- [ ] Infisical `prod` rellenado con secretos distintos de `dev` (`PasosParaProduccion.md` Fase 5; `staging` aplazado).
 
 ## Orden recomendado de ejecucion
 

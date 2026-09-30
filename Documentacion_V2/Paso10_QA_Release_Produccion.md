@@ -1,136 +1,37 @@
 # Paso10 - QA, release y produccion
 
-Estado: **bloqueado por ops** (2026-09-23). Soft-launch No-Go hasta Infisical staging/prod y checklist `PasosParaProduccion.md`.
+Estado: **No-Go, bloqueado por ops** (actualizado 2026-09-30). Falta Infisical `prod`, VPS, Clerk prod y la QA manual con sesion real.
 
-Objetivo: cerrar una version publicable con pruebas automaticas, manuales y operativas.
+Objetivo: cerrar una version publicable con pruebas automaticas, manuales y operativas, y dejar constancia firmada de cada release.
 
-## Dependencias
+**Las tareas ejecutables estan solo en `PasosParaProduccion.md`** (checklist unica, en orden). Este fichero no las repite: guarda el alcance, las decisiones Go/No-Go y el registro de releases.
 
-- Pasos P0 cerrados o aceptados explicitamente.
+## Alcance del primer go-live (producto minimo)
 
-## Checklist automatico
+Soft launch con invitados, plan Basico como referencia: documentos, knowledge y chat. Planes asignados por el SADM en `/sadm/plans`.
 
-```powershell
-infisical run -- uv run alembic upgrade head
-infisical run -- uv run pytest tests/unit -q
-infisical run -- uv run pytest tests/integration -q
-infisical run -- uv run ruff check app tests
-infisical run -- uv run mypy app
-infisical run -- uv run python -m app.evals.runners.extraction
-infisical run -- uv run python -m app.evals.runners.knowledge_retrieval
-infisical run -- uv run python -m app.evals.runners.knowledge_qa
-infisical run -- uv run python -m app.evals.runners.chat_documents
-```
+Fuera de alcance (ver "Aplazado" en `PasosParaProduccion.md`): staging, cobro de planes (Stripe retirado, D016), WhatsApp/Telegram, Google Calendar y voz (D012), Langfuse prod.
 
-E2E si hay credenciales:
+## Donde esta cada cosa
 
-```powershell
-infisical run -- uv run pytest tests/e2e -q
-```
+| Tema | `PasosParaProduccion.md` |
+| --- | --- |
+| Tests, lint, mypy, migraciones antes del tag (las evals las ejecuta CI con gate de regresion) | Fase 1.1 |
+| RLS real con `saas_app` | Fase 1.2 |
+| Variables Infisical `prod` (HTTPS/HSTS, webhooks firmados, Langfuse sin contenido, allowlist `azp`, cifrado, LLM, R2, limites) | Fase 5 |
+| Deploy: backup, `alembic upgrade head`, API + worker ARQ | Fase 8.2 |
+| Login, `azp` y retry del webhook de Clerk = no-op (`webhook.dedupe_replay`) | Fase 8.4 |
+| Backup en R2 y restore probado fuera de prod | Fase 9 |
+| QA manual: auth/tenant, documentos, knowledge, chat con citas, planes | Fase 11 |
+| Seguridad operativa | Fase 12 |
+| Gaps aceptados y firma | Fase 13 |
+| Rollback y kill-switch de coste | Fase 14.3 y 14.4 |
 
-## QA manual minima
+Rollback: `p64` hace `DROP TABLE plans` en el downgrade. En prod nunca `alembic downgrade`; se restaura el backup que hace `deploy.sh` antes de migrar.
 
-### Infra
+## Backup local (solo dev)
 
-- [ ] API arranca.
-- [ ] Worker ARQ arranca.
-- [ ] Redis OK.
-- [ ] Postgres OK.
-- [ ] R2/MinIO OK.
-- [ ] Langfuse OK.
-
-### Auth y tenant
-
-- [ ] Login admin tenant.
-- [ ] Login member tenant.
-- [ ] Tenant A no ve Tenant B.
-- [ ] CSRF bloquea mutacion sin token.
-- [ ] SADM solo accede con usuario permitido.
-
-### Documentos
-
-- [ ] Upload factura.
-- [ ] Upload ticket.
-- [ ] Documento invalido falla claro.
-- [ ] Retry/dismiss.
-- [ ] Multi-IVA visible.
-- [ ] R2 no expone objetos publicos indebidamente.
-
-### Knowledge y chat
-
-- [ ] Upload knowledge.
-- [ ] Indexacion worker.
-- [ ] Chat responde con citas.
-- [ ] Hide thread.
-- [ ] Langfuse sin contenido.
-
-### Canales y calendario
-
-- [ ] Google OAuth.
-- [ ] Voz -> evento.
-- [ ] WhatsApp real si credenciales disponibles.
-- [ ] Telegram real si credenciales disponibles.
-
-### Planes
-
-- [ ] Sidebar cambia por plan.
-- [ ] Feature denegada por URL directa.
-- [ ] Cuota bloquea antes de coste.
-- [ ] SADM cambia plan.
-
-## Produccion
-
-Variables Infisical:
-
-- [ ] `APP_ENV=production`.
-- [ ] `SECURITY_HTTPS_REDIRECT=true` o equivalente por proxy.
-- [ ] `SECURITY_HSTS_ENABLED=true`.
-- [ ] `WEBHOOK_ALLOW_UNSIGNED=false`.
-- [ ] `LANGFUSE_CAPTURE_CONTENT=false`.
-- [ ] `LLM_RETRY_TRANSIENT_ERRORS=true`.
-- [ ] `ADMIN_CLERK_ORG_ID` configurado.
-- [ ] `SUPERADMIN_CLERK_USER_IDS` configurado si se usa allowlist.
-- [ ] Secrets R2/Clerk/LLM/SMTP/Google/WA/TG en Infisical.
-
-## Rollback
-
-- [ ] Backup BD antes de migraciones destructivas.
-- [ ] Migraciones revisadas manualmente.
-- [ ] Feature flags/kill-switch para modulos caros.
-- [ ] Worker puede detenerse sin perder jobs criticos.
-
-## Decision de release (2026-09-22)
-
-**No-Go.** No hay despliegue a produccion. Infisical `prod` y `staging` tienen 0 secretos, el slug `production` no existe, y la QA manual de `Paso07` no esta hecha con una sesion real.
-
-| Dato | Valor |
-|------|--------|
-| Fecha | 2026-09-22 |
-| Commit en `origin/RamaCursor01` | `7bc1aea` |
-| Alembic local | `p64_plans_entitlements_01` (head) |
-| Entorno Infisical usado en esta comprobacion | `dev` |
-| Responsable del No-Go | pendiente de tu firma; el agente no puede aceptar el riesgo residual |
-
-Smoke solo en local (`APP_ENV=development`, `http://127.0.0.1:8000`):
-
-- [x] `GET /health` 200
-- [x] `GET /health/db` 200
-- [x] `GET /health/redis` 200
-- [x] `GET /docs` 200 en development. En `APP_ENV=production` el codigo deja `docs_url`, `redoc_url` y `openapi_url` a `None` (`app/main.py`).
-
-Sigue abierto para un Go:
-
-- [ ] Secretos propios en Infisical `prod` (no copiar `dev`). Ver `PasosParaProduccion.md` §3.
-- [ ] Smoke en un staging con esos secretos: login, un documento, un plan, un canal.
-- [ ] Backup de Postgres probado (comando abajo) antes de `alembic upgrade`.
-- [ ] QA manual critica de este fichero.
-- [ ] Firma tuya de los gaps que aceptes.
-
-### Backup y rollback
-
-El rollback de `p64` hace `DROP TABLE plans`. Con datos de planes, no uses `alembic downgrade` como vuelta atras. Restaura el backup.
-
-Local (contenedor `saas-postgres`, base `saas`):
+Para ensayar migraciones en tu PC (contenedor `saas-postgres`, base `saas`). En prod se usa `deploy/scripts/backup.sh` (Fase 9).
 
 ```powershell
 docker exec saas-postgres pg_dump -U saas -Fc -d saas -f /tmp/saas.dump
@@ -144,23 +45,44 @@ docker cp .\saas.dump saas-postgres:/tmp/saas.dump
 docker exec saas-postgres pg_restore -U saas -d saas --clean --if-exists /tmp/saas.dump
 ```
 
-En el Postgres de prod, el mismo `pg_dump -Fc` contra el host real, guardado fuera del servidor de aplicacion, antes de migrar. Comprueba el restore en una instancia vacia al menos una vez.
+## Historial de decisiones
 
-Kill-switch de coste, sin redeploy de codigo: en Infisical, `ENTITLEMENTS_DISABLED_FEATURES` con los codigos de feature a apagar (CSV) y reinicia API y worker. Parada dura: detener el proceso `arq app.jobs.settings.WorkerSettings` y, si hace falta, rotar las API keys LLM en el proveedor.
+### 2026-09-22 - No-Go
 
-Arranque previsto cuando exista el host:
+No hay despliegue a produccion. Infisical `prod` y `staging` tienen 0 secretos, el slug `production` no existe, y la QA manual de `Paso07` no esta hecha con una sesion real.
 
-```powershell
-infisical run --env=prod -- uv run alembic upgrade head
-infisical run --env=prod -- uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
-infisical run --env=prod -- uv run arq app.jobs.settings.WorkerSettings
+| Dato | Valor |
+|------|--------|
+| Commit en `origin/RamaCursor01` | `7bc1aea` |
+| Alembic local | `p64_plans_entitlements_01` (head) |
+| Entorno Infisical usado | `dev` |
+
+Smoke solo en local (`APP_ENV=development`): `/health`, `/health/db`, `/health/redis` 200; `/docs` 200 en development (en `production` el codigo lo desactiva, `app/main.py`).
+
+### 2026-09-30 - Sigue No-Go
+
+Codigo del producto minimo cerrado; bloqueo solo de ops. Se retira staging del camino critico (aplazado) y se elimina Stripe del alcance (D016). Para pasar a Go: completar `PasosParaProduccion.md` Fases 1–13.
+
+## Registro de releases
+
+Una entrada por release, rellenada al terminar la Fase 13 de `PasosParaProduccion.md`:
+
+```text
+Release: YYYY-MM-DD HH:MM Europe/Madrid
+Decision: Go | No-Go
+Tag / commit: vX.Y.Z / <sha>
+Alembic: <salida de `alembic current` en prod> (head)
+Infisical: prod
+Gaps aceptados: <lista de la Fase 13 o "ninguno">
+Smoke: OK | parcial
+Responsable: <nombre>
 ```
+
+(sin releases todavia)
 
 ## Criterios de aceptacion
 
-- [ ] Tests automaticos verdes o excepciones documentadas en el commit que se despliegue. Suites parciales de Fase A, C y D estan verdes; no se ha repetido `tests/unit` + `tests/integration` enteros en este paso.
-- [ ] QA manual critica completada.
-- [x] Langfuse RGPD en codigo: `LANGFUSE_CAPTURE_CONTENT` rechazado fuera de development. La instancia de prod no existe todavia.
-- [x] Sin secretos en repo (detect-secrets en `7bc1aea`).
+- [ ] `PasosParaProduccion.md` Fases 1–12 completadas o con excepcion aceptada por escrito.
+- [ ] Entrada firmada en "Registro de releases".
+- [x] Langfuse RGPD en codigo: `LANGFUSE_CAPTURE_CONTENT` rechazado fuera de development.
 - [x] Coste LLM controlado por plan/cuota en codigo (Pasos 02–04).
-- [x] Release documentado: fecha 2026-09-22, commit `7bc1aea`, migracion `p64_plans_entitlements_01`, decision **No-Go**.

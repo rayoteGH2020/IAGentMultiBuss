@@ -102,7 +102,7 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 
 ## P2c - Deuda de seguridad (revision 2026-09-29, aplazada)
 
-Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hmac.compare_digest`, dedupe Telegram, `REVOKE TRUNCATE` (`p71`), errores LLM crudos fuera de logs (`0c42075`), auditoria de knowledge y accesos SADM (`cd614d0`), alcance de `audit_log` en `AGENTS.md` §7 (`502eafe`), trazas de chat SADM solo del tenant propio + auditoria de detalle de cita (`5379502`, `p72`). Aplazado el resto para cerrar el producto minimo; retomar antes de produccion comercial y en este orden. Items 1-3 en la checklist de produccion (`PasosParaProduccion.md` §1.5): obligatorios antes del primer cliente real.
+Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hmac.compare_digest`, dedupe Telegram, `REVOKE TRUNCATE` (`p71`), errores LLM crudos fuera de logs (`0c42075`), auditoria de knowledge y accesos SADM (`cd614d0`), alcance de `audit_log` en `AGENTS.md` §7 (`502eafe`), trazas de chat SADM solo del tenant propio + auditoria de detalle de cita (`5379502`, `p72`). Aplazado el resto para cerrar el producto minimo; retomar en este orden. Items 1-3 en la checklist de produccion (`PasosParaProduccion.md` §1.5): obligatorios antes del primer cliente real.
 
 | # | Item | Estado |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 | 5 | `/metrics`: restriccion de red en proxy/infra ademas del token (hoy Caddy responde 404 a `/metrics`) | **Ops** |
 | 6 | CSP sin `unsafe-eval` / `unsafe-inline`: migrar a `@alpinejs/csp` (~156 usos de Alpine) + nonces para ~10 scripts inline. 1-2 dias | **Pendiente** (backlog) |
 
-`p71` y `p72` aplicadas en dev y `saas_test` (2026-09-29). Pendiente en staging/prod cuando existan (`infisical run -- uv run alembic upgrade head`; comprobar con `alembic current` que muestra `p72_drop_sadm_chat_read_01 (head)`).
+`p71` y `p72` aplicadas en dev y `saas_test` (2026-09-29). En prod las aplica `deploy.sh` con el resto de migraciones (`PasosParaProduccion.md` Fase 8).
 
 ## P3 - Nuevos modulos
 
@@ -141,9 +141,8 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 
 ## Orden recomendado restante
 
-1. Ops: Infisical staging/prod, rotacion credenciales, QA manual Paso07. Borrar `STRIPE_*` de Infisical (D016).
+1. Ops del soft launch: seguir `PasosParaProduccion.md` (checklist unica: Infisical `prod`, rotacion de credenciales, deploy, backups, QA manual, firma en `Paso10`). Staging aplazado.
 2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
-3. Soft-launch Paso10 cuando staging este vivo.
-4. Deuda de seguridad P2c (1 -> 2 -> 3) antes de la produccion comercial; P2c-4 al activar Cloudflare.
+3. Deuda de seguridad P2c (1 -> 2 -> 3) antes del primer cliente real, incluido el soft launch con invitados (`PasosParaProduccion.md` §1.5): despues los logs y el `audit_log` ya tendrian datos personales dificiles de limpiar (RGPD). P2c-4 al activar Cloudflare.
 
 No roadmap: Paso08 Analytics / modulo 3 (D011).

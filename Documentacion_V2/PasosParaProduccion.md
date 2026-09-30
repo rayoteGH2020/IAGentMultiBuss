@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
-Fecha: 2026-08-05 · Actualizado: 2026-09-24
-Estado: checklist operativa go-live **en orden de ejecucion**. Codigo de producto cerrado (Pasos 02–07, 09); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Fecha: 2026-08-05 · Actualizado: 2026-09-30
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo de producto cerrado (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo. No empezar una fase si la anterior tiene casillas abiertas sin aceptacion explicita. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -113,7 +113,7 @@ git grep -n "TOKEN\|PASSWORD\|SECRET\|API_KEY\|Bearer" -- ':!*.lock'
 
 - [x] Catalogo de planes `basic`/`advanced`/`premium` (D012, `p67`), gates y cuotas (Paso02–04).
 - [x] Kill-switch: `ENTITLEMENTS_DISABLED_FEATURES` + parar worker.
-- [x] Webhooks: limite de body + dedupe anti-replay (Clerk/WA/TG/Stripe).
+- [x] Webhooks: limite de body + dedupe anti-replay (Clerk/WA/TG).
 - [x] `media_limits` antes de OCR/LLM.
 - [x] Sync de memberships Clerk (created/updated/deleted).
 - [x] Allowlist `azp`/`aud` obligatoria en staging/production.
@@ -293,7 +293,7 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 | `SECURITY_HTTPS_REDIRECT` | `true` |
 | `SECURITY_HSTS_ENABLED` | `true` |
 | `WEBHOOK_ALLOW_UNSIGNED` | `false` |
-| `ENCRYPTION_KEY` | Fernet nueva (no la de dev/CI) |
+| `ENCRYPTION_KEY` | Fernet nueva (no la de dev/CI). **Guardar copia en tu gestor de contrasenas**: sin ella no se descifran los tokens de integraciones guardados en BD |
 
 ### 5.2 Postgres y Redis (contenedores de la VPS)
 
@@ -514,11 +514,13 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 
 ### 11.3 Knowledge y chat
 
-- [ ] Subir knowledge; indexacion termina.
-- [ ] Chat con citas; hide thread.
-- [ ] Si Langfuse activo: solo metadatos.
+- [ ] Subir a knowledge un PDF y una imagen (JPEG/PNG); la indexacion termina en ambos. Confirma que los limites de imagen de la Fase 5.7 son los de produccion (`Paso01` §OCR knowledge).
+- [ ] Chat (`/chat`): crear hilo, preguntar por un documento subido, ver las citas; hide thread.
+- [ ] Si Langfuse activo: solo metadatos, sin texto de usuario ni de documentos (en soft launch va desactivado; el codigo impide `LANGFUSE_CAPTURE_CONTENT=true` fuera de development).
 
 ### 11.4 Planes
+
+Se valida el comportamiento **actual del codigo** (`Planes_Entitlements.md`), no el objetivo de `especificacion-planes-y-cuotas.md`. Lo que aun no esta implementado de la spec va como gap en la Fase 13.
 
 - [ ] Sidebar segun plan; URL directa a feature no incluida → denegada.
 - [ ] Cuota bloquea antes de gastar LLM.
@@ -554,18 +556,14 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
 ## Fase 13. Go / No-Go y documento de release
 
 - [ ] Gaps abiertos revisados (seguridad, coste, producto).
-- [ ] Riesgos aceptados por escrito (p. ej. Langfuse aplazado, CSP con `unsafe-inline`/`unsafe-eval` por Alpine, canales sin QA real).
-- [ ] Firma en `Paso10_QA_Release_Produccion.md`.
-
-```text
-Release: YYYY-MM-DD HH:MM Europe/Madrid
-Tag / commit: v0.1.0 / <sha>
-Alembic: <salida de `alembic current` en prod, p. ej. p75_contract_amounts_01 (head)>
-Infisical: prod
-Gaps aceptados: <lista o "ninguno">
-Smoke: OK | parcial
-Responsable: <nombre>
-```
+- [ ] Riesgos aceptados por escrito. Candidatos a 2026-09-30 (quitar los que ya esten resueltos al firmar):
+  - Langfuse prod aplazado (sin tracing; el coste sigue en `llm_calls`).
+  - CSP con `unsafe-inline`/`unsafe-eval` por Alpine.
+  - Sin staging: el primer despliegue va directo a prod (mitigacion: backup de `deploy.sh` + restore probado en Fase 9).
+  - Spec de planes no implementada del todo: seed §9 (presupuesto LLM 6/15/30 € frente a 30/100/250 en codigo) y D023 (cuota mensual de chat; mientras, `CHAT_DAILY_MESSAGE_LIMIT`, Fase 5.7).
+  - Cobro de planes fuera de la app (D016): factura manual, plan asignado por SADM.
+  - WhatsApp/Telegram, Google Calendar y voz sin QA real (fuera de alcance).
+- [ ] Firma en `Paso10_QA_Release_Produccion.md` (seccion "Registro de releases", con su plantilla).
 
 ---
 
@@ -642,7 +640,7 @@ docker compose -f /opt/iagent/deploy/docker-compose.prod.yml exec -T redis \
 | WhatsApp / Telegram | Credenciales, webhook a URL prod, QA real + replay |
 | Google Calendar / voz | OAuth client de prod con redirect URI; no se publicita (D012) |
 | CSP estricta | Migrar a `@alpinejs/csp` y quitar `unsafe-inline`/`unsafe-eval` (Paso01 §6) |
-| Staging | Mismo compose en otra VPS con Infisical `staging` para ensayar releases |
+| Staging | Mismo compose en otra VPS con Infisical `staging` (secretos propios, `APP_ENV=staging`) para ensayar releases. Hasta entonces el entorno `staging` de Infisical queda vacio |
 
 ---
 
