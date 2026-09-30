@@ -15,7 +15,10 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
-from app.core.document_processing_errors import is_provider_overload_error
+from app.core.document_processing_errors import (
+    is_provider_billing_error,
+    is_provider_overload_error,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -154,7 +157,8 @@ def error_log_fields(exc: BaseException) -> dict[str, Any]:
     Returns:
         ``error_type``, ``status_code`` HTTP del proveedor si lo expone el SDK
         (``status_code`` en Anthropic, ``code`` en google-genai) y
-        ``provider_overload`` (503/429 tras reintentos).
+        ``provider_overload`` (503/429 tras reintentos) y ``provider_billing`` (402:
+        saldo o facturación del proveedor).
     """
     status_code: Any = getattr(exc, "status_code", None)
     if not isinstance(status_code, int):
@@ -165,6 +169,7 @@ def error_log_fields(exc: BaseException) -> dict[str, Any]:
         "error_type": type(exc).__name__,
         "status_code": status_code,
         "provider_overload": is_provider_overload_error(str(exc)),
+        "provider_billing": is_provider_billing_error(str(exc)),
     }
 
 

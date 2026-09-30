@@ -23,6 +23,10 @@ class DocumentErrorCode(StrEnum):
     extraction_failed = "extraction_failed"
     # Fallo transitorio del proveedor LLM (503/overload/429). Reintentable.
     provider_overload = "provider_overload"
+    # Cuenta del proveedor sin saldo o con la facturación bloqueada (402). No es
+    # culpa del cliente ni se arregla reintentando al momento: se avisa al SADM y
+    # se puede reintentar cuando se recargue.
+    provider_billing = "provider_billing"
     # Job/worker interrumpido: attempt quedó en processing. Reintentable.
     processing_interrupted = "processing_interrupted"
     # Feature de plan desactivada: no reintentar ni llamar LLM.
@@ -55,6 +59,11 @@ PROVIDER_OVERLOAD_USER_MESSAGE = (
     "prueba de nuevo un poco más tarde"
 )
 
+PROVIDER_BILLING_USER_MESSAGE = (
+    "El servicio de IA no está disponible en este momento. Ya se ha avisado al "
+    "administrador; podrás volver a intentarlo cuando se restablezca"
+)
+
 PROCESSING_INTERRUPTED_USER_MESSAGE = (
     "El procesado se interrumpió (por ejemplo, al reiniciar el servicio). Puedes reintentarlo."
 )
@@ -70,6 +79,14 @@ _PROVIDER_OVERLOAD_MARKERS: tuple[str, ...] = (
     "resource_exhausted",
 )
 
+# Saldo o facturación del proveedor. Se evalúa antes que la sobrecarga: Google
+# devuelve RESOURCE_EXHAUSTED tanto para 429 como para 402 (créditos agotados).
+_PROVIDER_BILLING_PATTERN = re.compile(
+    r"\b402\b|prepayment|credits are depleted|credit balance is too low"
+    r"|insufficient_quota|billing (?:is )?(?:not active|disabled)",
+    re.IGNORECASE,
+)
+
 _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
     DocumentErrorCode.too_many_pages: "El documento tiene más páginas de las admitidas.",
     DocumentErrorCode.image_too_large: "La imagen tiene una resolución demasiado grande.",
@@ -78,6 +95,7 @@ _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
     DocumentErrorCode.unsupported_type: "El formato del archivo no es compatible.",
     DocumentErrorCode.extraction_failed: "No se pudieron extraer los datos del documento.",
     DocumentErrorCode.provider_overload: PROVIDER_OVERLOAD_USER_MESSAGE,
+    DocumentErrorCode.provider_billing: PROVIDER_BILLING_USER_MESSAGE,
     DocumentErrorCode.processing_interrupted: PROCESSING_INTERRUPTED_USER_MESSAGE,
     DocumentErrorCode.type_confirmation_required: (
         "Confirma el tipo de documento antes de procesarlo."
@@ -85,12 +103,34 @@ _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
 }
 
 
+def is_provider_billing_error(raw_error: str | None) -> bool:
+    """True si el proveedor LLM rechaza por saldo agotado o facturación (402)."""
+    if not raw_error or not raw_error.strip():
+        return False
+    return _PROVIDER_BILLING_PATTERN.search(raw_error) is not None
+
+
 def is_provider_overload_error(raw_error: str | None) -> bool:
     """True si el error técnico indica sobrecarga / rate-limit del proveedor LLM."""
-    if not raw_error or not raw_error.strip():
+    if not raw_error or not raw_error.strip() or is_provider_billing_error(raw_error):
         return False
     low = raw_error.lower()
     return any(marker in low for marker in _PROVIDER_OVERLOAD_MARKERS)
+
+
+def provider_error_code(raw_error: str | None) -> DocumentErrorCode | None:
+    """Motivo estructurado si el fallo es del proveedor LLM (pago o sobrecarga)."""
+    if is_provider_billing_error(raw_error):
+        return DocumentErrorCode.provider_billing
+    if is_provider_overload_error(raw_error):
+        return DocumentErrorCode.provider_overload
+    return None
+
+
+def provider_error_user_message(raw_error: str | None) -> str | None:
+    """Mensaje para el usuario si el fallo es del proveedor LLM; None si no lo es."""
+    code = provider_error_code(raw_error)
+    return _REJECTION_REASONS[code] if code is not None else None
 
 
 def is_retryable(error_code: str | None) -> bool:

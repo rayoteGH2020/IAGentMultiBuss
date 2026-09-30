@@ -12,7 +12,11 @@ from uuid import uuid4
 
 import pytest
 from app.config import get_settings
-from app.core.document_processing_errors import PROVIDER_OVERLOAD_USER_MESSAGE
+from app.core.document_processing_errors import (
+    PROVIDER_BILLING_USER_MESSAGE,
+    PROVIDER_OVERLOAD_USER_MESSAGE,
+    DocumentErrorCode,
+)
 from app.core.errors import LLMCompleteError
 from app.llm import chat_loop as cl
 from app.llm import client as client_module
@@ -119,6 +123,7 @@ def test_error_log_fields_has_no_message() -> None:
         "error_type": "_ProviderError",
         "status_code": 400,
         "provider_overload": False,
+        "provider_billing": False,
     }
     assert SECRET not in repr(fields)
 
@@ -213,6 +218,51 @@ async def test_complete_overload_keeps_user_message(monkeypatch: pytest.MonkeyPa
         )
 
     assert exc_info.value.message == PROVIDER_OVERLOAD_USER_MESSAGE
+
+
+_GOOGLE_402 = (
+    "402 RESOURCE_EXHAUSTED. {'error': {'code': 402, 'message': 'Your prepayment credits "
+    "are depleted. Please go to AI Studio', 'status': 'RESOURCE_EXHAUSTED'}}"
+)
+
+
+@pytest.mark.asyncio
+async def test_complete_billing_error_uses_its_own_message_and_alerts_sadm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """402 de Google (RESOURCE_EXHAUSTED por créditos) no es saturación: avisa al SADM."""
+    monkeypatch.setattr(client_module, "logger", _RecordingLogger())
+    _premium_entitlements(monkeypatch)
+    alert = AsyncMock()
+    monkeypatch.setattr(client_module, "alert_if_provider_billing_error", alert)
+    client = _client_without_sdk()
+
+    async def failing_invoke(**_kwargs: Any) -> tuple[_Extraction, Any]:
+        raise _GenaiError(_GOOGLE_402, code=402)
+
+    monkeypatch.setattr(client, "_invoke_sdk", failing_invoke)
+
+    with pytest.raises(LLMCompleteError) as exc_info:
+        await client.complete(
+            task="extraction",
+            messages=[{"role": "user", "content": "doc"}],
+            response_model=_Extraction,
+            tenant_id=uuid4(),
+            db=_fake_db(),
+            prompt_version="v1",
+        )
+
+    assert exc_info.value.message == PROVIDER_BILLING_USER_MESSAGE
+    assert exc_info.value.document_error_code is DocumentErrorCode.provider_billing
+    alert.assert_awaited_once()
+    assert _GOOGLE_402 in alert.await_args.args[1]
+
+
+def test_error_log_fields_flags_billing_not_overload() -> None:
+    fields = error_log_fields(_GenaiError(_GOOGLE_402, code=402))
+
+    assert fields["provider_billing"] is True
+    assert fields["provider_overload"] is False
 
 
 def test_anthropic_failure_log_has_no_content(monkeypatch: pytest.MonkeyPatch) -> None:

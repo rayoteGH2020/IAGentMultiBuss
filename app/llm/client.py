@@ -25,9 +25,9 @@ from pydantic import BaseModel
 
 from app.config import Settings, get_settings
 from app.core.document_processing_errors import (
-    PROVIDER_OVERLOAD_USER_MESSAGE,
     DocumentErrorCode,
-    is_provider_overload_error,
+    provider_error_code,
+    provider_error_user_message,
 )
 from app.core.errors import ExternalServiceError, LLMCompleteError, ValidationError
 from app.llm.chat_loop import ToolLoopResult
@@ -40,6 +40,7 @@ from app.llm.observability import (
     trace_status_message,
 )
 from app.llm.pricing import compute_cost_eur
+from app.llm.provider_alerts import alert_if_provider_billing_error
 from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
@@ -76,22 +77,19 @@ def _safe_llm_error_message(raw_error: str | None, error_type: str | None, fallb
 
     El texto técnico viaja aparte en ``LLMCompleteError.raw_error``.
     """
-    if raw_error and is_provider_overload_error(raw_error):
-        return PROVIDER_OVERLOAD_USER_MESSAGE
+    provider_message = provider_error_user_message(raw_error)
+    if provider_message is not None:
+        return provider_message
     return f"{fallback} ({error_type})" if error_type else fallback
 
 
 def _llm_error_document_code(raw_error: str | None) -> DocumentErrorCode | None:
-    if raw_error and is_provider_overload_error(raw_error):
-        return DocumentErrorCode.provider_overload
-    return None
+    return provider_error_code(raw_error)
 
 
 def _langfuse_safe_status(raw_error: str | None) -> str | None:
     """Texto seguro para Langfuse (sin contenido de documento ni nombre de fichero)."""
-    if raw_error and is_provider_overload_error(raw_error):
-        return PROVIDER_OVERLOAD_USER_MESSAGE
-    return None
+    return provider_error_user_message(raw_error)
 
 
 def _anthropic_api_key_configured(settings: Settings) -> bool:
@@ -599,6 +597,7 @@ class LLMClient:
 
         assert llm_call is not None
         if status == "error":
+            await alert_if_provider_billing_error(provider, error)
             raise LLMCompleteError(
                 _safe_llm_error_message(error, error_type, "LLM call failed"),
                 llm_call_id=llm_call.id,
@@ -781,6 +780,7 @@ class LLMClient:
 
         assert llm_call is not None
         if status == "error":
+            await alert_if_provider_billing_error(provider, error)
             raise LLMCompleteError(
                 _safe_llm_error_message(error, error_type, "Transcription failed"),
                 llm_call_id=llm_call.id,

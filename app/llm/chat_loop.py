@@ -17,10 +17,7 @@ from google.genai import types as genai_types
 from langfuse.types import TraceContext
 
 from app.config import Settings
-from app.core.document_processing_errors import (
-    PROVIDER_OVERLOAD_USER_MESSAGE,
-    is_provider_overload_error,
-)
+from app.core.document_processing_errors import provider_error_user_message
 from app.llm.observability import (
     error_log_fields,
     trace_messages,
@@ -28,6 +25,7 @@ from app.llm.observability import (
     trace_text,
 )
 from app.llm.pricing import compute_cost_eur
+from app.llm.provider_alerts import alert_if_provider_billing_error
 from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry, ToolResult
 from app.llm.tracing import get_langfuse
@@ -242,12 +240,10 @@ async def run_tool_loop(
                 model=model,
                 **error_log_fields(exc),
             )
-            # Sobrecarga del proveedor (tras reintentos): mensaje específico, no genérico.
-            final_text = (
-                PROVIDER_OVERLOAD_USER_MESSAGE
-                if is_provider_overload_error(error)
-                else _GENERIC_ERROR_MESSAGE
-            )
+            # Fallo del proveedor (sobrecarga tras reintentos, o saldo agotado):
+            # mensaje específico, no genérico. El saldo agotado avisa al SADM.
+            final_text = provider_error_user_message(error) or _GENERIC_ERROR_MESSAGE
+            await alert_if_provider_billing_error(provider, error)
             pending_records = [TurnMessageRecord(role="assistant", content=final_text)]
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -318,11 +314,7 @@ async def run_tool_loop(
                 status_message=trace_status_message(
                     error_type=error_type,
                     error=error,
-                    safe_message=(
-                        PROVIDER_OVERLOAD_USER_MESSAGE
-                        if is_provider_overload_error(error)
-                        else None
-                    ),
+                    safe_message=provider_error_user_message(error),
                 ),
             )
             obs.end()

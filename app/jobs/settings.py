@@ -19,6 +19,7 @@ from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
 from app.jobs.membership_jobs import expire_member_removals
+from app.jobs.provider_alert_jobs import send_llm_provider_billing_alert
 from app.jobs.ticket_jobs import process_ticket
 
 
@@ -40,6 +41,7 @@ class WorkerSettings:
         arq_func(index_knowledge_document, timeout=600),
         arq_func(process_channel_message, timeout=120),
         send_llm_budget_alert,
+        send_llm_provider_billing_alert,
     ]
 
     # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el

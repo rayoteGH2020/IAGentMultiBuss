@@ -203,3 +203,24 @@ async def test_chat_shows_generic_message_for_other_errors(
 ) -> None:
     text = await _run_loop_with_error(monkeypatch, ValueError("unexpected"))
     assert text == chat_loop._GENERIC_ERROR_MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_chat_shows_billing_message_and_alerts_sadm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """402 (créditos agotados) no se reintenta, no dice "muchas solicitudes" y avisa."""
+    from app.core.document_processing_errors import PROVIDER_BILLING_USER_MESSAGE
+
+    alert = AsyncMock()
+    monkeypatch.setattr(chat_loop, "alert_if_provider_billing_error", alert)
+    gemini_402 = (
+        "402 RESOURCE_EXHAUSTED. {'error': {'code': 402, 'message': 'Your prepayment "
+        "credits are depleted.'}}"
+    )
+
+    text = await _run_loop_with_error(monkeypatch, _ApiError(402, gemini_402))
+
+    assert text == PROVIDER_BILLING_USER_MESSAGE
+    alert.assert_awaited_once()
+    assert alert.await_args.args[0] == "google"
