@@ -409,3 +409,26 @@ Consecuencia:
 
 - Se implementa con `plan_quota_service` mensual (paso 3 de §9): nuevo limite en `PLAN_LIMITS` + migracion; el limite de ritmo reutiliza el contador Redis de `rate_limiter.py` con ventana corta.
 - Mientras tanto, `CHAT_DAILY_MESSAGE_LIMIT` (60 por defecto) recorta Avanzado y Premium: Backlog P2b-24.
+
+## D024 - Contratos: importes sin IVA por periodicidad y fecha de firma separada
+
+Decision (cerrada 2026-09-30, implementada): la extraccion de contratos (`contract_extraction_v2`) sustituye el campo unico `importe` por:
+
+- `importe_periodico` + `periodicidad` (`mensual` | `trimestral` | `semestral` | `anual` | `unico`): la cuota que se repite, **sin IVA**.
+- `importe_total`: valor total sin IVA, solo si figura expresamente o es un pago unico.
+- `importe_anual`: **calculado** por la app (cuota x pagos al ano), no lo devuelve el modelo. Es lo que suma el chat en "¿cuanto pago en contratos?"; no incluye pagos unicos.
+- `iva_incluido`: true solo si el contrato da los importes unicamente con IVA y no se puede separar la base.
+- `fecha_firma` separada de `fecha_inicio` (inicio de vigencia; si no hay otra, la de firma).
+
+Motivo:
+
+- `importe` guardaba cuota mensual, renta anual o total segun el contrato (garaje 114,95 mensual con IVA, vivienda 13.800 anual, consultoria 19.200 total): sumarlos daba cifras falsas en chat y listados (P2b-3).
+- Sin IVA: los clientes son autonomos y pymes, para los que el IVA es deducible; asi se comparan con las facturas.
+- Los codigos de `periodicidad` van en espanol, como `doc_type_code` (codigos de dominio); los estados siguen en ingles.
+
+Consecuencia:
+
+- Migracion `p75_contract_amounts_01`: nuevas columnas y check de `periodicidad`; `importe` se elimina sin traducir (valor ambiguo, sin produccion). En dev: `scripts/reextract_contracts.py`.
+- Chat: `sum_total` de contratos suma `importe_anual`; filtros de importe usan anual o, si es pago unico, el total. Panel: cuota con su periodicidad ("95,00 € / mes").
+- Eval `contracts_v2` (sustituye a `contracts_v1`); en el PR hay que aceptar el cambio de nombre con la etiqueta `eval-regression-accepted` (la baseline de `main` aun tiene `contracts_v1`).
+- Los campos de avisos (renovacion automatica, preaviso, fecha limite de baja) se anadiran como columnas nuevas con P3-6, sin tocar estas.

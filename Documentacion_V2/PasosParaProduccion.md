@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head `p67_plans_basic_adv_prem_01`.
+- [ ] `alembic heads` = un unico head (a 2026-09-30: `p75_contract_amounts_01`).
 - [ ] Commits separados (planes / despliegue), PR a `main`, CI verde, merge.
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -119,6 +119,35 @@ git grep -n "TOKEN\|PASSWORD\|SECRET\|API_KEY\|Bearer" -- ':!*.lock'
 - [x] Allowlist `azp`/`aud` obligatoria en staging/production.
 - [x] `/docs`, `/redoc`, `/openapi.json` desactivados con `APP_ENV=production`.
 - [x] Artefactos de despliegue probados en local (build, stack `production`, migraciones desde cero, backup/restore cifrado).
+
+### 1.5 Seguridad antes de datos de clientes reales (Backlog P2c)
+
+No bloquean el cierre funcional del producto minimo, pero **si la entrada del primer cliente real**: despues los logs y la auditoria ya tendrian datos que no se pueden limpiar facilmente (RGPD).
+
+1. **`audit_log` solo insercion (P2c-1, ~1 h).** Migracion con `REVOKE UPDATE, DELETE ON audit_log FROM saas_app` (hoy concedido en `p16`); los tests que borran filas de `audit_log` pasan a usar el rol propietario. Comprobar (debe devolver `f | f`):
+
+```powershell
+psql "<url del superusuario>" -c "SELECT has_table_privilege('saas_app','audit_log','UPDATE'), has_table_privilege('saas_app','audit_log','DELETE');"
+```
+
+2. **Datos personales fuera de los logs (P2c-2, 2-3 h).** `customer_identifier` (canales), nombres de fichero al subir, comercio/total en `worker.ticket.done`, `str(exc)` en workers y knowledge, destinatario/asunto en `email.py`, `client_name` en la metadata de `scheduling.appointment_created`. Sustituir por hash HMAC, contadores o tipos. Comprobar que no quedan (ninguna coincidencia en llamadas a `logger`):
+
+```powershell
+git grep -n "customer_identifier=customer_identifier" -- app/services/channel_chat_service.py app/jobs/channel_jobs.py
+git grep -n "str(exc)" -- app/jobs app/services
+```
+
+3. **IP fiable en la auditoria (P2c-3, ~30-45 min).** Usar solo `request.client.host` (quitar el parseo manual de `X-Forwarded-For` en `app/routes/web/audit_context.py` y `documents.py`, y las copias de `_audit_request_context`) y limitar `--forwarded-allow-ips` a la red interna de Docker (`Dockerfile`, `deploy/docker-compose.prod.yml`). Comprobar:
+
+```powershell
+git grep -n -i "x-forwarded-for" -- app
+git grep -n "forwarded-allow-ips=\*" -- Dockerfile deploy
+infisical run -- uv run pytest tests/unit/test_deploy_config.py -q
+```
+
+- [ ] P2c-1 aplicado: la consulta devuelve `f | f`.
+- [ ] P2c-2 aplicado: sin datos personales en los logs revisados.
+- [ ] P2c-3 aplicado: sin `x-forwarded-for` manual ni `forwarded-allow-ips=*`; `test_deploy_config.py` verde.
 
 ---
 
@@ -318,6 +347,8 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 `DOCUMENT_MAX_IMAGE_EDGE_PX=20000`, `DOCUMENT_MAX_IMAGE_PIXELS=40000000`, `KNOWLEDGE_MAX_FILE_SIZE_BYTES=15728640`. No usar los valores bajos de las pruebas manuales de Paso01.
 
+**Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
+
 ### 5.8 Opcionales segun alcance (vacias en soft launch)
 
 - SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS`/`SMTP_SSL`) y `EMAIL_SADM` para avisos de usuarios sin org.
@@ -335,7 +366,7 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 1. Clerk Dashboard → tu aplicacion → crear instancia **Production**. Dominio: `<dominio>`.
 2. Clerk → Domains: crear en tu DNS los **CNAME** que indica (frontend API `clerk.<dominio>`, cuentas, email). Esperar a que Clerk los marque verificados.
 3. Configure → Restrictions → **Sign-up mode = Restricted** (solo por invitacion).
-4. Configure → Organizations → activar Organizations y **desactivar** que los usuarios creen organizaciones.
+4. Configure → Organizations → activar Organizations y **desactivar** que los usuarios creen organizaciones. Limite de miembros por organizacion **>= 20** (maximo de Premium, D022; en dev esta en 5; Backlog P2b-23).
 5. Configure → Paths / redirect URLs → `https://app.<dominio>`.
 6. Webhooks → Add endpoint `https://app.<dominio>/api/webhooks/clerk`, eventos:
    - `organizationMembership.created`, `organizationMembership.updated`, `organizationMembership.deleted`
@@ -347,6 +378,7 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 - [ ] Instancia Production con DNS verificado.
 - [ ] Registro restringido y creacion de orgs desactivada.
+- [ ] Limite de miembros por organizacion >= 20.
 - [ ] Webhook creado (las entregas fallaran hasta la Fase 8; es normal).
 - [ ] Variables Clerk en Infisical `prod`.
 

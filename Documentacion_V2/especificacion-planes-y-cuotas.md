@@ -181,7 +181,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - **Borrado diferido:**
   - Al borrar se rellena `deleted_at` (no hay estado «borrado»); queda oculto y fuera de las búsquedas.
   - A los 30 días se purga (embeddings, datos y fichero en R2).
-- **Extracción al subir (Instructor):** proveedor, tipo, inicio, vencimiento, renovación automática, preaviso en días, **fecha límite de baja** (calculada), importe y periodicidad.
+- **Extracción al subir (Instructor, `contract_extraction_v2`, D024):** parte contraria, fecha de firma, inicio de vigencia, vencimiento, cuota sin IVA (`importe_periodico`) con su `periodicidad`, importe total, `importe_anual` (calculado) e `iva_incluido`. Renovación automática, preaviso en días y **fecha límite de baja** se añaden con los avisos de contratos **[Post producto mínimo]** (Backlog P3-6).
 - **Avisos según el plan** (sección 2.2), con un trabajo programado diario. **[Post producto mínimo]** (Backlog P3-6).
 - **Cupo:** al 80 % y al 100 % de las altas, aviso. Al 100 %, el contrato queda pendiente de cupo (`status = quota_pending`).
 

@@ -48,16 +48,16 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | --- | --- | --- |
 | 1 | Infisical prod: fijar o dejar sin definir `LLM_MODEL_EXTRACTION` / `LLM_MODEL_CHAT` (deben coincidir con dev) | **Ops** (cuando exista entorno prod) |
 | 2 | `GOOGLE_API_KEY` dedicada a CI (hoy comparte cuota con dev) | **Ops** |
-| 3 | Contratos: separar `fecha_inicio` (firma vs inicio de vigencia) e `importe` (periodico vs total + periodicidad) | **Pendiente** (schema + prompt v2 + migracion) |
-| 4 | Polizas: `tipo_seguro` como enum cerrado en vez de texto libre | **Pendiente** (schema + prompt v2 + migracion de datos) |
+| 3 | Contratos: separar `fecha_inicio` (firma vs inicio de vigencia) e `importe` (periodico vs total + periodicidad) | **Hecho** 2026-09-30 (D024): `contract_extraction_v2` con `fecha_firma`/`fecha_inicio`, `importe_periodico` + `periodicidad`, `importe_total`, `importe_anual` (calculado) e `iva_incluido`; migracion `p75` (elimina `importe`); eval `contracts_v2` 100 % x2; en dev, volver a extraer con `scripts/reextract_contracts.py` |
+| 4 | Polizas: `tipo_seguro` como enum cerrado en vez de texto libre | **Post producto minimo** (2026-09-30; schema + prompt v2 + migracion de datos) |
 | 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Hecho** 2026-09-28 (`fecha_fin_from` / `fecha_fin_to`; `chat_documents_v2` 32/32 x2) |
-| 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Pendiente, no urgente** (medir y migrar; antes consultar fecha de retirada del modelo) |
-| 7 | Eval de tickets con mas casos (hoy 3, todos fotos buenas) | **Pendiente** (anadir tickets arrugados / baja calidad) |
+| 6 | `transcription` y `translate` siguen en `gemini-2.5-flash` (riesgo de retirada) | **Post producto minimo** (2026-09-30; medir y migrar; antes consultar fecha de retirada del modelo) |
+| 7 | Eval de tickets con mas casos (hoy 3, todos fotos buenas) | **Post producto minimo** (2026-09-30; anadir tickets arrugados / baja calidad) |
 | 8 | Evals escriben en BD `saas` (tenant "Invoice extraction eval") | **Hecho** 2026-09-28 (evals en `saas_test`, compartida con pytest: `app/evals/eval_db.py`; CI igual). Datos antiguos del tenant de evals borrados de `saas` el 2026-09-28 (tenant + cascade: 1.113 `llm_calls`, 808 `audit_log`, 353 `chat_threads`, documentos sembrados; + usuario `@eval.local`) |
 | 9 | CI de evals: fallar si una metrica baja >5 % frente a `main` (Agents.md §9) | **Hecho** 2026-09-28 (`app/evals/baselines.json` + `compare_baseline`; chat x2 con media; excepcion con etiqueta `eval-regression-accepted`) |
 | 10 | Dev `DATABASE_URL` con superusuario `saas`: la UI de dev no pasa por RLS (prod usa `saas_app`, NOBYPASSRLS) | **Ops** |
 | 11 | Objetos huerfanos en R2/MinIO de tenants borrados en dev | **Ops** (limpieza puntual) |
-| 12 | Tools del chat: `group_by` month/year agrupa contratos/polizas por `fecha_inicio`; falta agrupar por vencimiento (`fecha_fin`) | **Pendiente** (continuacion del item 5 + caso nuevo en `chat_documents_v2`) |
+| 12 | Tools del chat: `group_by` month/year agrupa contratos/polizas por `fecha_inicio`; falta agrupar por vencimiento (`fecha_fin`) | **Hecho** 2026-09-30: `group_by` `expiry_month` / `expiry_year` (contratos y seguros, por `fecha_fin`; sin vencimiento en su propio grupo); caso `doc_033` en `chat_documents_v2` (100 % x2) |
 | 14 | Coste de reintentos de Instructor con Gemini: Instructor 1.15 solo suma el uso de los reintentos para OpenAI y Anthropic (`instructor/utils/core.py::update_total_usage`); con `from_genai` en `llm_calls` queda solo el ultimo intento. Una extraccion con 2 reintentos por schema invalido cuenta ~1/3 de su coste en el presupuesto del plan. Sumar el uso de cada intento (hooks de Instructor) | **Hecho** 2026-09-29: `_AttemptUsage` en `client.py` suma cada intento via hook `completion:response`; las llamadas fallidas con tokens se registran con su coste y descuentan del presupuesto (antes 0 EUR y sin descontar); el chat (`chat_loop.py`) ahora tambien suma su coste a `usage_meter` (antes no lo hacia) |
 | 16 | Chat de la app frente al presupuesto de IA (D019) | **Hecho** 2026-09-29: al 90 % responde con mensaje fijo sin LLM (telefono y email del admin del tenant, `users`, D020) y avisa al admin (1 cada 24 h, max. 3/mes); email al admin al cruzar el 80 % (1/mes) con cualquier gasto de IA. Ampliado: email al SADM al 90 % (1/mes, con nombre y apellido del admin desde Clerk y su telefono de `users`) y banner configurable al 100 % en todas las paginas (`LLM_BUDGET_EXHAUSTED_NOTICE`) |
 | 17 | Asistente de canales (WhatsApp/Telegram, Avanzado/Premium) frente al presupuesto: hoy no comprueba `llm_budget_eur_month` antes de llamar al LLM. Aplicar el mismo corte que el chat (D019) con mensaje fijo al cliente final sin llamar al modelo, siguiendo el patron del anti-abuso de `channel_jobs.py`. Decidir si el umbral es el mismo 90 % | **Pendiente** (no afecta a Basico) |
@@ -69,9 +69,9 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 22 | Asistente de canales: conocimiento en el prompt en vez de `search_knowledge` (spec §4.6, optimizacion no comprometida). Requisitos previos: medir en `llm_calls` con trafico real, decidir el origen del "perfil del negocio" (hoy solo documentos troceados) y redefinir la confianza de la cache semantica (hoy sale de las citas de `search_knowledge`) | **Idea, no urgente** (solo si la medicion lo justifica) |
 | 23 | Clerk: el maximo de miembros por organizacion es 5 y el plan permite 9 (Avanzado) / 20 (Premium) (D022). Subirlo a >= 20 en Clerk Dashboard > Configure > Organizations (limite por defecto) y en las organizaciones ya creadas que tengan limite propio. Hasta entonces, las invitaciones a partir del 6.o miembro fallan en Clerk aunque la app las permita | **Ops, al pasar a produccion** (checklist en `Paso11_Despliegue_VPS.md` §5 Clerk produccion) |
 | 24 | Chat: el tope diario de plataforma `CHAT_DAILY_MESSAGE_LIMIT` no esta definido en Infisical y vale 60 por defecto (`config.py`), por debajo del plan: Avanzado y Premium quedan en 60 preguntas/dia en vez de 250/600. Hasta implementar D023 (cupo mensual + limite de ritmo, paso 3 de §9): definirlo alto en Infisical (dev y prod) o subir el default, y documentar `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT` en `docs/environment-variables.md` | **Pendiente** (configuracion; antes de clientes de Avanzado/Premium) |
-| 13 | `.gitattributes` solo fija LF en ficheros de deploy; el resto depende de `core.autocrlf` de cada maquina | **Pendiente, higiene** (`* text=auto eol=lf` + `git add --renormalize .`, commit `chore:`) |
+| 13 | `.gitattributes` solo fija LF en ficheros de deploy; el resto depende de `core.autocrlf` de cada maquina | **Post producto minimo, higiene** (2026-09-30; `* text=auto eol=lf` + `git add --renormalize .`, commit `chore:`) |
 
-Orden acordado para la deuda de producto (2026-09-28, aplazado): **12 -> 3 -> 4**, despues 6. El item 3 cambia campos usados por panel, chat y evals: presentar diseno de campos antes de implementar.
+Orden acordado para la deuda de producto (2026-09-28, aplazado): **12 -> 3 -> 4**, despues 6. **2026-09-30:** para el producto minimo solo **12 y 3**; 4, 6, 7 y 13 despues. Ops 1, 2, 10 y 11 van con el paso a produccion (`PasosParaProduccion.md`). El item 3 cambia campos usados por panel, chat y evals: presentar diseno de campos antes de implementar.
 
 ### Detalle de la deuda de producto (items 3, 4 y 5)
 
@@ -89,7 +89,7 @@ Problema comun: campos del schema que no dicen exactamente que dato guardar. El 
 
 Sumar "importe de mis contratos" (chat, listados) mezcla mensual, anual y total: el resultado no significa nada. Igual con "cuanto pago al mes en contratos".
 
-Solucion 3a/3b: separar campos (`fecha_firma` / `fecha_inicio`; `importe_periodico` + `periodicidad` / `importe_total`), prompt `contract_extraction_v2` y migracion de datos.
+Solucion 3a/3b: separar campos (`fecha_firma` / `fecha_inicio`; `importe_periodico` + `periodicidad` / `importe_total`), prompt `contract_extraction_v2` y migracion de datos. *Resuelto 2026-09-30 (D024).*
 
 **4. Polizas - `tipo_seguro`.** Texto libre: la misma poliza de hogar sale como "hogar", "Multirriesgo Hogar" u "Hogar Integral"; la de coche como "auto", "automoviles" o "Automoviles". Filtrar "mis seguros de coche" o agrupar gasto por tipo pierde polizas segun como se escribio cada una.
 
@@ -101,7 +101,7 @@ Solucion: enum cerrado (hogar, auto, vida, salud, decesos, accidentes, rc, multi
 
 ## P2c - Deuda de seguridad (revision 2026-09-29, aplazada)
 
-Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hmac.compare_digest`, dedupe Telegram, `REVOKE TRUNCATE` (`p71`), errores LLM crudos fuera de logs (`0c42075`), auditoria de knowledge y accesos SADM (`cd614d0`), alcance de `audit_log` en `AGENTS.md` §7 (`502eafe`), trazas de chat SADM solo del tenant propio + auditoria de detalle de cita (`5379502`, `p72`). Aplazado el resto para cerrar el producto minimo; retomar antes de produccion comercial y en este orden.
+Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hmac.compare_digest`, dedupe Telegram, `REVOKE TRUNCATE` (`p71`), errores LLM crudos fuera de logs (`0c42075`), auditoria de knowledge y accesos SADM (`cd614d0`), alcance de `audit_log` en `AGENTS.md` §7 (`502eafe`), trazas de chat SADM solo del tenant propio + auditoria de detalle de cita (`5379502`, `p72`). Aplazado el resto para cerrar el producto minimo; retomar antes de produccion comercial y en este orden. Items 1-3 en la checklist de produccion (`PasosParaProduccion.md` §1.5): obligatorios antes del primer cliente real.
 
 | # | Item | Estado |
 | --- | --- | --- |
