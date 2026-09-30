@@ -350,6 +350,10 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 **Registro de actividad (D029, cuando este implementado):** `ACTIVITY_LOG_RETENTION_DAYS=90` (dias que se conservan las filas de `activity_log`; `0` = no purgar).
 
+**Pendiente de decidir (D029):** si la app debe negarse a arrancar en produccion con `ACTIVITY_LOG_RETENTION_DAYS=0`, como ya hace con `LANGFUSE_CAPTURE_CONTENT=true`. Recomendado: si (en development se permitiria `0`). Motivo: cada fila lleva `user_id` (dato personal) y guardarlo sin limite choca con la minimizacion del RGPD y no se puede justificar un plazo en la politica de privacidad; ademas, con 1-3 millones de filas al mes, en un ano son 12-36 millones que engordan los backups diarios y el disco de la VPS. Hasta decidirlo, no poner `0` en `prod`.
+
+- [ ] Decidido si `ACTIVITY_LOG_RETENTION_DAYS=0` se bloquea en produccion (y, si se bloquea, anotado en D029 e implementado con la fila 1b).
+
 **Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
 
 ### 5.8 Email (obligatorio tambien en soft launch)
