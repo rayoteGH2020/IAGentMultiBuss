@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Commitear cambios pendientes (`p66` renombrada, `p67`, tests, ficheros de despliegue) y dejar CI verde en `main` | PC / GitHub | Tu (+ asistente) | 1 |
+| 2 | Fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, quitando antes la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
@@ -64,7 +64,7 @@ Alcance del primer go-live:
 
 ### 1.1 Commitear y CI verde
 
-Estado a 2026-09-24: hay cambios sin commitear (renombrado `p66_drop_analytics_ent_01`, nueva `p67_plans_basic_adv_prem_01`, tests, `Dockerfile`, `deploy/`, docs).
+Estado a 2026-09-30: todo commiteado y en `RamaCursor01`; CI y evals verdes en el PR #1. Falta fusionarlo en `main`.
 
 Los tests y los evals usan la BD `saas_test`, nunca `saas` (crearla/migrarla una vez y tras cada migracion nueva):
 
@@ -81,7 +81,7 @@ infisical run -- uv run alembic heads
 ```
 
 - [ ] `alembic heads` = un unico head (a 2026-09-30: `p75_contract_amounts_01`).
-- [ ] Commits separados (planes / despliegue), PR a `main`, CI verde, merge.
+- [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
 
@@ -434,7 +434,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) = `p67_plans_basic_adv_prem_01 (head)`.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p75_contract_amounts_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -509,6 +509,7 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 - [ ] Subir factura y ticket; el worker los procesa.
 - [ ] Documento invalido falla con mensaje claro; retry / dismiss.
 - [ ] Multi-IVA visible.
+- [ ] Subir un contrato: en la lista se ve la cuota con su periodicidad (p. ej. "95,00 € / mes") y en el detalle firma, cuota, coste anual y total (D024). En el chat, "¿cuanto pago al año en contratos?" responde con el coste anual y "¿que contratos vencen cada mes?" agrupa por vencimiento.
 - [ ] En R2 `iagent-prod` los objetos no son publicos (URL directa sin firma → acceso denegado).
 
 ### 11.3 Knowledge y chat
@@ -522,6 +523,7 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 - [ ] Sidebar segun plan; URL directa a feature no incluida → denegada.
 - [ ] Cuota bloquea antes de gastar LLM.
 - [ ] Cambio de plan en `/sadm/plans` se refleja.
+- [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).
 
 ### 11.5 Canales, calendario y billing (solo si entran en el alcance)
 
@@ -558,7 +560,7 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
 ```text
 Release: YYYY-MM-DD HH:MM Europe/Madrid
 Tag / commit: v0.1.0 / <sha>
-Alembic: p67_plans_basic_adv_prem_01
+Alembic: <salida de `alembic current` en prod, p. ej. p75_contract_amounts_01 (head)>
 Infisical: prod
 Gaps aceptados: <lista o "ninguno">
 Smoke: OK | parcial
