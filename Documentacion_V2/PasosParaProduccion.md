@@ -482,12 +482,14 @@ Flujo unico (D005):
 1. Clerk Dashboard → Organizations → Create → nombre del cliente.
 2. Invitar al usuario a esa org (rol `admin` para el responsable; `member` para el resto).
 3. El usuario acepta la invitacion y hace login → la app crea tenant y membership locales.
-4. Tu, en `https://app.<dominio>/sadm/plans` → asignar plan (`basic` / `advanced` / `premium`).
+4. Tu, en `https://app.<dominio>/sadm/plans` → asignar plan (`basic` / `advanced` / `premium`). La primera asignacion se aplica en el acto; los cambios posteriores entran el dia 1 del mes siguiente (D027): elige bien el plan inicial.
 5. Comprobar en `/sadm` que aparece la org y su uso.
+6. Pedir al admin del tenant que rellene su telefono en `/settings/members` → editar su ficha (Backlog P2b-19, D020). Sin telefono, el mensaje de corte del chat por presupuesto y el aviso al SADM salen solo con su email.
 
 Usuario que entra sin org: ve `/onboarding` y puede avisar al SuperAdmin; no puede crear organizaciones.
 
 - [ ] Primer tenant piloto con plan asignado.
+- [ ] Telefono del admin del piloto rellenado.
 
 ---
 
