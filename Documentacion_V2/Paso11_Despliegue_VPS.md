@@ -129,6 +129,7 @@ R2: crear los buckets de prod (`R2_BUCKET`) y de backups, **sin acceso publico**
 - [ ] Crear instancia **Production** y completar los CNAME DNS que pide Clerk.
 - [ ] Restrictions → Sign-up mode = **Restricted** (solo por invitacion).
 - [ ] Organizations → desactivar que los usuarios creen organizaciones.
+- [ ] Organizations → límite de miembros por organización **≥ 20** (máximo de Premium, D022; en dev está en 5). Revisar también las orgs ya creadas con límite propio. Sin esto, las invitaciones fallan en Clerk a partir del 6.º miembro aunque la app las permita (Backlog P2b-23).
 - [ ] Webhook `https://app.tudominio.com/api/webhooks/clerk` con `organizationMembership.created|updated|deleted` (+ `user.created`, `organization.created` si se usan). Signing secret → `CLERK_WEBHOOK_SECRET`.
 - [ ] `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWKS_URL` de la instancia prod.
 - [ ] `CLERK_JWT_AZP_ALLOWLIST=https://app.tudominio.com` (inferencia: confirmar con un JWT real tras el primer login, `Paso01` §3).
