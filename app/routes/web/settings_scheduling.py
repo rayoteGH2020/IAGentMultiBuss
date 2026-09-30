@@ -34,6 +34,7 @@ from app.core.templating import render
 from app.deps import (
     CurrentTenant,
     CurrentUser,
+    EntitlementsDep,
     RedisDep,
     RequireManager,
     get_db,
@@ -61,6 +62,7 @@ from app.schemas.scheduling import (
 from app.services import (
     business_hours_service,
     membership_service,
+    plan_quota_service,
     professional_service,
     service_catalog_service,
 )
@@ -655,13 +657,19 @@ async def members_page(
     _user: CurrentUser,
     tenant: CurrentTenant,
     manager: RequireManager,
+    ents: EntitlementsDep,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     members = await membership_service.list_tenant_members(db, tenant.id)
+    member_usage = await plan_quota_service.get_member_usage(db, ents, tenant.id)
     return render(
         request,
         full="pages/settings/members.html",
-        ctx={"members": members, "removable_ids": _removable_ids(members, manager)},
+        ctx={
+            "members": members,
+            "removable_ids": _removable_ids(members, manager),
+            "member_usage": member_usage,
+        },
     )
 
 

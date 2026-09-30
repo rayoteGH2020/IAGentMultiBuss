@@ -73,7 +73,7 @@ async def test_get_limit_usage_reads_same_keys_and_counts_as_enforcement(
     assert usage["knowledge_uploads_per_day"] == QuotaUsage(used=0, cap=25)
     assert usage["chat_messages_per_day"] == QuotaUsage(used=95, cap=100)
     assert usage["knowledge_docs_max"] == QuotaUsage(used=40, cap=100)
-    assert usage["members_max"] == QuotaUsage(used=2, cap=5)
+    assert usage["members_max"] == QuotaUsage(used=2, cap=3)
     assert usage["channel_external_slots"] == QuotaUsage(used=0, cap=0)
     assert "channel_messages_per_hour" not in usage  # por cliente final: sin total del tenant
 

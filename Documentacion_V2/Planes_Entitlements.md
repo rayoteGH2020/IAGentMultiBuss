@@ -69,7 +69,7 @@ Pendiente / ops:
 | `chat_messages_per_day` | mensajes | 100 | 250 | 600 |
 | `channel_messages_per_hour` | mensajes/cliente | 0 | 80 | 200 |
 | `voice_notes_per_hour` | notas | 0 | 0 | 0 |
-| `members_max` | seats | 5 | 15 | 40 |
+| `members_max` | seats | 3 | 9 | 20 |
 | `llm_budget_eur_month` | EUR | 30 | 100 | 250 |
 | `channel_external_slots` | integraciones | 0 | 2 | 2 |
 

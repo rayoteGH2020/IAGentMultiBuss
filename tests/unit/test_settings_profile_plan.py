@@ -35,7 +35,7 @@ def test_basic_plan_summary_lists_features_and_nonzero_limits() -> None:
     ]
     limits = _limits(summary)
     assert limits["Documentos procesados al día"] == "50"
-    assert limits["Miembros del equipo"] == "5"
+    assert limits["Miembros del equipo"] == "3"
     # Límites a 0 = prestación no incluida: no se listan.
     assert "Canales de mensajería conectados" not in limits
     assert "Mensajes por cliente y hora en canales" not in limits

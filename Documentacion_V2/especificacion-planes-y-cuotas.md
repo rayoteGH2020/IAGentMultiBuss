@@ -103,7 +103,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 | `contract_max_pages` | páginas por fichero | 100 | 100 | 100 |
 | `assistant_messages_per_month` | mensajes enviados por el asistente | 0 | 800 | 2.500 |
 | `reminders_per_month` | recordatorios de cita | 0 | 200 | 600 |
-| `members_max` | usuarios | 1 | 3 | 10 |
+| `members_max` | usuarios de cualquier rol, admin incluido (D022) | 3 | 9 | 20 |
 | `history_months` | meses visibles (facturas y tickets; contratos por vigencia, D017) | 12 | 36 | sin límite |
 
 ### 3.2 Control de coste y protección técnica (el cliente no los ve)
@@ -237,7 +237,9 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 - **Datos personales:** se guarda solo lo necesario para la cita (nombre, teléfono, día y hora). En centros sanitarios, la cita puede ser dato de salud: se necesita contrato de encargado del tratamiento y los datos alojados en la UE.
 
 ### 4.7 Usuarios e histórico
-- `members_max` se controla al invitar en Clerk (webhook o comprobación previa).
+- `members_max` (D022): máximo de miembros activos de cualquier rol, admin incluido (3 / 9 / 20). Se comprueba en la app al solicitar o registrar un alta (`plan_quota_service.ensure_member_capacity`). Premium va dirigido a negocios de 10 o más miembros; ese mínimo es comercial, no se aplica.
+- Si un tenant ya supera el máximo (cambio de catálogo o bajada de plan), conserva sus miembros y solo se bloquean las altas nuevas. `/settings/members` muestra «X de Y» y un aviso al llegar al máximo o superarlo. El SADM puede fijar otro máximo por tenant con un override.
+- **Clerk** tiene su propio máximo de miembros por organización (hoy 5): debe ser ≥ 20 o las invitaciones de Avanzado y Premium fallarán a partir del 6.º miembro (Backlog P2b-23).
 - **`history_months` (D017):** oculta facturas y tickets con fecha de emisión anterior al límite. Los contratos activos o pendientes de vencer son siempre visibles, buscables en el chat y avisables; tras vencer o ser sustituidos, se aplica el mismo límite contado desde su fecha de fin.
 - Las pólizas seguirán la regla de los contratos cuando se resuelva su encaje en los planes (aparcado).
 - El histórico más antiguo que `history_months` **no se borra**, solo se oculta. Si el cliente sube de plan, vuelve a verse.

@@ -10,6 +10,21 @@
       Las altas y bajas se solicitan aquí y las ejecuta el superadmin (SADM) en Clerk.
       Los permisos de citas se ajustan directamente.
     </p>
+    {% if member_usage and member_usage.cap is not none %}
+      <p id="member-usage" class="mt-1 text-sm text-slate-600">
+        Miembros: {{ member_usage.used }} de {{ member_usage.cap }} que admite tu plan.
+      </p>
+      {% if member_usage.used > member_usage.cap %}
+        <p id="member-usage-over" class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          Tienes más miembros de los que admite tu plan. Los actuales siguen activos,
+          pero no puedes añadir más hasta tener menos de {{ member_usage.cap }} o cambiar de plan.
+        </p>
+      {% elif member_usage.used == member_usage.cap %}
+        <p id="member-usage-full" class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          Has alcanzado el máximo de miembros de tu plan. Para añadir otro, da de baja a alguien o cambia de plan.
+        </p>
+      {% endif %}
+    {% endif %}
   </div>
 
   <div class="card p-0 overflow-hidden">

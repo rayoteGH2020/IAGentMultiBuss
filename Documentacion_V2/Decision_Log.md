@@ -373,3 +373,18 @@ Consecuencia:
 
 - `auth_service.resolve_user`, `detach_deleted_clerk_user`, `handle_clerk_user_deleted` y `security.clerk_user_exists`.
 - La fila anonimizada se conserva por las FK (audit_log, documentos). `memberships` tiene RLS por tenant: la desactivacion recorre los tenants fijando el contexto de cada uno (evento raro).
+
+## D022 - Maximo de miembros por plan: 3 / 9 / 20
+
+Decision (cerrada 2026-09-30): `members_max` = **3 / 9 / 20** (Basico / Avanzado / Premium), contando todos los miembros activos de cualquier rol, admin incluido. Premium se dirige a negocios de 10 o mas miembros; ese minimo es comercial y no se aplica. Sustituye a 5 / 15 / 40 (`Planes_Entitlements.md`, seed p67) y a 1 / 3 / 10 (`especificacion-planes-y-cuotas.md`).
+
+Motivo:
+
+- Con 1 usuario en Basico no cabian el co_admin ni la gestoria/asesor, caso tipico de un autonomo. 3 los cubre sin reglas especiales por rol.
+- Un solo tope por tenant, igual para todos los roles, evita excepciones (p. ej. lectores que no cuentan) que permitirian saltarse el limite.
+
+Consecuencia:
+
+- Seed `PLAN_LIMITS` y migracion `p74_members_max_01` (solo `plan_entitlements`; los overrides por tenant no se tocan).
+- Tenants que ya superan el tope: conservan sus miembros; solo se bloquean las altas nuevas (`ensure_member_capacity`, sin cambios). `/settings/members` muestra "X de Y" y un aviso al llegar o superar el tope (`plan_quota_service.get_member_usage`). Excepciones caso a caso con override del SADM. Mismo criterio cuando el SADM baja de plan a un tenant.
+- Clerk limita hoy a 5 miembros por organizacion: hay que subirlo a >= 20 (Backlog P2b-23).

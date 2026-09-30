@@ -233,6 +233,18 @@ async def ensure_member_capacity(
         raise ValidationError(MSG_MEMBERS_MAX)
 
 
+async def get_member_usage(db: AsyncSession, ents: Entitlements, tenant_id: UUID) -> QuotaUsage:
+    """Miembros activos frente al tope del plan (el mismo que aplica ``ensure_member_capacity``).
+
+    Los tenants que ya superan el tope conservan sus miembros; solo se bloquean
+    las altas nuevas (D022).
+    """
+    return QuotaUsage(
+        used=await _count_active_members(db, tenant_id),
+        cap=resolve_quota_cap(ents, LIMIT_MEMBERS_MAX, platform_cap=None),
+    )
+
+
 async def _count_knowledge_docs(db: AsyncSession, tenant_id: UUID) -> int:
     stmt = (
         select(func.count())
