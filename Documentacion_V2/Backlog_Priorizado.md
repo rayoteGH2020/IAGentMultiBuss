@@ -7,7 +7,7 @@ Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno.
 
 ## Cierre del producto minimo (plan acordado 2026-09-30)
 
-Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos limites que produccion (D027). Orden de ejecucion = numero de fila. Cada bloque: diseno presentado antes de implementar, tests, suite completa y commit propio.
+Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos limites que produccion (D027). Orden de ejecucion: el codigo sigue el numero de fila; las ops de la fila 9 empiezan en paralelo (ver "Orden de ejecucion" debajo de la tabla). Cada bloque: diseno presentado antes de implementar, tests, suite completa y commit propio.
 
 | # | Que | Incluye | Estado | Dias (estim.) |
 | --- | --- | --- | --- | ---: |
@@ -20,9 +20,41 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | 6 | Historico (bloque 6) | `history_months` = 12 (D017): oculta facturas y tickets antiguos y aplica la regla de vigencia a los contratos | Pendiente | 0,5-1 |
 | 7 | Consumo en "Mi cuenta" (bloque 7) | "X de Y" mensual de todos los cupos y avisos al 80 % y 100 % en la app; cierra P2b-18 y el resto de P2-4 (los emails y el corte del chat de D019 ya estan hechos) | Pendiente | 1 |
 | 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2; cierra P2b-10), fusionar el PR #1 en `main` (el tag de produccion sale de `main`) | Pendiente | 0,5 |
-| 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13 (rotacion de secretos P0-1, claves LLM de prod y clave de Google aparte para CI P2b-2, Infisical `prod` sin `LLM_MODEL_*` para que rijan los modelos del codigo P2b-1, Clerk prod con limite de miembros por organizacion >= 20 P2b-23 y webhook con `user.deleted` (D021), SMTP y `EMAIL_SADM` obligatorios (altas y bajas de miembros y avisos de presupuesto dependen del email), deploy, backups, alta del piloto con telefono del admin P2b-19, QA manual de la Fase 11 despues de los bloques 2-7 con alcance Clerk/R2/documentos/chat/planes P1-7, firma en `Paso10`). Dominio, VPS, R2 y rotacion de credenciales se pueden adelantar en paralelo | Pendiente (ops) | 1-2 |
+| 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13, en dos tandas. **Tanda A, desde ya y en paralelo a las filas 1-8 (Fases 2-7, no dependen del codigo):** dominio, VPS, buckets R2, claves LLM de prod y clave de Google aparte para CI (P2b-2), rotacion de secretos (P0-1), endurecer la VPS, Machine Identity de Infisical, Infisical `prod` con SMTP y `EMAIL_SADM` y sin `LLM_MODEL_*` para que rijan los modelos del codigo (P2b-1), Clerk prod con limite de miembros por organizacion >= 20 (P2b-23) y webhook con `user.deleted` (D021), DNS. **Tanda B, despues de la fila 8 (Fases 8-13):** repaso de la Fase 5 por si los bloques anadieron variables, primer deploy, backups y restore probado, alta del piloto con telefono del admin (P2b-19), QA manual de la Fase 11 con alcance Clerk/R2/documentos/chat/planes (P1-7), verificacion de seguridad y firma en `Paso10` | Pendiente (ops) | 1-2 |
 
 Codigo pendiente: unos 7,5-9 dias.
+
+### Orden de ejecucion
+
+**Hecho:** fila 0, base de cupos mensuales (`67220be`). Los bloques 2-7 se apoyan en ella.
+
+**Codigo (asistente), en este orden:**
+
+1. **Fila 1, seguridad P2c 1-3.** Primero porque fija la norma de logs sin datos personales para todo lo que viene, y P2c-2 toca el flujo de subida del bloque 2.
+2. **Filas 2 -> 3, facturas y tickets y reintentos.** Mismo flujo de documentos, seguidas.
+3. **Fila 4, chat.**
+4. **Fila 5, contratos.** Reutiliza el hash SHA-256 del bloque 2.
+5. **Fila 6, historico.**
+6. **Fila 7, consumo en "Mi cuenta".** Al final, para mostrar todos los cupos ya aplicados.
+7. **Fila 8, cierre del codigo.** Suite completa, smoke con `saas_app` y fusion del PR #1 en `main`.
+
+**Ops (usuario), fila 9 en dos tandas:**
+
+- **Tanda A, desde ya y en paralelo a las filas 1-8:** `PasosParaProduccion.md` Fases 2-7, que no dependen del codigo.
+  - Fase 2: dominio, VPS, buckets R2, claves de prod y de CI, rotacion de secretos.
+  - Fase 3: endurecer la VPS.
+  - Fase 4: Machine Identity de Infisical.
+  - Fase 5: variables de `prod` (incluidos SMTP y `EMAIL_SADM`).
+  - Fase 6: Clerk prod (limite de miembros >= 20, webhook con `user.deleted`).
+  - Fase 7: DNS.
+- **Tanda B, despues de la fila 8:**
+  - Repaso de la Fase 5: los bloques 2-7 pueden anadir variables (p. ej. el limite de ritmo del chat); `CHAT_DAILY_MESSAGE_LIMIT` (5.7) sobra desde el bloque 4 y se borra.
+  - Fase 8: primer deploy.
+  - Fase 9: backups y restore probado.
+  - Fase 10: alta del piloto (con telefono del admin).
+  - Fase 11: QA manual.
+  - Fase 12: verificacion de seguridad.
+  - Fase 13: firma Go/No-Go.
 
 Sin cambios en el producto minimo: knowledge mantiene sus limites actuales (la spec no le fija limites mensuales, §11; gap aceptado en la Fase 13). El paso 9 de la spec §9 no necesita bloque propio: el reinicio de periodos es automatico, el job de `quota_pending` va en el bloque 2 y la purga esta aplazada (P3-8).
 

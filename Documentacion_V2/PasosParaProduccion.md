@@ -1,10 +1,10 @@
 # PasosParaProduccion
 
 Fecha: 2026-08-05 · Actualizado: 2026-09-30
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1-8) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1-8; la 0 ya esta hecha y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
-Como usar este fichero: ir fase a fase, de arriba abajo. No empezar una fase si la anterior tiene casillas abiertas sin aceptacion explicita. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
+Como usar este fichero: ir fase a fase, de arriba abajo, con una excepcion: las Fases 2-7 no dependen del codigo y se hacen en paralelo a la Fase 1 y al cierre del codigo (Backlog, filas 1-8; orden completo en "Orden de ejecucion" del Backlog). Desde la Fase 8, no empezar una fase si alguna anterior (incluida la Fase 1) tiene casillas abiertas sin aceptacion explicita; justo antes de la Fase 8, repasar la Fase 5 por si los bloques del cierre anadieron variables. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
 
 ---
 
@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1-8: P2c 1-3 de la Fase 1.5 y bloques 2-7) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1-8: P2c 1-3 de la Fase 1.5, bloques 2-7 y cierre; la fila 0 ya esta hecha) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
