@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import inspect as sa_inspect
 
 from app.models import DocTypeCode
+from app.schemas.contract import PERIOD_SUFFIX
 from app.schemas.document_panel import (
     PANEL_DEFAULT_DIR,
     PANEL_DEFAULT_SORT,
@@ -182,7 +183,11 @@ def row_from_contract(
     doc_type_code: str | None = None,
     doc_type_label: str = "Contrato",
 ) -> PanelDocumentRow:
-    """Mapea un contrato a las columnas del panel (proveedor=parte, total=importe)."""
+    """Mapea un contrato a las columnas del panel (proveedor=parte, total=cuota o total).
+
+    Con cuota periódica se muestra la cuota y su periodicidad; si no hay cuota
+    (pago único), el importe total.
+    """
     code = doc_type_code or _doc_type_code_from_contract(contract)
     return PanelDocumentRow(
         kind="contract",
@@ -193,7 +198,16 @@ def row_from_contract(
         base_imponible=None,
         iva_percent=None,
         iva_amount=None,
-        total=contract.importe,
+        total=(
+            contract.importe_periodico
+            if contract.importe_periodico is not None
+            else contract.importe_total
+        ),
+        total_suffix=(
+            PERIOD_SUFFIX.get(contract.periodicidad or "")
+            if contract.importe_periodico is not None
+            else None
+        ),
         created_at=contract.created_at,
         updated_at=contract.updated_at,
         status=contract.status.value,

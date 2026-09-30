@@ -27,6 +27,7 @@ from app.schemas.document_query import (
 )
 from app.schemas.pagination import Page
 from app.services import doc_type_service
+from app.services.document_expiry_grouping import expiry_group_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -408,6 +409,8 @@ async def aggregate_insurances(
         group_key = func.to_char(Insurance.fecha_inicio, "YYYY-MM").label("group_key")
     elif group_by == AggregateGroupBy.year:
         group_key = func.to_char(Insurance.fecha_inicio, "YYYY").label("group_key")
+    elif group_by in (AggregateGroupBy.expiry_month, AggregateGroupBy.expiry_year):
+        group_key = expiry_group_key(Insurance.fecha_fin, group_by)
     elif group_by == AggregateGroupBy.status:
         group_key = cast(Insurance.status, String).label("group_key")
     else:

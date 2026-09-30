@@ -4,8 +4,10 @@ Formato del ground truth por campo:
 
 - valor escalar (``"2026-10-01"``, ``"412.48"``, ``"IKEA"``): debe coincidir;
 - ``{"any_of": [...]}``: vale cualquiera de las alternativas (``null`` incluido).
-  Se usa donde el schema es ambiguo: p. ej. ``fecha_inicio`` de contrato admite
-  firma o inicio, e ``importe`` admite cuota periódica o total.
+  Se usa donde el documento admite varias lecturas válidas: p. ej. una cuota
+  mensual por aparato facturada trimestralmente (``importe_periodico`` mensual o
+  trimestral). ``importe_anual`` (calculado) comprueba que cuota y periodicidad
+  casan entre sí.
 
 Contratos: ``partes`` lista las dos partes (``nombre`` + ``cif_nif``). El modelo
 puede elegir cualquiera como ``parte_contraria``, pero su ``cif_nif`` debe ser el
@@ -115,9 +117,14 @@ _TICKET_MATCHERS: dict[str, Matcher] = {
 
 _CONTRACT_MATCHERS: dict[str, Matcher] = {
     "numero_contrato": _code_eq,
+    "fecha_firma": _text_eq,
     "fecha_inicio": _text_eq,
     "fecha_fin": _text_eq,
-    "importe": decimal_eq,
+    "importe_periodico": decimal_eq,
+    "periodicidad": _text_eq,
+    "importe_total": decimal_eq,
+    "importe_anual": decimal_eq,
+    "iva_incluido": _text_eq,
 }
 
 _INSURANCE_MATCHERS: dict[str, Matcher] = {

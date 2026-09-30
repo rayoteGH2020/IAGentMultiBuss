@@ -27,6 +27,7 @@ from app.schemas.document_query import (
 )
 from app.schemas.pagination import Page
 from app.services import doc_type_service
+from app.services.document_expiry_grouping import expiry_group_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -178,9 +179,14 @@ async def apply_extraction_result(
     contract.numero_contrato = data.numero_contrato[:100] if data.numero_contrato else None
     contract.parte_contraria = data.parte_contraria[:300]
     contract.cif_nif = data.cif_nif[:50] if data.cif_nif else None
+    contract.fecha_firma = data.fecha_firma
     contract.fecha_inicio = data.fecha_inicio
     contract.fecha_fin = data.fecha_fin
-    contract.importe = data.importe
+    contract.importe_periodico = data.importe_periodico
+    contract.periodicidad = data.periodicidad
+    contract.importe_total = data.importe_total
+    contract.importe_anual = data.importe_anual
+    contract.iva_incluido = data.iva_incluido
     contract.currency = data.currency[:3]
     contract.objeto = data.objeto
     contract.status = ContractStatus.ready
@@ -255,9 +261,14 @@ def _contract_to_read(contract: Contract) -> ContractRead:
         numero_contrato=contract.numero_contrato,
         parte_contraria=contract.parte_contraria,
         cif_nif=contract.cif_nif,
+        fecha_firma=contract.fecha_firma,
         fecha_inicio=contract.fecha_inicio,
         fecha_fin=contract.fecha_fin,
-        importe=contract.importe,
+        importe_periodico=contract.importe_periodico,
+        periodicidad=contract.periodicidad,
+        importe_total=contract.importe_total,
+        importe_anual=contract.importe_anual,
+        iva_incluido=contract.iva_incluido,
         currency=contract.currency,
         objeto=contract.objeto,
         confidence=contract.confidence,
@@ -279,10 +290,12 @@ def _contract_search_conditions(
         conditions.append(Contract.fecha_fin >= filters.fecha_fin_from)
     if filters.fecha_fin_to is not None:
         conditions.append(Contract.fecha_fin <= filters.fecha_fin_to)
+    # Importe comparable: anual equivalente si hay cuota; si es pago único, el total.
+    comparable_amount = func.coalesce(Contract.importe_anual, Contract.importe_total)
     if filters.total_min is not None:
-        conditions.append(Contract.importe >= filters.total_min)
+        conditions.append(comparable_amount >= filters.total_min)
     if filters.total_max is not None:
-        conditions.append(Contract.importe <= filters.total_max)
+        conditions.append(comparable_amount <= filters.total_max)
     if filters.status:
         statuses = [ContractStatus(s) for s in filters.status]
         conditions.append(Contract.status.in_(statuses))
@@ -376,7 +389,8 @@ async def aggregate_contracts(
     metric_expr = (
         func.count()
         if metric == AggregateMetric.metric_count
-        else func.coalesce(func.sum(Contract.importe), 0)
+        # Coste anual: suma importes_anual (sin pagos únicos ni contratos sin precio).
+        else func.coalesce(func.sum(Contract.importe_anual), 0)
     )
 
     if group_by == AggregateGroupBy.none:
@@ -401,6 +415,8 @@ async def aggregate_contracts(
         group_key = func.to_char(Contract.fecha_inicio, "YYYY-MM").label("group_key")
     elif group_by == AggregateGroupBy.year:
         group_key = func.to_char(Contract.fecha_inicio, "YYYY").label("group_key")
+    elif group_by in (AggregateGroupBy.expiry_month, AggregateGroupBy.expiry_year):
+        group_key = expiry_group_key(Contract.fecha_fin, group_by)
     elif group_by == AggregateGroupBy.status:
         group_key = cast(Contract.status, String).label("group_key")
     else:

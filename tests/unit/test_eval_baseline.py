@@ -129,7 +129,7 @@ def test_repo_baseline_covers_evals_run_in_ci() -> None:
     assert set(baseline.metrics) == {
         "invoices_v1",
         "tickets_v1",
-        "contracts_v1",
+        "contracts_v2",
         "insurances_v1",
         "chat_documents_v2",
     }

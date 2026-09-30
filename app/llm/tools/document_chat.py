@@ -91,11 +91,20 @@ class GetDocumentArgs(BaseModel):
 
 class AggregateDocumentsArgs(BaseModel):
     doc_type_code: str
-    metric: str = Field(description="count o sum_total")
+    metric: str = Field(
+        description=(
+            "count o sum_total. En contratos, sum_total suma el coste anual equivalente "
+            "(importe_anual, sin IVA); no incluye pagos únicos ni contratos sin precio."
+        ),
+    )
     group_by: str = Field(
         default="none",
         description=(
-            "none, proveedor, comercio, parte_contraria, aseguradora, month, year, status"
+            "none, proveedor, comercio, parte_contraria, aseguradora, month, year, "
+            "expiry_month, expiry_year, status. month/year agrupan por fecha del documento "
+            "(contratos y seguros: fecha de inicio). expiry_month/expiry_year, solo contratos "
+            "y seguros: agrupan por vencimiento (fecha_fin); úsalos para qué vence en cada "
+            "mes o año."
         ),
     )
     fecha_from: date | None = Field(
@@ -180,7 +189,11 @@ def _citation_from_document(doc: DocumentRead) -> ToolCitation:
         snippet = f"ticket total={doc.total} fecha={doc.fecha}"
     elif isinstance(doc, ContractRead):
         label = doc.parte_contraria or doc.titulo or doc.source_filename or str(doc.id)
-        snippet = f"contrato importe={doc.importe} fecha_inicio={doc.fecha_inicio}"
+        snippet = (
+            f"contrato cuota={doc.importe_periodico} periodicidad={doc.periodicidad} "
+            f"anual={doc.importe_anual} total={doc.importe_total} "
+            f"fecha_inicio={doc.fecha_inicio} fecha_fin={doc.fecha_fin}"
+        )
     elif isinstance(doc, InsuranceRead):
         label = doc.aseguradora or doc.tomador or doc.source_filename or str(doc.id)
         snippet = f"seguro prima={doc.prima} fecha_inicio={doc.fecha_inicio}"

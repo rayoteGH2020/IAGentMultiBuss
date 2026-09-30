@@ -205,6 +205,14 @@ def test_seed_excludes_rejected_and_duplicated_documents() -> None:
 
 def test_seed_uses_first_alternative_including_null() -> None:
     contracts = {r["case_id"]: r for r in seed_documents_eval.build_seed_documents()["contrato"]}
-    assert contracts["ctr_nda"]["importe"] is None
-    assert contracts["ctr_arrendamiento_garaje"]["importe"] == Decimal("95")
+    assert contracts["ctr_nda"]["importe_periodico"] is None
+    assert contracts["ctr_nda"]["periodicidad"] is None
+    assert contracts["ctr_arrendamiento_garaje"]["importe_periodico"] == Decimal("95")
+    assert contracts["ctr_arrendamiento_garaje"]["importe_anual"] == Decimal("1140")
+    # ascensores: primera alternativa de cuota y de periodicidad casan (237 mensual).
+    ascensores = contracts["ctr_mantenimiento_ascensores"]
+    assert (ascensores["importe_periodico"], ascensores["periodicidad"]) == (
+        Decimal("237"),
+        "mensual",
+    )
     assert contracts["ctr_consultoria"]["parte_contraria"] == "Nexora Soluciones Digitales"

@@ -264,7 +264,7 @@
     </td>
     <td class="col-amount font-medium invoices-td--num text-right">
       <span class="invoices-cell-inner tabular-nums">
-        {% if document.total is not none %}{{ "%.2f"|format(document.total) }} €{% else %}—{% endif %}
+        {% if document.total is not none %}{{ "%.2f"|format(document.total) }} €{% if document.total_suffix %} <span class="text-xs font-normal text-slate-500">{{ document.total_suffix }}</span>{% endif %}{% else %}—{% endif %}
       </span>
     </td>
     <td class="col-muted invoices-td--subida"

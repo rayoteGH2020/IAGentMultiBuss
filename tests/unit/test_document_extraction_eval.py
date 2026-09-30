@@ -69,9 +69,12 @@ def _contract(parte: str, cif: str | None) -> ContratoDocumento:
         numero_contrato="GAR-NRV-037/2026",
         parte_contraria=parte,
         cif_nif=cif,
+        fecha_firma=date(2026, 9, 23),
         fecha_inicio=date(2026, 10, 1),
         fecha_fin=None,
-        importe=Decimal("114.95"),
+        importe_periodico=Decimal("95"),
+        periodicidad="mensual",
+        iva_incluido=False,
         confidence=0.9,
     )
 
@@ -82,9 +85,14 @@ _GARAJE_GT = {
         {"nombre": "Inversiones Inmobiliarias Nervión 2008", "cif_nif": "B41961533"},
         {"nombre": "Carmen Delgado Romero", "cif_nif": "28841593F"},
     ],
-    "fecha_inicio": {"any_of": ["2026-09-23", "2026-10-01"]},
+    "fecha_firma": "2026-09-23",
+    "fecha_inicio": "2026-10-01",
     "fecha_fin": {"any_of": ["2027-09-30", None]},
-    "importe": {"any_of": ["95", "114.95"]},
+    "importe_periodico": "95",
+    "periodicidad": "mensual",
+    "importe_total": {"any_of": [None, "1140"]},
+    "importe_anual": "1140",
+    "iva_incluido": False,
 }
 
 
@@ -97,6 +105,17 @@ _GARAJE_GT = {
 )
 def test_contract_accepts_either_party_with_its_own_id(parte: str, cif: str) -> None:
     assert all(_matches(compare_contract(_contract(parte, cif), _GARAJE_GT)).values())
+
+
+def test_contract_annual_amount_must_match_period() -> None:
+    """Cuota y periodicidad incoherentes (95 € trimestral) fallan en importe_anual."""
+    contrato = _contract("Carmen Delgado Romero", "28841593F").model_copy(
+        update={"periodicidad": "trimestral"}
+    )
+    result = _matches(compare_contract(contrato, _GARAJE_GT))
+    assert result["importe_periodico"] is True
+    assert result["periodicidad"] is False
+    assert result["importe_anual"] is False
 
 
 def test_contract_rejects_id_of_the_other_party() -> None:

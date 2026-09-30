@@ -4,7 +4,7 @@ Los valores salen de los datasets de extracción (única fuente de verdad):
 
 - facturas: ``invoices_v1`` sin casos de rechazo esperado ni los ficheros que
   ``tickets_v1`` reutiliza (serían la misma compra dos veces);
-- tickets, contratos y pólizas: ``tickets_v1``, ``contracts_v1``, ``insurances_v1``;
+- tickets, contratos y pólizas: ``tickets_v1``, ``contracts_v2``, ``insurances_v1``;
   en campos ``any_of`` se toma la primera alternativa y en contratos la
   primera de ``partes`` como ``parte_contraria``.
 
@@ -128,11 +128,16 @@ def _contracts() -> list[SeedRow]:
             "numero_contrato": gt["numero_contrato"],
             "parte_contraria": gt["partes"][0]["nombre"],
             "cif_nif": gt["partes"][0]["cif_nif"],
+            "fecha_firma": _date(gt.get("fecha_firma")),
             "fecha_inicio": _date(gt["fecha_inicio"]),
             "fecha_fin": _date(gt.get("fecha_fin")),
-            "importe": _dec(gt.get("importe")),
+            "importe_periodico": _dec(gt.get("importe_periodico")),
+            "periodicidad": _pick(gt.get("periodicidad")),
+            "importe_total": _dec(gt.get("importe_total")),
+            "importe_anual": _dec(gt.get("importe_anual")),
+            "iva_incluido": _pick(gt.get("iva_incluido")),
         }
-        for case in _load("contracts_v1.json")
+        for case in _load("contracts_v2.json")
         for gt in [case["ground_truth"]]
     ]
 

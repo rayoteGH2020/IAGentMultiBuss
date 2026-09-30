@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -68,9 +70,16 @@ class Contract(Base):
     numero_contrato: Mapped[str | None] = mapped_column(String(100), nullable=True)
     parte_contraria: Mapped[str | None] = mapped_column(String(300), nullable=True)
     cif_nif: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fecha_firma: Mapped[date | None] = mapped_column(Date, nullable=True)
     fecha_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     fecha_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
-    importe: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Importes sin IVA (salvo iva_incluido). importe_anual lo calcula el servicio
+    # (annual_amount) para que las sumas del chat mezclen magnitudes comparables.
+    importe_periodico: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    periodicidad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    importe_total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    importe_anual: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    iva_incluido: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     currency: Mapped[str] = mapped_column(
         String(3),
         nullable=False,
@@ -119,5 +128,10 @@ class Contract(Base):
             "ix_contracts_error_code",
             "error_code",
             postgresql_where=text("error_code IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "periodicidad IS NULL OR periodicidad IN "
+            "('mensual', 'trimestral', 'semestral', 'anual', 'unico')",
+            name="ck_contracts_periodicidad",
         ),
     )

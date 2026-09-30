@@ -37,7 +37,7 @@ logger = structlog.get_logger(__name__)
 # con la versión del prompt en el dashboard de métricas.
 PROMPT_VERSION = "extraction_v3_2"
 TICKET_PROMPT_VERSION = "ticket_extraction_v1"
-CONTRACT_PROMPT_VERSION = "contract_extraction_v1"
+CONTRACT_PROMPT_VERSION = "contract_extraction_v2"
 INSURANCE_PROMPT_VERSION = "insurance_extraction_v1"
 
 

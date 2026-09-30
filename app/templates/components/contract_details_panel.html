@@ -1,6 +1,6 @@
 {# Detalle expandible de contrato. #}
 {% set contract = document.contract %}
-{% set has_fields = contract.titulo or contract.numero_contrato or contract.fecha_fin or contract.objeto or contract.source_filename %}
+{% set has_fields = contract.titulo or contract.numero_contrato or contract.fecha_fin or contract.fecha_firma or contract.importe_periodico is not none or contract.importe_total is not none or contract.objeto or contract.source_filename %}
 {% set sm = contract.currency | currency_symbol %}
 
 <section class="document-detail__section" aria-label="Detalle del contrato">
@@ -31,10 +31,29 @@
       <span class="document-detail__field-value tabular-nums">{{ contract.fecha_fin }}</span>
     </div>
     {% endif %}
-    {% if contract.importe is not none %}
+    {% if contract.fecha_firma %}
     <div class="document-detail__field">
-      <span class="document-detail__field-label">Importe</span>
-      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(contract.importe) }} {{ sm }}</span>
+      <span class="document-detail__field-label">Fecha firma</span>
+      <span class="document-detail__field-value tabular-nums">{{ contract.fecha_firma }}</span>
+    </div>
+    {% endif %}
+    {% set iva_note = " (IVA incluido)" if contract.iva_incluido else " (sin IVA)" %}
+    {% if contract.importe_periodico is not none %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Cuota</span>
+      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(contract.importe_periodico) }} {{ sm }} {{ contract.periodicidad or "" }}{{ iva_note }}</span>
+    </div>
+    {% endif %}
+    {% if contract.importe_anual is not none %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Coste anual</span>
+      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(contract.importe_anual) }} {{ sm }}{{ iva_note }}</span>
+    </div>
+    {% endif %}
+    {% if contract.importe_total is not none %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">{% if contract.periodicidad == "unico" %}Pago único{% else %}Importe total{% endif %}</span>
+      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(contract.importe_total) }} {{ sm }}{{ iva_note }}</span>
     </div>
     {% endif %}
     {% if contract.objeto %}

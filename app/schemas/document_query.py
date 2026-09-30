@@ -137,9 +137,18 @@ class ContractRead(BaseModel):
     numero_contrato: str | None = None
     parte_contraria: str | None = None
     cif_nif: str | None = None
+    fecha_firma: date | None = None
     fecha_inicio: date | None = None
     fecha_fin: date | None = None
-    importe: Decimal | None = None
+    importe_periodico: Decimal | None = Field(default=None, description="Cuota sin IVA")
+    periodicidad: str | None = Field(
+        default=None, description="mensual, trimestral, semestral, anual o unico"
+    )
+    importe_total: Decimal | None = Field(default=None, description="Valor total sin IVA")
+    importe_anual: Decimal | None = Field(
+        default=None, description="Coste anual equivalente de la cuota (sin IVA)"
+    )
+    iva_incluido: bool | None = None
     currency: str = "EUR"
     objeto: str | None = None
     confidence: Decimal | None = None
@@ -191,6 +200,9 @@ class AggregateGroupBy(enum.StrEnum):
     aseguradora = "aseguradora"
     month = "month"
     year = "year"
+    # Solo contratos y seguros: agrupan por vencimiento (fecha_fin).
+    expiry_month = "expiry_month"
+    expiry_year = "expiry_year"
     status = "status"
 
 

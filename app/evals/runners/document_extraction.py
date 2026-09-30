@@ -65,7 +65,7 @@ class DocEvalSpec:
 
 SPECS: dict[str, DocEvalSpec] = {
     "ticket": DocEvalSpec("tickets_v1.json", extract_ticket, "ticket", compare_ticket),
-    "contrato": DocEvalSpec("contracts_v1.json", extract_contract, "contract", compare_contract),
+    "contrato": DocEvalSpec("contracts_v2.json", extract_contract, "contract", compare_contract),
     "seguro": DocEvalSpec("insurances_v1.json", extract_insurance, "insurance", compare_insurance),
 }
 

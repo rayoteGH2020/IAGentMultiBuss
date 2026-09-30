@@ -423,6 +423,21 @@
                 "156.19"
             ],
             "_note": "Solo se guarda la prima anual (1874.21): el modelo debe dividir entre 12."
+        },
+        {
+            "id": "doc_033",
+            "difficulty": "hard",
+            "question": "¿En qué mes vencen más contratos y cuántos vencen ese mes?",
+            "expected_all": [
+                "septiembre"
+            ],
+            "expected_any": [
+                "3 contratos",
+                "tres contratos",
+                "3 de tus contratos",
+                "tres de tus contratos"
+            ],
+            "_note": "P2b-12: agrupar por vencimiento (expiry_month). Semilla: 3 contratos vencen en 2027-09, 1 en 2027-03 y 2 sin vencimiento."
         }
     ]
 }

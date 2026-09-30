@@ -190,6 +190,9 @@ async def _seed_contract(
     parte_contraria: str,
     fecha_inicio: date,
     fecha_fin: date | None,
+    importe_periodico: Decimal | None = Decimal("100.00"),
+    periodicidad: str | None = "mensual",
+    importe_total: Decimal | None = None,
 ) -> None:
     contract = await contract_service.create_contract_stub(
         db,
@@ -203,7 +206,9 @@ async def _seed_contract(
         parte_contraria=parte_contraria,
         fecha_inicio=fecha_inicio,
         fecha_fin=fecha_fin,
-        importe=Decimal("100.00"),
+        importe_periodico=importe_periodico,
+        periodicidad=periodicidad,
+        importe_total=importe_total,
         confidence=0.9,
     )
     await contract_service.apply_extraction_result(
@@ -373,3 +378,177 @@ async def test_search_contracts_by_expiry_date(
         filters=DocumentSearchFilters(fecha_fin_from=date(2027, 1, 1)),
     )
     assert [item.parte_contraria for item in open_ended_from.items] == ["Limpiezas Sur"]
+
+
+@pytest.mark.asyncio
+async def test_aggregate_contracts_grouped_by_expiry_month_and_year(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory,
+) -> None:
+    """P2b-12: "¿qué vence cada mes?" agrupa por fecha_fin, no por inicio."""
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    for parte, inicio, fin in [
+        ("Ascensores Norte", date(2025, 1, 1), date(2027, 3, 31)),
+        ("Limpiezas Sur", date(2026, 1, 1), date(2027, 3, 15)),
+        ("Alarmas Este", date(2026, 3, 1), date(2028, 6, 30)),
+        ("Indefinido SA", date(2026, 3, 10), None),
+    ]:
+        await _seed_contract(
+            db_session, tenant.id, parte_contraria=parte, fecha_inicio=inicio, fecha_fin=fin
+        )
+    await db_session.commit()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    async def _grouped(group_by: AggregateGroupBy) -> dict[str, object]:
+        result = await document_query_service.aggregate_documents(
+            db_session,
+            tenant.id,
+            doc_type_code=DocTypeCode.contrato.value,
+            filters=DocumentSearchFilters(),
+            metric=AggregateMetric.metric_count,
+            group_by=group_by,
+        )
+        return {row.group_key: row.value for row in result.rows}
+
+    assert await _grouped(AggregateGroupBy.expiry_month) == {
+        "2027-03": 2,
+        "2028-06": 1,
+        "(sin vencimiento)": 1,
+    }
+    assert await _grouped(AggregateGroupBy.expiry_year) == {
+        "2027": 2,
+        "2028": 1,
+        "(sin vencimiento)": 1,
+    }
+    # month sigue agrupando por inicio.
+    assert await _grouped(AggregateGroupBy.month) == {"2025-01": 1, "2026-01": 1, "2026-03": 2}
+
+
+@pytest.mark.asyncio
+async def test_aggregate_insurances_grouped_by_expiry_month(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory,
+) -> None:
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    for aseguradora, inicio, fin in [
+        ("Mapfre", date(2026, 10, 1), date(2027, 10, 1)),
+        ("Allianz", date(2026, 10, 31), date(2027, 10, 31)),
+        ("AXA", date(2027, 10, 15), date(2028, 10, 15)),
+    ]:
+        await _seed_insurance(
+            db_session, tenant.id, aseguradora=aseguradora, fecha_inicio=inicio, fecha_fin=fin
+        )
+    await db_session.commit()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    result = await document_query_service.aggregate_documents(
+        db_session,
+        tenant.id,
+        doc_type_code=DocTypeCode.seguro.value,
+        filters=DocumentSearchFilters(),
+        metric=AggregateMetric.metric_count,
+        group_by=AggregateGroupBy.expiry_month,
+    )
+
+    assert {row.group_key: row.value for row in result.rows} == {"2027-10": 2, "2028-10": 1}
+
+
+@pytest.mark.asyncio
+async def test_expiry_grouping_is_rejected_for_invoices(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory,
+) -> None:
+    from app.core.errors import ValidationError
+
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    with pytest.raises(ValidationError):
+        await document_query_service.aggregate_documents(
+            db_session,
+            tenant.id,
+            doc_type_code=DocTypeCode.factura.value,
+            filters=DocumentSearchFilters(),
+            metric=AggregateMetric.metric_count,
+            group_by=AggregateGroupBy.expiry_month,
+        )
+
+
+@pytest.mark.asyncio
+async def test_contract_amounts_are_stored_and_summed_as_annual_cost(
+    invoices_schema_ready: None,
+    db_session: AsyncSession,
+    tenant_factory,
+) -> None:
+    """P2b-3: "¿cuánto pago en contratos?" suma el coste anual, no cuotas mezcladas."""
+    tenant: Tenant = await tenant_factory()
+    await set_tenant_context(db_session, str(tenant.id))
+    await _seed_contract(
+        db_session,
+        tenant.id,
+        parte_contraria="Garaje SL",
+        fecha_inicio=date(2026, 10, 1),
+        fecha_fin=None,
+        importe_periodico=Decimal("95"),
+        periodicidad="mensual",
+    )
+    await _seed_contract(
+        db_session,
+        tenant.id,
+        parte_contraria="Ascensores SA",
+        fecha_inicio=date(2026, 10, 1),
+        fecha_fin=None,
+        importe_periodico=Decimal("711"),
+        periodicidad="trimestral",
+    )
+    await _seed_contract(
+        db_session,
+        tenant.id,
+        parte_contraria="Vendedor coche",
+        fecha_inicio=date(2026, 9, 18),
+        fecha_fin=None,
+        importe_periodico=None,
+        periodicidad="unico",
+        importe_total=Decimal("9800"),
+    )
+    await db_session.commit()
+    await set_tenant_context(db_session, str(tenant.id))
+
+    page = await document_query_service.search_documents(
+        db_session,
+        tenant.id,
+        doc_type_code=DocTypeCode.contrato.value,
+        filters=DocumentSearchFilters(parte_contraria_query="garaje"),
+    )
+    garaje = page.items[0]
+    assert (garaje.importe_periodico, garaje.periodicidad, garaje.importe_anual) == (
+        Decimal("95.00"),
+        "mensual",
+        Decimal("1140.00"),
+    )
+
+    total = await document_query_service.aggregate_documents(
+        db_session,
+        tenant.id,
+        doc_type_code=DocTypeCode.contrato.value,
+        filters=DocumentSearchFilters(),
+        metric=AggregateMetric.sum_total,
+        group_by=AggregateGroupBy.none,
+    )
+    assert total.total_value == Decimal("3984.00")  # 1140 + 2844; el pago único no suma
+
+    expensive = await document_query_service.search_documents(
+        db_session,
+        tenant.id,
+        doc_type_code=DocTypeCode.contrato.value,
+        filters=DocumentSearchFilters(total_min=Decimal("2000")),
+    )
+    assert {item.parte_contraria for item in expensive.items} == {
+        "Ascensores SA",
+        "Vendedor coche",
+    }

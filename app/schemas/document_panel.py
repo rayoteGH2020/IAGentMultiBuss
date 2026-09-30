@@ -81,6 +81,8 @@ class PanelDocumentRow:
     doc_type_label: str
     error_code: str | None = None
     vat_tranche_count: int = 0
+    # Contratos: periodicidad de la cuota mostrada en total ("/ mes").
+    total_suffix: str | None = None
     suggested_doc_type: str | None = None
     invoice: Invoice | None = None
     ticket: Ticket | None = None

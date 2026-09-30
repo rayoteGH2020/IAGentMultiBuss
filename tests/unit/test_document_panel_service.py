@@ -69,7 +69,9 @@ def _contract() -> Contract:
         parte_contraria="Limpiezas SA",
         cif_nif="B22222222",
         fecha_inicio=date(2025, 4, 1),
-        importe=Decimal("1200.00"),
+        importe_periodico=Decimal("1200.00"),
+        periodicidad="mensual",
+        importe_anual=Decimal("14400.00"),
         created_at=now,
         updated_at=now,
     )
@@ -122,6 +124,7 @@ def test_row_from_contract_maps_panel_columns() -> None:
     assert row.proveedor == "Limpiezas SA"
     assert row.cif_nif == "B22222222"
     assert row.total == Decimal("1200.00")
+    assert row.total_suffix == "/ mes"
     assert row.fecha == date(2025, 4, 1)
     assert row.status_poll_url.endswith(f"/jobs/contract/{contract.id}/status")
 

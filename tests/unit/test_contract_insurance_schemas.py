@@ -12,13 +12,18 @@ def test_contrato_documento_coerces_types() -> None:
         {
             "titulo": "Mantenimiento",
             "parte_contraria": "ACME",
+            "fecha_firma": "2025-01-10",
             "fecha_inicio": "2025-01-15",
-            "importe": 99.5,
+            "importe_periodico": 99.5,
+            "periodicidad": "mensual",
+            "importe_total": 1194,
             "confidence": 0.9,
         },
     )
+    assert doc.fecha_firma == date(2025, 1, 10)
     assert doc.fecha_inicio == date(2025, 1, 15)
-    assert doc.importe == Decimal("99.5")
+    assert doc.importe_periodico == Decimal("99.5")
+    assert doc.importe_total == Decimal("1194")
 
 
 def test_seguro_poliza_coerces_types() -> None:
