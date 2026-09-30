@@ -18,9 +18,9 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | 4 | Chat (bloque 4) | 400 preguntas al mes (D023), limite de ritmo por usuario y mensaje al 100 %; se retiran los tres topes diarios del chat (cierra P2b-24) | Pendiente | 1 |
 | 5 | Contratos (bloque 5) | 15 activos, 5 altas al mes, carga inicial de 15 hasta el final del primer mes completo, tramos por paginas (1/2/3 altas, mas de 100 paginas se rechaza) y hash SHA-256 contra duplicados (sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, sigue en el historico y el chat no lo trata como vigente. **Fuera:** renovacion enlazada automatica (se puede montar despues sobre el estado "sustituido") y purga a los 30 dias (P3-8) | Pendiente | 2-2,5 |
 | 6 | Historico (bloque 6) | `history_months` = 12 (D017): oculta facturas y tickets antiguos y aplica la regla de vigencia a los contratos | Pendiente | 0,5-1 |
-| 7 | Consumo en "Mi cuenta" (bloque 7) | "X de Y" mensual de todos los cupos y avisos al 80 % y 100 % en la app; cierra P2b-18 | Pendiente | 1 |
-| 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2), fusionar el PR #1 en `main` | Pendiente | 0,5 |
-| 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13 (rotacion de secretos, Infisical `prod`, Clerk prod, deploy, backups, QA manual de la Fase 11 despues de los bloques 2-7, firma en `Paso10`). Dominio, VPS, R2 y rotacion de credenciales se pueden adelantar en paralelo | Pendiente (ops) | 1-2 |
+| 7 | Consumo en "Mi cuenta" (bloque 7) | "X de Y" mensual de todos los cupos y avisos al 80 % y 100 % en la app; cierra P2b-18 y el resto de P2-4 (los emails y el corte del chat de D019 ya estan hechos) | Pendiente | 1 |
+| 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2; cierra P2b-10), fusionar el PR #1 en `main` (el tag de produccion sale de `main`) | Pendiente | 0,5 |
+| 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13 (rotacion de secretos P0-1, claves LLM de prod y clave de Google aparte para CI P2b-2, Infisical `prod` sin `LLM_MODEL_*` para que rijan los modelos del codigo P2b-1, Clerk prod, deploy, backups, QA manual de la Fase 11 despues de los bloques 2-7 con alcance Clerk/R2/documentos/chat/planes P1-7, firma en `Paso10`). Dominio, VPS, R2 y rotacion de credenciales se pueden adelantar en paralelo | Pendiente (ops) | 1-2 |
 
 Codigo pendiente: unos 7,5-9 dias.
 
@@ -60,7 +60,7 @@ Fuera del producto minimo (anotado): staging, cobro de planes (P3-2), WhatsApp/T
 | 1 | Chat documental y citations | **Hecho** (Paso07 codigo) |
 | 2 | QA y evals de RAG | **Hecho** en suite; regresion continua |
 | 3 | Cache semantica canales + invalidacion | **Hecho** |
-| 4 | Alertas de coste por turnos chat/tools | Parcial (`usage_meter` / SADM); alertas push no |
+| 4 | Alertas de coste por turnos chat/tools | Parcial: emails al admin (80 %) y al SADM (90 %), corte del chat al 90 % y banner al 100 % hechos (D019); avisos dentro de la app en el bloque 7 del cierre del producto minimo |
 | 5 | Prompts contratos/seguros | **Hecho** base (Paso06) |
 
 ## P2b - Modelos LLM, evals y deuda de extraccion (2026-09-25)
@@ -69,8 +69,8 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 
 | # | Item | Estado |
 | --- | --- | --- |
-| 1 | Infisical prod: fijar o dejar sin definir `LLM_MODEL_EXTRACTION` / `LLM_MODEL_CHAT` (deben coincidir con dev) | **Ops** (cuando exista entorno prod) |
-| 2 | `GOOGLE_API_KEY` dedicada a CI (hoy comparte cuota con dev) | **Ops** |
+| 1 | Infisical prod: fijar o dejar sin definir `LLM_MODEL_EXTRACTION` / `LLM_MODEL_CHAT` (deben coincidir con dev) | **Decidido:** no definirlos en prod para que rijan los modelos del codigo (`PasosParaProduccion.md` Fase 5.6); se ejecuta con la fila 9 del cierre del producto minimo |
+| 2 | `GOOGLE_API_KEY` dedicada a CI (hoy comparte cuota con dev) | **Ops** (2026-09-30: se crea junto a las claves de prod, `PasosParaProduccion.md` Fase 2.4; fila 9 del cierre del producto minimo) |
 | 3 | Contratos: separar `fecha_inicio` (firma vs inicio de vigencia) e `importe` (periodico vs total + periodicidad) | **Hecho** 2026-09-30 (D024): `contract_extraction_v2` con `fecha_firma`/`fecha_inicio`, `importe_periodico` + `periodicidad`, `importe_total`, `importe_anual` (calculado) e `iva_incluido`; migracion `p75` (elimina `importe`); eval `contracts_v2` 100 % x2; en dev, volver a extraer con `scripts/reextract_contracts.py` |
 | 4 | Polizas: `tipo_seguro` como enum cerrado en vez de texto libre | **Post producto minimo** (2026-09-30; schema + prompt v2 + migracion de datos) |
 | 5 | Tools del chat: filtrar por fecha de vencimiento (`fecha_fin`) en contratos/polizas | **Hecho** 2026-09-28 (`fecha_fin_from` / `fecha_fin_to`; `chat_documents_v2` 32/32 x2) |

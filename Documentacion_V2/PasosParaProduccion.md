@@ -181,8 +181,9 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py -q
 - [ ] `GOOGLE_API_KEY` nueva (proyecto Google distinto de dev si es posible), con presupuesto/alerta de facturacion.
 - [ ] `ANTHROPIC_API_KEY` nueva (workspace prod) con limite de gasto mensual.
 - [ ] `VOYAGE_API_KEY` nueva.
+- [ ] `GOOGLE_API_KEY` **aparte para CI** (Backlog P2b-2), con su propio limite de gasto: en GitHub → repo → Settings → Secrets and variables → Actions, sustituir el secret `GOOGLE_API_KEY` por esta. Nunca usar la de prod en CI.
 
-Motivo: si una clave de dev se filtra no afecta a prod, y el limite del proveedor es un segundo freno de coste ademas de las cuotas de plan.
+Motivo: si una clave de dev se filtra no afecta a prod, y el limite del proveedor es un segundo freno de coste ademas de las cuotas de plan. La clave de CI separada evita que una racha de evals consuma la cuota o el presupuesto de Google de los clientes.
 
 ### 2.5 Rotacion de secretos historicos (Backlog P0-1)
 
