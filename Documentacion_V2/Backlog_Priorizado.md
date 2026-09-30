@@ -1,9 +1,32 @@
 # Backlog_Priorizado
 
-Fecha actualizacion: 2026-09-29
+Fecha actualizacion: 2026-09-30
 Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67`; Stripe retirado D016 `p68`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
+
+## Cierre del producto minimo (plan acordado 2026-09-30)
+
+Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos limites que produccion (D027). Orden de ejecucion = numero de fila. Cada bloque: diseno presentado antes de implementar, tests, suite completa y commit propio.
+
+| # | Que | Incluye | Estado | Dias (estim.) |
+| --- | --- | --- | --- | ---: |
+| 0 | Base de cupos mensuales (bloque 1) | Tabla `quota_usage`, consumo atomico y devoluciones, mes natural, ampliacion del SADM por mes, cambios de plan programados | **Hecho** (`67220be`) | — |
+| 1 | Seguridad P2c 1-3 | `audit_log` solo insercion, datos personales fuera de los logs, IP de auditoria. Antes que los bloques: fija la norma de logs sin datos personales y P2c-2 toca el flujo de subida del bloque 2 | Pendiente | 0,5 |
+| 2 | Facturas y tickets (bloque 2) | Bolsa 40 + 30; se consume al extraer bien y se devuelve al descartar; `quota_pending` y job que los procesa al renovarse el cupo o tras una ampliacion; aviso al 80 %; hash SHA-256 contra duplicados; `documents_per_day` queda solo como freno alto contra scripts | Pendiente | 1,5-2 |
+| 3 | Reintentos (bloque 3) | 40 al mes y maximo 3 por documento; al agotarlos, `failed` con "Revision manual" en la interfaz; se retira `document_retries_per_day` | Pendiente | 0,5 |
+| 4 | Chat (bloque 4) | 400 preguntas al mes (D023), limite de ritmo por usuario y mensaje al 100 %; se retiran los tres topes diarios del chat (cierra P2b-24) | Pendiente | 1 |
+| 5 | Contratos (bloque 5) | 15 activos, 5 altas al mes, carga inicial de 15 hasta el final del primer mes completo, tramos por paginas (1/2/3 altas, mas de 100 paginas se rechaza) y hash SHA-256 contra duplicados (sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, sigue en el historico y el chat no lo trata como vigente. **Fuera:** renovacion enlazada automatica (se puede montar despues sobre el estado "sustituido") y purga a los 30 dias (P3-8) | Pendiente | 2-2,5 |
+| 6 | Historico (bloque 6) | `history_months` = 12 (D017): oculta facturas y tickets antiguos y aplica la regla de vigencia a los contratos | Pendiente | 0,5-1 |
+| 7 | Consumo en "Mi cuenta" (bloque 7) | "X de Y" mensual de todos los cupos y avisos al 80 % y 100 % en la app; cierra P2b-18 | Pendiente | 1 |
+| 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2), fusionar el PR #1 en `main` | Pendiente | 0,5 |
+| 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13 (rotacion de secretos, Infisical `prod`, Clerk prod, deploy, backups, QA manual de la Fase 11 despues de los bloques 2-7, firma en `Paso10`). Dominio, VPS, R2 y rotacion de credenciales se pueden adelantar en paralelo | Pendiente (ops) | 1-2 |
+
+Codigo pendiente: unos 7,5-9 dias.
+
+Sin cambios en el producto minimo: knowledge mantiene sus limites actuales (la spec no le fija limites mensuales, §11; gap aceptado en la Fase 13). El paso 9 de la spec §9 no necesita bloque propio: el reinicio de periodos es automatico, el job de `quota_pending` va en el bloque 2 y la purga esta aplazada (P3-8).
+
+Fuera del producto minimo (anotado): staging, cobro de planes (P3-2), WhatsApp/Telegram, Google Calendar y voz, Langfuse prod, analista Premium (P3-1b), purga de contratos (P3-8), `llm_calls` borrados con el documento (P2b-26), CSP estricta (P2c-6).
 
 ## P0 - Seguridad y control de coste
 
@@ -68,7 +91,7 @@ Contexto: D014 (extraccion `gemini-3.8-flash`), D015 (chat `gemini-3.5-flash-lit
 | 21 | Historial del chat de la app (spec §4.4): se reenvian 20 mensajes con los resultados de las tools. Con uso real, medir en `llm_calls` los tokens de entrada de la primera pregunta de cada hilo frente a las siguientes; si el historial pesa mucho en hilos largos, recortar el tamano de los `tool_result` antiguos al reenviarlos (no quitarlos). Antes de tocar el historial, anadir a `chat_documents_v2` casos de varias preguntas seguidas (hoy los 32 son de una sola pregunta). Medir tambien preguntas de chat por tenant y mes para revisar `chat_questions_per_month` (D023: 400/1.500/4.000 salen de un uso previsto estimado sin datos) | **Pendiente, no urgente** (medir con trafico real) |
 | 22 | Asistente de canales: conocimiento en el prompt en vez de `search_knowledge` (spec §4.6, optimizacion no comprometida). Requisitos previos: medir en `llm_calls` con trafico real, decidir el origen del "perfil del negocio" (hoy solo documentos troceados) y redefinir la confianza de la cache semantica (hoy sale de las citas de `search_knowledge`) | **Idea, no urgente** (solo si la medicion lo justifica) |
 | 23 | Clerk: el maximo de miembros por organizacion es 5 y el plan permite 9 (Avanzado) / 20 (Premium) (D022). Subirlo a >= 20 en Clerk Dashboard > Configure > Organizations (limite por defecto) y en las organizaciones ya creadas que tengan limite propio. Hasta entonces, las invitaciones a partir del 6.o miembro fallan en Clerk aunque la app las permita | **Ops, al pasar a produccion** (checklist en `Paso11_Despliegue_VPS.md` §5 Clerk produccion) |
-| 24 | Chat: el tope diario de plataforma `CHAT_DAILY_MESSAGE_LIMIT` no esta definido en Infisical y vale 60 por defecto (`config.py`), por debajo del plan: Avanzado y Premium quedan en 60 preguntas/dia en vez de 250/600. Hasta implementar D023 (cupo mensual + limite de ritmo, paso 3 de §9): definirlo alto en Infisical (dev y prod) o subir el default, y documentar `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT` en `docs/environment-variables.md` | **Pendiente** (configuracion; antes de clientes de Avanzado/Premium) |
+| 24 | Chat: el tope diario de plataforma `CHAT_DAILY_MESSAGE_LIMIT` no esta definido en Infisical y vale 60 por defecto (`config.py`), por debajo del plan en **todos** los planes: Basico, Avanzado y Premium quedan en 60 preguntas/dia en vez de 100/250/600 (corregido 2026-09-30: antes decia que el Basico no se veia afectado). Hasta implementar D023 (bloque 4 de D027, que retira los topes diarios del chat): definirlo alto en Infisical (dev y prod, `PasosParaProduccion.md` Fase 5.7) o subir el default, y documentar `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT` en `docs/environment-variables.md`. Queda obsoleto al cerrar el bloque 4 | **Pendiente** (configuracion; antes de los primeros invitados si D023 no esta hecho) |
 | 25 | CI (workflow Evals): Langfuse intenta exportar trazas sin host (`Failed to export span batch ... Invalid URL '/api/public/otel/v1/traces'`) en cada llamada LLM. El workflow pasa `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` desde secrets pero `LANGFUSE_HOST` llega vacio, y `get_langfuse()` (`app/llm/tracing.py`) solo desactiva el tracing si faltan las claves. Arreglo: desactivar tambien si `LANGFUSE_HOST` esta vacio (o quitar las claves del workflow si no se quieren trazas de evals) + test | **Pendiente, no urgente** (ruido en logs; no afecta al resultado) |
 | 26 | Borrar un documento borra tambien sus filas de `llm_calls` (`document_delete_service.delete_document`). El presupuesto no se ve afectado (el gasto se acumula en `usage_meter`), pero el coste por operacion y por tenant calculado desde `llm_calls` sale por debajo del real cuando los usuarios borran documentos. Opcion: conservar las filas desvinculando el documento (sin contenido del cliente; comprobar que no guardan texto crudo) o agregar el coste antes de borrar. Tenerlo en cuenta al calibrar precios con datos del piloto | **Post producto minimo** (2026-09-30; medicion) |
 | 13 | `.gitattributes` solo fija LF en ficheros de deploy; el resto depende de `core.autocrlf` de cada maquina | **Post producto minimo, higiene** (2026-09-30; `* text=auto eol=lf` + `git add --renormalize .`, commit `chore:`) |
@@ -143,8 +166,8 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 
 ## Orden recomendado restante
 
-1. Ops del soft launch: seguir `PasosParaProduccion.md` (checklist unica: Infisical `prod`, rotacion de credenciales, deploy, backups, QA manual, firma en `Paso10`). Staging aplazado.
+1. Producto minimo: seguir la tabla "Cierre del producto minimo" al inicio de este fichero (P2c 1-3 va en su fila 1: antes del primer cliente real, incluido el soft launch, porque despues los logs y el `audit_log` ya tendrian datos personales dificiles de limpiar, RGPD).
 2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
-3. Deuda de seguridad P2c (1 -> 2 -> 3) antes del primer cliente real, incluido el soft launch con invitados (`PasosParaProduccion.md` §1.5): despues los logs y el `audit_log` ya tendrian datos personales dificiles de limpiar (RGPD). P2c-4 al activar Cloudflare.
+3. P2c-4 al activar Cloudflare.
 
 No roadmap: Paso08 Analytics / modulo 3 (D011).

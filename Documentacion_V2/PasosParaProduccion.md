@@ -563,6 +563,8 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
   - Spec de planes no implementada del todo: limites mensuales y `quota_pending` (pasos 3-4 de su §9; hoy limites diarios) y D023 (cuota mensual de chat; mientras, `CHAT_DAILY_MESSAGE_LIMIT`, Fase 5.7). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
   - Cobro de planes fuera de la app (D016): factura manual, plan asignado por SADM.
   - WhatsApp/Telegram, Google Calendar y voz sin QA real (fuera de alcance).
+  - Knowledge sin limites mensuales: mantiene `knowledge_docs_max` y `knowledge_uploads_per_day` actuales porque la spec de planes aun no los define (§11).
+  - Renovacion enlazada automatica de contratos y purga a los 30 dias (D027, Backlog P3-8): solo boton manual "Marcar como sustituido" y borrado inmediato.
 - [ ] Firma en `Paso10_QA_Release_Produccion.md` (seccion "Registro de releases", con su plantilla).
 
 ---

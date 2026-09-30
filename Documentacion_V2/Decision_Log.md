@@ -474,6 +474,7 @@ Decision (cerrada 2026-09-30; bloque 1 implementado): los invitados del soft lau
 - **Reintentos:** `document_retries_per_month` = 40 / 150 / 400 y maximo 3 reintentos manuales por documento (sustituye a `document_retries_per_day`).
 - **Limites diarios:** se retiran al sustituirlos por los mensuales; solo se conserva un tope de subidas por dia, alto, como freno contra scripts.
 - **Borrado diferido y purga de contratos a los 30 dias:** fuera del producto minimo (Backlog P3-8); se mantiene el borrado inmediato.
+- **Contratos (bloque 5):** hash SHA-256 contra duplicados dentro (se reutiliza el del bloque 2; sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, queda en el historico y el chat no lo trata como vigente. La renovacion enlazada automatica (proponer a que contrato renueva) queda fuera del producto minimo y se monta despues sobre ese estado. Motivo: sin ninguna de las dos, un tenant en su maximo de activos no podria subir una renovacion hasta que venciera el contrato anterior, y el chat veria dos contratos vigentes de la misma contraparte (hoy no existe archivar a mano).
 
 Motivo:
 

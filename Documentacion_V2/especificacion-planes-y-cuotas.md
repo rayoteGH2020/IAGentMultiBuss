@@ -151,8 +151,8 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
   - Como máximo **2 reintentos automáticos** por documento: hasta **3 llamadas de extracción** al LLM por procesado. Los hace Instructor cuando la respuesta no cumple el schema (`LLM_EXTRACTION_MAX_RETRIES`, por defecto 2 y con tope 2 en `app/config.py`). Cada reintento es una llamada completa y cuenta en el presupuesto.
   - **El worker no repite la extracción.** ARQ solo vuelve a ejecutar un job si se difiere por el semáforo de concurrencia (antes de llamar al LLM, sin coste) o si el worker se reinicia a mitad. En ese segundo caso, si la ejecución anterior ya había llamado al LLM, no se vuelve a extraer: el documento pasa a fallido con `processing_interrupted` y el usuario puede reintentarlo a mano (`app/jobs/extraction_guard.py`).
   - Los reintentos por **errores HTTP transitorios** del proveedor (429/5xx, `LLM_RETRY_TRANSIENT_ERRORS`, desactivado por defecto) no son reintentos de extracción: el proveedor no procesa tokens y cuestan 0 €.
-  - Si tras los reintentos sigue fallando, el documento pasa a `revision_manual` (hoy estado `failed`) y **no se vuelve a intentar solo**.
-  - Los reintentos que lance el usuario los limita `document_retries_per_month` (40 / 150 / 400) y un **máximo de 3 por documento**. Pasado ese máximo, el documento se queda en `revision_manual`.
+  - Si tras los reintentos sigue fallando, el documento pasa a `failed` y **no se vuelve a intentar solo**.
+  - Los reintentos que lance el usuario los limita `document_retries_per_month` (40 / 150 / 400) y un **máximo de 3 por documento** (D027). Pasado ese máximo, el documento se queda en `failed` con los reintentos agotados: no se ofrece «Reintentar» y la interfaz lo muestra como «Revisión manual». No es un estado propio en la BD; se deduce del contador de reintentos manuales del documento.
   - **Motivo:** con el límite diario anterior (20 al día en Básico) cabían unos 600 reintentos al mes, unos 4,7 € de IA. Eso cabe en el tope de 6 €, pero agotaría el presupuesto y bloquearía los chats del cliente.
 - **Clasificación previa:** si la regla automática no reconoce el tipo de documento, se clasifica con `claude-haiku-4-5` (tarea `classify`, ≈0,002 € por llamada) antes de extraer. Cuenta en el presupuesto de IA, no en el cupo comercial. Registrar en `llm_calls` qué porcentaje de documentos la necesita.
 - **Filtros antes de llamar al LLM (coste cero):**
@@ -448,5 +448,5 @@ Crea `docs/analisis-planes-y-cuotas.md` con:
 - **Documentos de conocimiento:** ¿aplicar el mismo modelo que a los contratos? ¿Con qué límites?
 - **Registrar la decisión nueva** que sustituya a D011 **al retomar el analista** (D018).
 - **Premium:** con todos los topes al 100 % el coste de IA (≈41 €) supera el presupuesto de 30 €. ¿Se deja que el tope limite, se sube el presupuesto o se bajan los topes del analista y los chats? Durante el producto mínimo, sin analista (D018), el peor caso es de unos 23 € y no hay problema; decidir al retomarlo.
-- **`document_retries_per_month`:** confirmar que sustituye al límite diario, con máximo 3 reintentos por documento.
+- ~~**`document_retries_per_month`:** confirmar que sustituye al límite diario, con máximo 3 reintentos por documento.~~ **Resuelto (D027):** sí, 40 / 150 / 400 al mes y máximo 3 por documento.
 - **Citas simultáneas:** ¿se admiten (varios profesionales o gabinetes)? ¿Hace falta el concepto de «profesional» o «recurso» en `appointments`?
