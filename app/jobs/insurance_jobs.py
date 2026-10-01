@@ -124,7 +124,6 @@ async def process_insurance(
             logger.info(
                 "worker.insurance.done",
                 insurance_id=insurance_id,
-                aseguradora=extraction.insurance.aseguradora,
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "insurance_id": insurance_id}

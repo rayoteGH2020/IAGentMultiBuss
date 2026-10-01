@@ -5,13 +5,14 @@ ARQ lee esta clase al arrancar el proceso worker:
 Todos los atributos son leídos como atributos de clase, no de instancia.
 """
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from arq import cron
 from arq import func as arq_func
 from arq.connections import RedisSettings
 
 from app.config import get_settings
+from app.core.logging import configure_worker_logging
 from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.contract_jobs import process_contract
@@ -22,6 +23,11 @@ from app.jobs.membership_jobs import expire_member_removals
 from app.jobs.plan_jobs import apply_scheduled_plan_changes
 from app.jobs.provider_alert_jobs import send_llm_provider_billing_alert
 from app.jobs.ticket_jobs import process_ticket
+
+
+async def startup(_ctx: dict[str, Any]) -> None:
+    """Configura el logging del worker tras el ``dictConfig`` del CLI de arq."""
+    configure_worker_logging()
 
 
 class WorkerSettings:
@@ -90,3 +96,6 @@ class WorkerSettings:
     # repiten la llamada al LLM en la segunda ejecución (extraction_guard.py):
     # el tope por documento sigue siendo 1 + llm_extraction_max_retries (3).
     max_tries = 2
+
+    # Logs sin datos personales también en el worker (Backlog P2c-2).
+    on_startup = startup

@@ -216,12 +216,11 @@ async def upload_knowledge(
             file_errors.append({"filename": display_name, "error": str(exc)})
             logger.warning(
                 "knowledge.upload.rejected",
-                filename=display_name,
                 tenant_id=str(tenant.id),
-                error=str(exc),
+                error=exc.message,
             )
 
-        except Exception as exc:
+        except Exception:
             file_errors.append(
                 {
                     "filename": display_name,
@@ -230,9 +229,7 @@ async def upload_knowledge(
             )
             logger.exception(
                 "knowledge.upload.failed",
-                filename=display_name,
                 tenant_id=str(tenant.id),
-                error=str(exc),
             )
 
     ctx = await _list_ctx(db, tenant.id, upload_errors=file_errors)

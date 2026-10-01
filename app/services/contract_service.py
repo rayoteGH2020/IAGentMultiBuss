@@ -225,9 +225,7 @@ async def mark_failed(
         "contract.processing_failed",
         contract_id=str(contract_id),
         tenant_id=str(tenant_id),
-        source_filename=contract.source_filename,
         error_code=error_code.value,
-        technical_error=error[:2000],
     )
     contract.error_code = error_code.value
     contract.error_message = failure_message(

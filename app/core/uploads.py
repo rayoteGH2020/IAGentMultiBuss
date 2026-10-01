@@ -61,6 +61,11 @@ class UploadValidationError(Exception):
     aborataría el request completo en lugar de continuar con los siguientes.
     """
 
+    @property
+    def message(self) -> str:
+        """Texto escrito por la app (vacío, tamaño, tipo): apto para logs y UI."""
+        return str(self)
+
 
 async def read_upload_limited(
     upload: UploadFile,
@@ -157,7 +162,7 @@ def validate_invoice_upload(_filename: str, data: bytes) -> str:
         # Captura amplia (no solo ImportError): libmagic puede fallar también
         # por problemas de la base de datos de firmas o permisos del SO.
         # Se loguea como warning (no error) porque el fallback puede resolverlo.
-        logger.warning("upload.magic_failed", error=str(exc))
+        logger.warning("upload.magic_failed", error_type=type(exc).__name__)
         detected = None
 
     if detected not in ALLOWED_MIMES:
@@ -271,7 +276,7 @@ def validate_voice_upload(data: bytes, *, max_bytes: int) -> str:
 
         detected = magic.from_buffer(data[:4096], mime=True)
     except Exception as exc:
-        logger.warning("upload.audio_magic_failed", error=str(exc))
+        logger.warning("upload.audio_magic_failed", error_type=type(exc).__name__)
         detected = None
 
     # Normalizar aliases antes de comprobar la lista permitida.

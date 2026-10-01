@@ -124,8 +124,6 @@ async def process_ticket(
             logger.info(
                 "worker.ticket.done",
                 ticket_id=ticket_id,
-                comercio=extraction.ticket.comercio,
-                total=str(extraction.ticket.total),
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "ticket_id": ticket_id}

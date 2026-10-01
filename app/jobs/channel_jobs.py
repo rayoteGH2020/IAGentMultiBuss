@@ -25,6 +25,7 @@ from app.core import telegram_client, whatsapp_client
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker
 from app.core.email import send_email
+from app.core.log_redaction import pseudonymize
 from app.models.channel_integration import ChannelIntegrationStatus
 from app.models.membership import Membership
 from app.models.tenant import Tenant
@@ -101,7 +102,11 @@ async def _safe_send(
             phone_number_id=phone_number_id,
         )
     except Exception:
-        logger.exception("channel.send_failed", channel=channel, customer=customer_identifier)
+        logger.exception(
+            "channel.send_failed",
+            channel=channel,
+            customer_ref=pseudonymize(customer_identifier),
+        )
 
 
 async def _check_rate_limit(
@@ -243,7 +248,7 @@ async def process_channel_message(
                     "channel.rate_limited",
                     tenant_id=tenant_id,
                     channel=channel,
-                    customer_identifier=customer_identifier,
+                    customer_ref=pseudonymize(customer_identifier),
                     limit=get_settings().channel_rate_limit_msg_per_hour,
                 )
                 return
@@ -366,7 +371,9 @@ async def process_channel_message(
                     ),
                 )
             except Exception:
-                logger.exception("channel.escalation_email_failed", to=admin_email)
+                logger.exception(
+                    "channel.escalation_email_failed", to_ref=pseudonymize(admin_email)
+                )
         logger.info(
             "channel.escalated",
             tenant_id=tenant_id,

@@ -11,6 +11,7 @@ from sqlalchemy import delete, select, text
 
 from app.config import get_settings
 from app.core.datetime_display import resolve_display_timezone
+from app.core.log_redaction import pseudonymize
 from app.llm.client import get_llm_client
 from app.llm.prompts_loader import render_prompt
 from app.llm.tools import build_channel_registry
@@ -246,7 +247,7 @@ async def answer_for_channel(
             "channel.cache_hit",
             tenant_id=str(tenant.id),
             channel=channel,
-            customer_identifier=customer_identifier,
+            customer_ref=pseudonymize(customer_identifier),
             confidence=confidence,
             cache_id=cache_hit.cache_id,
         )
@@ -304,7 +305,7 @@ async def answer_for_channel(
             "channel.answer_generated",
             tenant_id=str(tenant.id),
             channel=channel,
-            customer_identifier=customer_identifier,
+            customer_ref=pseudonymize(customer_identifier),
             confidence=confidence,
             citations=citations_count,
             knowledge_tools=loop_result.knowledge_tools_used,

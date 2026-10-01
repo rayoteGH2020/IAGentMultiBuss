@@ -214,7 +214,7 @@ async def try_resolve_clerk_session(request: Request) -> None:
     try:
         claims = verify_clerk_jwt(token)
     except AuthError as e:
-        log.warning("auth.jwt_invalid", path=request.url.path, error=str(e))
+        log.warning("auth.jwt_invalid", path=request.url.path, error=e.message)
         request.state.auth_token_invalid = True
         return
 
@@ -422,7 +422,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         except Exception as exc:
-            log.exception("auth_middleware_error", path=request.url.path, error=str(exc))
+            log.exception(
+                "auth_middleware_error",
+                path=request.url.path,
+                error_type=type(exc).__name__,
+            )
             resp = Response(status_code=500)
             resp.headers["HX-Trigger"] = json.dumps({"appError": "Internal server error"})
             return resp

@@ -11,11 +11,14 @@ if TYPE_CHECKING:
 
 
 def audit_request_context(request: Request) -> AuditRequestContext:
-    """IP del cliente (primer salto de X-Forwarded-For si hay proxy) y user agent."""
-    forwarded = request.headers.get("x-forwarded-for")
-    ip = (
-        forwarded.split(",")[0].strip()
-        if forwarded
-        else (request.client.host if request.client else None)
+    """IP del cliente y user agent; único helper para todas las rutas que auditan.
+
+    La IP es ``request.client.host``: uvicorn la toma de ``X-Forwarded-For`` solo
+    si la conexión viene de ``--forwarded-allow-ips`` (Caddy, red interna). Leer la
+    cabecera aquí permitiría a cualquiera falsificar la IP auditada (Backlog P2c-3).
+    """
+    client = request.client
+    return AuditRequestContext(
+        ip=client.host if client else None,
+        user_agent=request.headers.get("user-agent"),
     )
-    return AuditRequestContext(ip=ip, user_agent=request.headers.get("user-agent"))

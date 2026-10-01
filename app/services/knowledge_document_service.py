@@ -111,7 +111,6 @@ async def create_from_upload(
             logger.warning(
                 "knowledge.upload.rejected_by_limits",
                 tenant_id=str(tenant_id),
-                filename=filename,
                 mime_type=mime_type,
                 size_bytes=len(file_bytes),
                 error_code=exc.error_code.value,

@@ -16,6 +16,7 @@ import structlog
 
 from app.core.datetime_display import resolve_display_timezone
 from app.core.errors import RateLimitError
+from app.core.log_redaction import pseudonymize
 
 logger = structlog.get_logger(__name__)
 
@@ -283,7 +284,7 @@ async def check_channel_messages_rate(
         logger.warning(
             "channel.rate_limit",
             tenant_id=str(tenant_id),
-            customer=customer_identifier,
+            customer_ref=pseudonymize(customer_identifier),
             max_per_hour=max_per_hour,
         )
         return False

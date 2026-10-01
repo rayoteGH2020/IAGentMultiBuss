@@ -15,9 +15,9 @@ from app.core.db import session_scope, set_tenant_context
 from app.core.errors import AppError, public_error_message
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_any_feature
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.chat import ChatMessageListFilters, ChatThreadListFilters
 from app.services import chat_service
-from app.services.audit_service import AuditRequestContext
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -29,12 +29,6 @@ router = APIRouter(
     tags=["chat"],
     dependencies=[Depends(require_any_feature("documents_chat", "knowledge_chat"))],
 )
-
-
-def _audit_request_context(request: Request) -> AuditRequestContext:
-    client = request.client
-    ip = client.host if client else None
-    return AuditRequestContext(ip=ip, user_agent=request.headers.get("user-agent"))
 
 
 async def _chat_index_ctx(
@@ -246,7 +240,7 @@ async def chat_post_message(
         user_id=user.id,
         thread_id=thread_id,
         content=content,
-        request_ctx=_audit_request_context(request),
+        request_ctx=audit_request_context(request),
     )
     thread = await chat_service.get_thread(
         db,

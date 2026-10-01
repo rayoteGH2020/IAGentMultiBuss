@@ -69,6 +69,44 @@ async def test_create_without_professional_id(
     assert row.client_name == "Sin Pro"
 
 
+async def test_create_audit_metadata_has_no_client_data(
+    db_session: AsyncSession,
+    tenant_factory: object,
+    scheduling_schema_ready: None,
+    audit_schema_ready: None,
+    freeze_scheduling_now: None,
+) -> None:
+    """El SADM lee audit_log: sin nombre ni teléfono del cliente final (P2c-2)."""
+    from app.models import AuditLog
+    from sqlalchemy import select
+
+    tenant, service_id, _ = await _env(db_session, tenant_factory, scheduling_schema_ready)
+    created = await internal_appointment_service.create_appointment(
+        db_session,
+        tenant.id,
+        AppointmentCreate(
+            service_id=service_id,
+            professional_id=None,
+            start_at=future_appointment_start(),
+            client_name="Cliente Privado",
+            client_phone="600999888",
+        ),
+    )
+
+    metadata = await db_session.scalar(
+        select(AuditLog.metadata_).where(
+            AuditLog.tenant_id == tenant.id,
+            AuditLog.action == internal_appointment_service.ACTION_APPOINTMENT_CREATED,
+            AuditLog.resource_id == created.id,
+        )
+    )
+    assert metadata is not None
+    assert "client_name" not in metadata
+    assert "Cliente Privado" not in str(metadata)
+    assert "600999888" not in str(metadata)
+    assert "start_at" in metadata
+
+
 async def test_create_rejects_inactive_service(
     db_session: AsyncSession,
     tenant_factory: object,

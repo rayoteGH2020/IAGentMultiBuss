@@ -28,6 +28,11 @@ from app.services.knowledge_index_service import run_index_pipeline
 
 logger = structlog.get_logger(__name__)
 
+_ERR_UNEXPECTED = (
+    "Error interno al indexar el documento. Vuelve a intentarlo y, si se repite, "
+    "contacta con soporte."
+)
+
 
 async def index_knowledge_document(
     ctx: dict[str, Any],
@@ -109,7 +114,7 @@ async def index_knowledge_document(
             )
             return {"status": "ok", "document_id": document_id}
 
-        except Exception as exc:
+        except Exception:
             # Rollback deshace toda escritura parcial, incluidos los SET LOCAL
             # de contexto de tenant. Es necesario re-establecer el contexto
             # antes de llamar a mark_failed para que RLS aplique correctamente.
@@ -119,7 +124,9 @@ async def index_knowledge_document(
                 db,
                 tenant_id=t_uuid,
                 document_id=doc_uuid,
-                error_message=str(exc)[:500],
+                # Texto fijo: el de la excepción puede llevar contenido y se
+                # muestra en la UI y en la metadata de audit_log.
+                error_message=_ERR_UNEXPECTED,
             )
             await db.commit()
             logger.exception(

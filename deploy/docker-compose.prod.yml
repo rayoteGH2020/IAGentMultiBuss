@@ -177,10 +177,12 @@ services:
       - --host=0.0.0.0
       - --port=8000
       - --workers=2
-      # Solo Caddy alcanza este puerto (red interna): se confía en su
-      # X-Forwarded-Proto para que HTTPSRedirectMiddleware no haga bucle.
+      # Se confía en X-Forwarded-Proto/For solo si la conexión viene de la red
+      # interna (Caddy): HTTPSRedirectMiddleware no hace bucle y la IP auditada
+      # (request.client.host) no se puede falsificar (Backlog P2c-3). Debe
+      # coincidir con la subred de networks.default al final del fichero.
       - --proxy-headers
-      - --forwarded-allow-ips=*
+      - --forwarded-allow-ips=172.30.0.0/24
     environment: *app-env
     depends_on:
       postgres:
@@ -269,3 +271,11 @@ volumes:
   caddy_config:
   postgres_data:
   redis_data:
+
+# Subred fija para poder limitar --forwarded-allow-ips de la API a la red interna.
+# Si choca con una red de la VPS, cambiarla aquí y en el comando de la API.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

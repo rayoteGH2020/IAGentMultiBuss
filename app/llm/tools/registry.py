@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 from uuid import UUID
 
+import structlog
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.core.db import set_tenant_context
 from app.core.errors import ValidationError
+
+logger = structlog.get_logger(__name__)
 
 
 class ToolFamily(enum.StrEnum):
@@ -217,11 +220,14 @@ class ToolRegistry:
                 error=exc.message,
             )
         except Exception as exc:
+            # Solo el tipo: el error viaja al modelo y a la metadata de audit_log, y
+            # el texto de una excepción de terceros puede llevar datos del tenant.
+            logger.exception("llm.tool_failed", tool=name)
             return ToolResult(
                 ok=False,
                 data={},
                 citations=[],
-                error=str(exc)[:500],
+                error=type(exc).__name__,
             )
 
 

@@ -27,6 +27,7 @@ from app.deps import (
     RequireOrgAdmin,
     get_db,
 )
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.support import (
     SUPPORT_KIND_LABELS,
     SUPPORT_MESSAGE_MAX_LENGTH,
@@ -35,7 +36,6 @@ from app.schemas.support import (
     SupportRequestCreate,
 )
 from app.services import entitlement_service, plan_quota_service, support_service
-from app.services.audit_service import AuditRequestContext
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -136,13 +136,6 @@ def _support_validation_error(exc: PydanticValidationError) -> str:
     return f"Revisa estos campos: {', '.join(fields)}."
 
 
-def _audit_ctx(request: Request) -> AuditRequestContext:
-    client = request.client
-    return AuditRequestContext(
-        ip=client.host if client else None, user_agent=request.headers.get("user-agent")
-    )
-
-
 async def _read_attachment(upload: UploadFile | None) -> EmailAttachment | None:
     """None si no se adjuntó nada (el input vacío llega con filename vacío)."""
     if upload is None or not upload.filename:
@@ -195,7 +188,7 @@ async def settings_support_send(
             payload=payload,
             attachment=email_attachment,
             redis=redis,
-            request_ctx=_audit_ctx(request),
+            request_ctx=audit_request_context(request),
         )
     except (ValidationError, ExternalServiceError, RateLimitError) as exc:
         return _render_support(request, values=values, error=_support_error(exc))

@@ -120,7 +120,7 @@ async def run_index_pipeline(
                 document_id=str(document_id),
                 tenant_id=str(tenant_id),
                 mime_type=source_mime,
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
             await mark_failed(
                 db,
@@ -142,7 +142,7 @@ async def run_index_pipeline(
                 "knowledge.index.extract_failed",
                 document_id=str(document_id),
                 tenant_id=str(tenant_id),
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
             await mark_failed(
                 db,
@@ -227,7 +227,7 @@ async def run_index_pipeline(
             "knowledge.index.embed_failed",
             document_id=str(document_id),
             tenant_id=str(tenant_id),
-            error=str(exc),
+            error_type=type(exc).__name__,
         )
         await mark_failed(
             db,

@@ -11,6 +11,7 @@ from arq.connections import ArqRedis, RedisSettings
 from arq.constants import default_queue_name, job_key_prefix, result_key_prefix
 
 from app.config import get_settings
+from app.core.log_redaction import pseudonymize
 
 logger = structlog.get_logger(__name__)
 
@@ -238,7 +239,7 @@ async def enqueue_channel_message(
             "arq.enqueue_channel_duplicate",
             tenant_id=tenant_id,
             channel=channel,
-            customer_identifier=customer_identifier,
+            customer_ref=pseudonymize(customer_identifier),
             job_id=deterministic_id,
         )
         return deterministic_id or "unknown"

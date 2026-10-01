@@ -105,7 +105,6 @@ async def save_integration(
         tenant_id=str(tenant_id),
         user_id=str(user_id),
         integration_id=str(integration.id),
-        google_email=integration.google_email,
     )
     await audit_service.log_calendar_integration_linked(
         db,
@@ -161,7 +160,7 @@ async def ensure_fresh_token(
             logger.warning(
                 "calendar.token.refresh_failed",
                 integration_id=str(integration.id),
-                error=str(exc),
+                error_code=exc.code,
             )
             raise
 
@@ -210,7 +209,7 @@ async def revoke_integration(
             logger.warning(
                 "calendar.token.revoke_partial",
                 integration_id=str(integration.id),
-                error=str(exc),
+                error_code=exc.code,
             )
 
         integration.status = CalendarIntegrationStatus.revoked.value

@@ -194,8 +194,6 @@ async def extract_invoice(
         "extraction.done",
         tenant_id=str(tenant_id),
         llm_call_id=str(completion.llm_call_id),
-        proveedor=factura.proveedor,
-        total=str(factura.total),
         confidence=factura.confidence,
     )
     return ExtractionResult(factura=factura, llm_call_id=completion.llm_call_id)
@@ -241,8 +239,6 @@ async def extract_ticket(
         "ticket_extraction.done",
         tenant_id=str(tenant_id),
         llm_call_id=str(completion.llm_call_id),
-        comercio=ticket.comercio,
-        total=str(ticket.total),
         confidence=ticket.confidence,
     )
     return TicketExtractionResult(ticket=ticket, llm_call_id=completion.llm_call_id)
@@ -286,7 +282,6 @@ async def extract_contract(
         "contract_extraction.done",
         tenant_id=str(tenant_id),
         llm_call_id=str(completion.llm_call_id),
-        parte_contraria=contract.parte_contraria,
         confidence=contract.confidence,
     )
     return ContractExtractionResult(contract=contract, llm_call_id=completion.llm_call_id)
@@ -332,7 +327,6 @@ async def extract_insurance(
         "insurance_extraction.done",
         tenant_id=str(tenant_id),
         llm_call_id=str(completion.llm_call_id),
-        aseguradora=insurance.aseguradora,
         confidence=insurance.confidence,
     )
     return InsuranceExtractionResult(insurance=insurance, llm_call_id=completion.llm_call_id)

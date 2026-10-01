@@ -155,7 +155,6 @@ async def _ingest_uploaded_document(
         logger.warning(
             "document_ingest.rejected_by_limits",
             tenant_id=str(tenant_id),
-            filename=filename,
             mime_type=mime_type,
             size_bytes=len(file_bytes),
             error_code=exc.error_code.value,

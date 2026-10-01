@@ -97,7 +97,8 @@ async def _superadmin_user(db: AsyncSession) -> User:
 async def _cleanup(db: AsyncSession, *, tenant_id: UUID, user_id: UUID) -> None:
     """Borra lo que quedó comprometido por el commit del servicio."""
     await set_tenant_context(db, str(tenant_id))
-    await db.execute(delete(AuditLog).where(AuditLog.tenant_id == tenant_id))
+    # audit_log es solo inserción para saas_app (p78): sus filas caen con el
+    # ON DELETE CASCADE del tenant, que Postgres ejecuta como propietario.
     await db.execute(delete(ProcessingCharge).where(ProcessingCharge.tenant_id == tenant_id))
     await db.execute(delete(Invoice).where(Invoice.tenant_id == tenant_id))
     await db.execute(delete(User).where(User.id == user_id))

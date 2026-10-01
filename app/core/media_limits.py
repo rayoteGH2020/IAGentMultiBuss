@@ -144,7 +144,7 @@ def pdf_page_count(file_bytes: bytes) -> int:
     except MediaLimitExceeded:
         raise
     except (PdfReadError, ValueError, OSError, RecursionError) as exc:
-        logger.warning("media_limits.pdf_unreadable", error=str(exc)[:200])
+        logger.warning("media_limits.pdf_unreadable", error_type=type(exc).__name__)
         raise MediaLimitExceeded(
             "Cannot read PDF structure",
             error_code=DocumentErrorCode.unreadable_file,
@@ -171,7 +171,7 @@ def image_dimensions(file_bytes: bytes) -> tuple[int, int]:
             detail="la resolución de la imagen es desproporcionada",
         ) from exc
     except (UnidentifiedImageError, ValueError, OSError) as exc:
-        logger.warning("media_limits.image_unreadable", error=str(exc)[:200])
+        logger.warning("media_limits.image_unreadable", error_type=type(exc).__name__)
         raise MediaLimitExceeded(
             "Cannot read image header",
             error_code=DocumentErrorCode.unreadable_file,
@@ -226,7 +226,7 @@ def open_image_within_limits(file_bytes: bytes) -> tuple[PILImage, bool]:
             detail="la resolución de la imagen es desproporcionada",
         ) from exc
     except (UnidentifiedImageError, ValueError, OSError, MemoryError) as exc:
-        logger.warning("media_limits.image_decode_failed", error=str(exc)[:200])
+        logger.warning("media_limits.image_decode_failed", error_type=type(exc).__name__)
         raise MediaLimitExceeded(
             "Cannot decode image",
             error_code=DocumentErrorCode.unreadable_file,

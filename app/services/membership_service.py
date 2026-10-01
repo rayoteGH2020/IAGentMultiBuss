@@ -23,6 +23,7 @@ from app.core.errors import (
     RateLimitError,
     ValidationError,
 )
+from app.core.log_redaction import pseudonymize
 from app.core.permissions import (
     ORG_ADMIN_ROLE,
     ORG_CO_ADMIN_ROLE,
@@ -211,10 +212,18 @@ async def create_tenant_member(
             metadata={"email": payload.email, "role": payload.role},
         )
     except Exception:
-        log.error("membership.create_failed", email=payload.email, tenant_id=str(tenant_id))
+        log.error(
+            "membership.create_failed",
+            email_ref=pseudonymize(payload.email),
+            tenant_id=str(tenant_id),
+        )
         raise
 
-    log.info("membership.created", email=payload.email, tenant_id=str(tenant_id))
+    log.info(
+        "membership.created",
+        email_ref=pseudonymize(payload.email),
+        tenant_id=str(tenant_id),
+    )
     return _member_read(membership, user)
 
 

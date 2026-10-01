@@ -243,9 +243,7 @@ async def mark_failed(
         "ticket.processing_failed",
         ticket_id=str(ticket_id),
         tenant_id=str(tenant_id),
-        source_filename=ticket.source_filename,
         error_code=error_code.value,
-        technical_error=error[:2000],
     )
     ticket.error_code = error_code.value
     ticket.error_message = failure_message(

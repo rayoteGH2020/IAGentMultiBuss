@@ -288,7 +288,8 @@ async def create_appointment(
         action=ACTION_APPOINTMENT_CREATED,
         resource_type=RESOURCE_APPOINTMENT,
         resource_id=appointment.id,
-        metadata={"client_name": appointment.client_name, "start_at": start_at.isoformat()},
+        # Sin client_name: el SADM lee audit_log y es un dato del cliente final.
+        metadata={"start_at": start_at.isoformat()},
         request_ctx=request_ctx,
     )
     return AppointmentRead.model_validate(appointment)

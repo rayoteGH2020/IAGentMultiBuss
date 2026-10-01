@@ -25,9 +25,9 @@ from app.core.errors import AppError, ValidationError, public_error_message
 from app.core.templating import render
 from app.core.uploads import UploadValidationError, read_upload_limited
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_feature
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.calendar import CalendarEventCreate, CalendarIntegrationStatus
 from app.services import calendar_service, voice_event_service
-from app.services.audit_service import AuditRequestContext
 
 logger = structlog.get_logger(__name__)
 
@@ -36,14 +36,6 @@ router = APIRouter(
     tags=["calendar-voice"],
     dependencies=[Depends(require_feature("calendar_voice"))],
 )
-
-
-def _request_ctx(request: Request) -> AuditRequestContext:
-    client = request.client
-    return AuditRequestContext(
-        ip=client.host if client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
 
 
 @router.get("")
@@ -93,7 +85,7 @@ async def voice_transcribe(
             audio=audio_bytes,
             mime_type=mime_type,
             redis=redis,
-            request_ctx=_request_ctx(request),
+            request_ctx=audit_request_context(request),
         )
         return render(
             request,
@@ -106,7 +98,7 @@ async def voice_transcribe(
             "voice.upload_rejected",
             tenant_id=str(tenant.id),
             user_id=str(user.id),
-            error=str(exc),
+            error=exc.message,
         )
         return render(
             request,
@@ -165,7 +157,7 @@ async def voice_confirm(
             tenant_id=tenant.id,
             user_id=user.id,
             event=event,
-            request_ctx=_request_ctx(request),
+            request_ctx=audit_request_context(request),
         )
         return render(
             request,

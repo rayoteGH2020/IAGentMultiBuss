@@ -86,15 +86,14 @@ async def _events_ctx(
                 "calendar.events.list_failed",
                 tenant_id=str(tenant_id),
                 user_id=str(user_id),
-                error=str(exc),
+                error_code=exc.code,
             )
-        except Exception as exc:
+        except Exception:
             ctx["error_message"] = "No se pudieron cargar los eventos del calendario."
             logger.exception(
                 "calendar.events.list_failed",
                 tenant_id=str(tenant_id),
                 user_id=str(user_id),
-                error=str(exc),
             )
     return ctx
 

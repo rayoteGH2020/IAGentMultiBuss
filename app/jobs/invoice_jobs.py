@@ -166,8 +166,6 @@ async def process_invoice(
             logger.info(
                 "worker.invoice.done",
                 invoice_id=invoice_id,
-                proveedor=extraction.factura.proveedor,
-                total=str(extraction.factura.total),
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "invoice_id": invoice_id}

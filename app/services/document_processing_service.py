@@ -331,7 +331,7 @@ async def abandon_stale_processing(
             tenant_id=str(tenant_id),
             document_kind=document_kind,
             document_id=str(document_id),
-            error=str(exc),
+            error_type=type(exc).__name__,
         )
     logger.warning(
         "document_processing.abandoned_stale",

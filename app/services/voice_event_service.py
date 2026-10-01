@@ -237,7 +237,7 @@ async def confirm_event(
         user_id=user_id,
         action=ACTION_CALENDAR_EVENT_CREATED_FROM_VOICE,
         resource_type=RESOURCE_CALENDAR_EVENT,
-        metadata={"event_id": created.id, "summary": created.summary},
+        metadata={"event_id": created.id},
         request_ctx=request_ctx,
     )
 

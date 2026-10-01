@@ -91,6 +91,28 @@ def test_api_trusts_proxy_headers() -> None:
     assert "app.main:app" in command
 
 
+def _forwarded_allow_ips(args: list[str]) -> list[str]:
+    return [a.split("=", 1)[1] for a in args if a.startswith("--forwarded-allow-ips=")]
+
+
+def test_api_trusts_forwarded_headers_only_from_internal_network() -> None:
+    """La IP auditada (request.client.host) solo puede venir de Caddy (P2c-3)."""
+    compose = _compose()
+    allowed = _forwarded_allow_ips(compose["services"]["api"]["command"])
+    subnets = [c["subnet"] for c in compose["networks"]["default"]["ipam"]["config"]]
+
+    assert allowed == subnets
+    assert "*" not in allowed[0]
+
+
+def test_dockerfile_does_not_trust_any_proxy() -> None:
+    dockerfile = (_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    cmd = next(line for line in dockerfile.splitlines() if line.startswith("CMD "))
+
+    assert "--forwarded-allow-ips=*" not in cmd
+    assert "--forwarded-allow-ips=127.0.0.1" in cmd
+
+
 def test_app_containers_are_hardened() -> None:
     services = _compose()["services"]
     for name in _APP_SERVICES:

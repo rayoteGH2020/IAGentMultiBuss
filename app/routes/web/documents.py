@@ -16,6 +16,7 @@ from app.core.uploads import (
     validate_invoice_upload,
 )
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_feature
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.document_panel import PanelListParams
 from app.services import (
     contract_service,
@@ -30,7 +31,6 @@ from app.services import (
     invoice_service,
     ticket_service,
 )
-from app.services.audit_service import AuditRequestContext
 
 logger = structlog.get_logger(__name__)
 
@@ -203,30 +203,26 @@ async def upload_documents(
                 redis=redis,
                 ents=ents,
                 user_id=_user.id,
-                request_ctx=_audit_request_context(request),
+                request_ctx=audit_request_context(request),
             )
             created_document_ids.append(str(result.record_id))
 
         except RateLimitError as exc:
             errors.append({"filename": display_name, "error": exc.message})
-            logger.warning("upload.rate_limited", filename=display_name, tenant_id=str(tenant.id))
+            logger.warning("upload.rate_limited", tenant_id=str(tenant.id))
 
         except UploadValidationError as exc:
             errors.append({"filename": display_name, "error": str(exc)})
-            logger.warning("upload.rejected", filename=display_name, error=str(exc))
+            logger.warning("upload.rejected", tenant_id=str(tenant.id), error=exc.message)
 
-        except RuntimeError as exc:
+        except RuntimeError:
             errors.append(
                 {
                     "filename": display_name,
                     "error": "No se pudo encolar el procesamiento. Inténtalo de nuevo.",
                 },
             )
-            logger.exception(
-                "upload.enqueue_failed",
-                filename=display_name,
-                error=str(exc),
-            )
+            logger.exception("upload.enqueue_failed", tenant_id=str(tenant.id))
 
     ctx = await _documents_panel_ctx(
         db,
@@ -357,16 +353,6 @@ async def document_dismiss(
     return HTMLResponse(status_code=200, content="")
 
 
-def _audit_request_context(request: Request) -> AuditRequestContext:
-    forwarded = request.headers.get("x-forwarded-for")
-    ip = (
-        forwarded.split(",")[0].strip()
-        if forwarded
-        else (request.client.host if request.client else None)
-    )
-    return AuditRequestContext(ip=ip, user_agent=request.headers.get("user-agent"))
-
-
 @router.post("/{kind}/{document_id}/delete")
 async def document_delete(
     request: Request,
@@ -384,7 +370,7 @@ async def document_delete(
         user_id=user.id,
         document_kind=kind,  # type: ignore[arg-type]
         document_id=document_id,
-        request_ctx=_audit_request_context(request),
+        request_ctx=audit_request_context(request),
     )
     await db.commit()
     return HTMLResponse(status_code=200, content="")

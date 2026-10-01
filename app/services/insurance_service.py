@@ -221,9 +221,7 @@ async def mark_failed(
         "insurance.processing_failed",
         insurance_id=str(insurance_id),
         tenant_id=str(tenant_id),
-        source_filename=insurance.source_filename,
         error_code=error_code.value,
-        technical_error=error[:2000],
     )
     insurance.error_code = error_code.value
     insurance.error_message = failure_message(

@@ -26,9 +26,9 @@ from app.core.google_calendar_client import GoogleCalendarClient, build_auth_url
 from app.core.oauth_state import consume_state, generate_state
 from app.core.templating import render
 from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, get_db_no_tenant, require_feature
+from app.routes.web.audit_context import audit_request_context
 from app.schemas.calendar import CalendarIntegrationStatus
 from app.services import calendar_service, channel_integration_service, entitlement_service
-from app.services.audit_service import AuditRequestContext
 
 logger = structlog.get_logger(__name__)
 
@@ -54,12 +54,6 @@ def _google_oauth_configured() -> bool:
 def _oauth_redirect_uri() -> str:
     base = get_settings().app_base_url.rstrip("/")
     return f"{base}/auth/google/callback"
-
-
-def _audit_request_context(request: Request) -> AuditRequestContext:
-    client = request.client
-    ip = client.host if client else None
-    return AuditRequestContext(ip=ip, user_agent=request.headers.get("user-agent"))
 
 
 async def _integration_card_ctx(
@@ -149,7 +143,7 @@ async def google_calendar_disconnect(
         db,
         tenant.id,
         user.id,
-        request_ctx=_audit_request_context(request),
+        request_ctx=audit_request_context(request),
     )
     ctx = await _integration_card_ctx(db, tenant_id=tenant.id, user_id=user.id)
     return render(
@@ -230,7 +224,7 @@ async def google_oauth_callback(
             user_id=user_id,
             token_response=token_resp,
             google_email=google_email,
-            request_ctx=_audit_request_context(request),
+            request_ctx=audit_request_context(request),
         )
     except ValidationError as exc:
         logger.warning(
@@ -238,8 +232,7 @@ async def google_oauth_callback(
             reason="validation_error",
             tenant_id=str(tenant_id),
             user_id=str(user_id),
-            error=str(exc),
-            details=exc.details,
+            error=exc.message,
         )
         return RedirectResponse(
             url="/settings/integrations?error=oauth_failed",
@@ -252,8 +245,7 @@ async def google_oauth_callback(
             tenant_id=str(tenant_id),
             user_id=str(user_id),
             error_type=type(exc).__name__,
-            error=str(exc),
-            details=getattr(exc, "details", {}),
+            error=exc.message,
         )
         return RedirectResponse(
             url="/settings/integrations?error=oauth_failed",
@@ -264,7 +256,6 @@ async def google_oauth_callback(
         "calendar.oauth.success",
         tenant_id=str(tenant_id),
         user_id=str(user_id),
-        google_email=google_email,
     )
     return RedirectResponse(
         url="/settings/integrations?connected=google",

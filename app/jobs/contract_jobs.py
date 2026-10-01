@@ -124,7 +124,6 @@ async def process_contract(
             logger.info(
                 "worker.contract.done",
                 contract_id=contract_id,
-                parte_contraria=extraction.contract.parte_contraria,
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "contract_id": contract_id}

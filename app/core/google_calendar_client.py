@@ -101,8 +101,10 @@ def _handle_google_response(response: httpx.Response, *, context: str) -> None:
     if response.status_code == 401:
         raise AuthError("google_token_expired")
     if response.status_code == 403:
+        # El detalle de Google va en details: los logs solo registran el mensaje.
         raise ForbiddenError(
-            f"Google Calendar access forbidden ({context}): {_google_error_detail(response)}"
+            f"Google Calendar access forbidden ({context})",
+            details={"body": _google_error_detail(response)},
         )
     if response.status_code >= 400:
         raise ExternalServiceError(

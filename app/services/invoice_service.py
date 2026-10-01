@@ -404,9 +404,7 @@ async def mark_failed(
         "invoice.processing_failed",
         invoice_id=str(invoice_id),
         tenant_id=str(tenant_id),
-        source_filename=invoice.source_filename,
         error_code=error_code.value,
-        technical_error=error[:2000],
     )
     invoice.error_code = error_code.value
     invoice.error_message = failure_message(

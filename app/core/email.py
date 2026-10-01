@@ -8,6 +8,7 @@ import aiosmtplib
 import structlog
 
 from app.config import Settings, get_settings
+from app.core.log_redaction import pseudonymize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,7 +51,7 @@ async def send_email(
     """
     settings = get_settings()
     if not settings.smtp_host:
-        logger.debug("email.skipped", reason="smtp_host not configured", to=to, subject=subject)
+        logger.debug("email.skipped", reason="smtp_host not configured", to_ref=pseudonymize(to))
         return
 
     msg = EmailMessage()
@@ -78,8 +79,7 @@ async def send_email(
     )
     logger.info(
         "email.sent",
-        to=to,
-        subject=subject,
+        to_ref=pseudonymize(to),
         port=settings.smtp_port,
         use_tls=use_tls,
         start_tls=start_tls,

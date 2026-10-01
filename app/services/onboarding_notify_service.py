@@ -100,7 +100,6 @@ async def notify_superadmin_missing_organization(
             "onboarding.missing_org_notify_failed",
             user_id=str(user_id),
             error_type=type(exc).__name__,
-            error=str(exc),
         )
         raise ExternalServiceError(
             "Failed to send notification email",

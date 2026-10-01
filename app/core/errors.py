@@ -202,7 +202,6 @@ def register_error_handlers(app: FastAPI) -> None:
             "app_error",
             code=exc.code,
             message=exc.message,
-            details=exc.details,
             path=request.url.path,
         )
         if isinstance(exc, AuthError):
