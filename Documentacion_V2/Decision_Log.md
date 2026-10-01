@@ -502,7 +502,7 @@ Consecuencia:
 
 ## D029 - Registro de actividad en BD (`activity_log`), separado de `audit_log`
 
-Decision (cerrada 2026-09-30, pendiente de implementar; fila 1b del cierre del producto minimo): una tabla `activity_log` registra por donde pasa la ejecucion de la app para poder corregir y mejorar durante el piloto. Consulta solo por SQL (sin pantalla en el SADM por ahora).
+Decision (cerrada 2026-09-30, implementada 2026-10-01 con la migracion `p79_activity_log_01`; fila 1b del cierre del producto minimo): una tabla `activity_log` registra por donde pasa la ejecucion de la app para poder corregir y mejorar durante el piloto. Consulta solo por SQL (sin pantalla en el SADM por ahora).
 
 - **Filas** (`kind`): `request` (plantilla de ruta, metodo, estado, duracion, HTMX), `job` (nombre del job ARQ, intento, resultado, duracion), `event` (cada `log.info/warning/error` del codigo, capturado por un procesador de structlog, con modulo, funcion y linea) y `error` (excepcion no controlada: tipo y fichero:linea:funcion del frame mas profundo de `app/`).
 - **Identificadores en todas:** `tenant_id`, `user_id` (id interno), `request_id`, `job_id` y `parent_request_id` (propagado al encolar desde `app/jobs/queue.py`, enlaza el job con la peticion que lo lanzo).
@@ -523,6 +523,17 @@ Consecuencia:
 - Nota en AGENTS.md §7 que distinga auditoria (`audit_log`) de actividad (`activity_log`).
 - `user_id` es dato personal: retencion limitada y mencion en la politica de privacidad.
 - Volumen estimado: 1-3 millones de filas al mes con 10 usuarios; revisar con uso real.
+
+Detalles de implementacion (aprobados 2026-10-01):
+
+- **RLS con INSERT permisivo:** RLS activado con `tenant_isolation` mas una politica de INSERT abierta, porque el volcado mezcla filas de varios tenants en un mismo INSERT; separarlas por tenant no anadia seguridad real (el tenant lo pone el propio volcador). Lo que protege es que `saas_app` solo tiene `INSERT` (ni `SELECT` ni `UPDATE` ni `DELETE`). Sin `FORCE`: el propietario consulta y purga sin RLS.
+- **Sin FK** en `tenant_id` / `user_id`: un tenant borrado entre el buffer y el volcado tumbaria el lote, y cada INSERT comprobaria la FK. La purga por retencion cubre el borrado.
+- **`request_id`:** UUID nuevo por peticion (se ignora el `X-Request-ID` del cliente), devuelto en la cabecera `X-Request-ID` y anadido a los logs de consola. En los jobs, `job_id` va tambien a los logs.
+- **Errores:** un log con traceback (`log.exception`) se guarda como fila `error`, ademas de las excepciones que escapan de una peticion o un job; casi todas las excepciones de la app se capturan y se registran asi.
+- **Jobs:** wrapper `tracked_job` en `WorkerSettings` en lugar de los hooks `on_job_start`/`after_job_end` de ARQ, que no reciben el nombre del job ni sus argumentos. Toma `tenant_id` de la firma del job y el `parent_request_id` de un kwarg que anade `job_parent_kwargs()` al encolar.
+- **Purga:** `purge_activity_log(retention_days, batch_size)` exige `retention_days >= 7` en la propia BD, para que un proceso comprometido no pueda borrar lo reciente; el cron (diario, 03:30) la llama por lotes de 50 000.
+- **Interruptor:** `ACTIVITY_LOG_ENABLED` (por defecto `true`) lo apaga sin redeploy; los tests lo fuerzan a `false`.
+- **Alcance de la exclusion:** `/static`, `/health*`, `/metrics` y las rutas de polling `/jobs/{kind}/{id}/status` no generan fila `request`; los eventos INFO+ que ocurran dentro de ellas si se registran (en la practica, solo `app_error` si el polling llega sin sesion).
 
 ## D030 - Citas por WhatsApp y Telegram sobre el modulo interno de citas
 

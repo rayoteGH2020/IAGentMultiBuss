@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
 Fecha: 2026-08-05 · Actualizado: 2026-10-01
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1b-8; la 0 y la 1 ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 2-8; la 0, la 1 y la 1b ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo, con una excepcion: las Fases 2-7 no dependen del codigo y se hacen en paralelo a la Fase 1 y al cierre del codigo (Backlog, filas 1-8; orden completo en "Orden de ejecucion" del Backlog). Desde la Fase 8, no empezar una fase si alguna anterior (incluida la Fase 1) tiene casillas abiertas sin aceptacion explicita; justo antes de la Fase 8, repasar la Fase 5 por si los bloques del cierre anadieron variables. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1b-8: registro de actividad, bloques 2-7 y cierre; las filas 0 y 1 (P2c 1-3 de la Fase 1.5) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 2-8: bloques 2-7 y cierre; las filas 0, 1 (P2c 1-3 de la Fase 1.5) y 1b (registro de actividad) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-01: `p78_audit_insert_only_01`; la fila 1b y los bloques 2-7 anadiran migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-01: `p79_activity_log_01`; los bloques 2-7 anadiran migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -368,12 +368,39 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 `DOCUMENT_MAX_IMAGE_EDGE_PX=20000`, `DOCUMENT_MAX_IMAGE_PIXELS=40000000`, `KNOWLEDGE_MAX_FILE_SIZE_BYTES=15728640`. No usar los valores bajos de las pruebas manuales de Paso01.
 
-**Registro de actividad (D029, cuando este implementado):** `ACTIVITY_LOG_RETENTION_DAYS=90` (dias que se conservan las filas de `activity_log`; `0` = no purgar).
+**Registro de actividad (D029, implementado 2026-10-01):** en `prod` no hace falta definir nada; los defaults son los buenos:
 
-**Decidido (D029, 2026-10-01):** con `APP_ENV=production` la app se niega a arrancar si `ACTIVITY_LOG_RETENTION_DAYS=0`, con un mensaje que explica el motivo y como corregirlo (igual que con `LANGFUSE_CAPTURE_CONTENT=true`). Se implementa con la fila 1b. Motivo: cada fila lleva `user_id` (dato personal); guardarlo sin limite choca con la minimizacion del RGPD y, con 1-3 millones de filas al mes, engorda sin control los backups y el disco de la VPS. En `prod`, dejar 90 o poner otro valor mayor que 0.
+| Variable | Valor `prod` |
+| --- | --- |
+| `ACTIVITY_LOG_ENABLED` | sin definir (`true`). Poner `false` solo para apagarlo ante un incidente |
+| `ACTIVITY_LOG_RETENTION_DAYS` | sin definir (90) o un valor de 7 o mas. **`0` impide arrancar** |
+
+Con `APP_ENV=production` y `ACTIVITY_LOG_RETENTION_DAYS=0` la app se niega a arrancar con un mensaje que explica el motivo (RGPD: cada fila lleva `user_id`) y como corregirlo. Valores entre 1 y 6 se rechazan en cualquier entorno.
 
 - [x] Decidido que `ACTIVITY_LOG_RETENTION_DAYS=0` se bloquea en produccion (D029, 2026-10-01).
-- [ ] Implementado con la fila 1b: arrancar con `APP_ENV=production` y `ACTIVITY_LOG_RETENTION_DAYS=0` falla con el mensaje del motivo.
+- [x] Implementado y con test (`tests/unit/test_config_activity_log.py`, 2026-10-01).
+- [ ] En `prod`, `ACTIVITY_LOG_RETENTION_DAYS` sin definir o >= 7 (revisar en Infisical antes de la Fase 8).
+- [ ] Tras el primer deploy (Fase 8), comprobar que se registra actividad y que la purga existe (con el superusuario, en el contenedor `postgres`):
+
+```sql
+-- Deben aparecer filas recientes de kind request (api) y job (worker).
+SELECT kind, source, count(*), max(occurred_at) FROM activity_log
+WHERE occurred_at > now() - interval '1 hour' GROUP BY kind, source;
+-- saas_app solo inserta: t | f | f | f
+SELECT has_table_privilege('saas_app','activity_log','INSERT'),
+       has_table_privilege('saas_app','activity_log','SELECT'),
+       has_table_privilege('saas_app','activity_log','UPDATE'),
+       has_table_privilege('saas_app','activity_log','DELETE');
+```
+
+   Para seguir una peticion concreta (p. ej. la que reporta un usuario con el `X-Request-ID` de la respuesta):
+
+```sql
+SELECT occurred_at, kind, source, name, status_code, outcome, location, data
+FROM activity_log
+WHERE request_id = '<uuid>' OR parent_request_id = '<uuid>'
+ORDER BY occurred_at;
+```
 
 **Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
 
@@ -471,7 +498,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p78_audit_insert_only_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p79_activity_log_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 

@@ -75,6 +75,8 @@ Nombres en **MAYÚSCULAS**: `pydantic-settings` lee las variables del entorno de
 | `LANGFUSE_SECRET_KEY` | No | Clave secreta para autenticar las trazas enviadas desde la app. |
 | `LANGFUSE_HOST` | No | URL del servidor Langfuse. En local apunta al contenedor `langfuse-web` del compose (`http://localhost:3000`); en prod a la instancia self-hosted en la VPS. Si está vacío, las trazas se descartan silenciosamente. |
 | `LANGFUSE_CAPTURE_CONTENT` | No | `false` por defecto: a Langfuse solo van metadatos de evaluación (modelo, tokens, coste, latencia, forma del resultado), nunca documentos, mensajes ni consultas (`arquitectura.md` §8). A `true` captura el payload íntegro para depurar prompts; `Settings` lanza `ValidationError` si `APP_ENV` es `staging` o `production`. |
+| `ACTIVITY_LOG_ENABLED` | No | `true` por defecto: registra peticiones, jobs, eventos y errores en la tabla `activity_log` (D029), sin datos personales salvo `user_id`. `false` lo apaga sin redeploy (incidente); los tests lo fuerzan a `false`. |
+| `ACTIVITY_LOG_RETENTION_DAYS` | No | Días que se conservan las filas de `activity_log` (90 por defecto). `0` = no purgar, solo fuera de producción: con `APP_ENV=production` la app no arranca (RGPD). Valores entre 1 y 6 se rechazan; la función de purga en BD exige también un mínimo de 7. |
 
 > **Langfuse v3 (dev local):** el compose levanta `langfuse-web`, `langfuse-worker`, ClickHouse, MinIO y Redis propios de Langfuse. Tras migrar desde v2, borra `docker/data/langfuse-db/` en dev si hay errores de esquema, entra en la UI, copia las API keys del proyecto `mi-saas-dev` a Infisical y reinicia el worker ARQ (`get_langfuse()` cachea las claves al arrancar).
 

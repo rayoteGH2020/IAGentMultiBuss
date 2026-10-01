@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-14 · Actualizado: 2026-10-01
 Estado: **arquitectura vigente del monolito** (el codigo es la fuente de verdad).
-HEAD migraciones: `p78_audit_insert_only_01`.
+HEAD migraciones: `p79_activity_log_01`.
 
 Si un doc antiguo o un backlog desfasado contradice este fichero o el codigo, gana el codigo + `Documentacion_V2` (ver `Decision_Log.md` D001–D002).
 
@@ -48,7 +48,7 @@ La V2 corrige la documentacion y fija el orden de evolucion restante.
 | LLM | SDKs Anthropic/Google/Voyage via cliente propio. No LangChain/LlamaIndex como columna |
 | Auth | Clerk Organizations |
 | Secretos | Infisical (`env_file=None` en Settings). Sin `.env` en el repo |
-| Observabilidad | `llm_calls`, Langfuse metadata-only, structlog sin datos personales (`app/core/log_redaction.py`, `Seguridad_V2.md` §8b) |
+| Observabilidad | `llm_calls`, Langfuse metadata-only, structlog sin datos personales (`app/core/log_redaction.py`, `Seguridad_V2.md` §8b), registro de actividad en BD `activity_log` con `X-Request-ID` (`app/core/activity/`, D029) |
 | Tests | pytest, Playwright; evals en `app/evals/` |
 
 Entry points:

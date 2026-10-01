@@ -236,6 +236,14 @@ Objetivo: poder responder "quién tocó o vio este dato del cliente, cuándo y d
 
 Si una vista nueva no encaja claramente en una de estas categorías, decidirlo antes de implementarla y reflejarlo aquí.
 
+### Registro de actividad (`activity_log`, D029)
+
+No es auditoría: sirve para depurar (peticiones, jobs, logs y errores) y se purga por retención. Se rellena solo, sin código en cada vista: el middleware `app/core/activity/middleware.py`, el wrapper `tracked_job` de los jobs ARQ y un procesador de structlog que copia cada `log.info/warning/error`.
+
+- Nunca usarlo para responder "quién vio qué": eso es `audit_log`.
+- `data` solo guarda claves de una lista permitida con valores tipo identificador o código (`app/core/activity/capture.py`). Si un campo nuevo de log debe llegar a la tabla, añadirlo ahí, nunca con texto libre ni datos personales.
+- Los jobs nuevos se registran en `WorkerSettings` envueltos con `tracked_job(...)`; al encolar, pasar `**job_parent_kwargs()` para enlazarlos con la petición que los lanza.
+
 ---
 
 ## 8. Capa LLM (referencia)
