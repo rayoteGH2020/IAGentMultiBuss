@@ -28,6 +28,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.core import clerk_client
+from app.core.activity.context import job_parent_kwargs
 from app.core.cache import get_redis
 from app.core.email import send_email
 from app.core.entitlement_codes import LIMIT_LLM_BUDGET_EUR_MONTH
@@ -120,7 +121,7 @@ async def _enqueue_alert(tenant_id: UUID, kind: AlertKind) -> None:
     from app.jobs.queue import get_arq_pool
 
     pool = await get_arq_pool()
-    await pool.enqueue_job("send_llm_budget_alert", str(tenant_id), kind)
+    await pool.enqueue_job("send_llm_budget_alert", str(tenant_id), kind, **job_parent_kwargs())
 
 
 def _monthly_thresholds() -> tuple[tuple[str, float, AlertKind], ...]:

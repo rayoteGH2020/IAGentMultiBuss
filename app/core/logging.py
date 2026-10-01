@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, cast
 import structlog
 
 from app.config import get_settings
+from app.core.activity.capture import capture_activity
 from app.core.log_redaction import RedactLogRecordFilter, redact_exc_info
 
 if TYPE_CHECKING:
@@ -29,6 +30,20 @@ def configure_logging() -> None:
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
     ]
+    if settings.activity_log_enabled:
+        # Cada log INFO+ también va a activity_log (D029). Antes de la redacción de
+        # tracebacks: la captura necesita la excepción para su tipo y frame de app/
+        # (nunca el mensaje). capture_activity quita los campos de callsite.
+        shared_processors += [
+            structlog.processors.CallsiteParameterAdder(
+                [
+                    structlog.processors.CallsiteParameter.PATHNAME,
+                    structlog.processors.CallsiteParameter.LINENO,
+                    structlog.processors.CallsiteParameter.FUNC_NAME,
+                ]
+            ),
+            capture_activity,
+        ]
 
     if settings.is_dev:
         renderer: Processor = structlog.dev.ConsoleRenderer(colors=True)

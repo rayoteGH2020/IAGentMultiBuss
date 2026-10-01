@@ -6,6 +6,10 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.clerk_frontend import DEFAULT_CLERK_JS_VERSION
 
+# Mínimo de días de ``activity_log`` (D029). La función de purga en BD aplica el
+# mismo mínimo: un proceso comprometido no puede borrar la actividad reciente.
+MIN_ACTIVITY_LOG_RETENTION_DAYS = 7
+
 
 def _parse_comma_or_json_str_list(value: object) -> list[str]:
     """Acepta JSON ``["a","b"]`` o CSV ``a,b`` (Infisical suele usar CSV)."""
@@ -128,6 +132,13 @@ class Settings(BaseSettings):
     # de cliente no sale de Postgres/R2 (arquitectura.md §8). Solo activable en
     # desarrollo y con datos sintéticos.
     langfuse_capture_content: bool = False
+    # Registro de actividad en BD (D029): peticiones, jobs, eventos y errores en
+    # ``activity_log``, sin datos personales. ACTIVITY_LOG_ENABLED=false lo apaga
+    # (incidente, tests). Retención en días: 0 = no purgar (prohibido en
+    # producción, ver validador) o un mínimo de 7 (lo exige también la función
+    # de purga en BD).
+    activity_log_enabled: bool = True
+    activity_log_retention_days: int = 90
 
     # Overrides opcionales del router de modelos (arquitectura.md §8).
     # Si son None, LLMClient usa los DEFAULT_MODELS definidos en llm/client.py.
@@ -429,6 +440,23 @@ class Settings(BaseSettings):
         if self.langfuse_capture_content and not self.is_dev:
             raise ValueError(
                 "LANGFUSE_CAPTURE_CONTENT must be false when APP_ENV is staging or production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_activity_log_retention(self) -> Self:
+        days = self.activity_log_retention_days
+        if days == 0 and self.app_env == "production":
+            raise ValueError(
+                "ACTIVITY_LOG_RETENTION_DAYS=0 (no purgar nunca) no está permitido con "
+                "APP_ENV=production: activity_log guarda user_id, que es un dato personal, "
+                "y el RGPD exige un plazo de conservación. Pon en Infisical prod un valor "
+                f"de {MIN_ACTIVITY_LOG_RETENTION_DAYS} o más (recomendado: 90)."
+            )
+        if days != 0 and days < MIN_ACTIVITY_LOG_RETENTION_DAYS:
+            raise ValueError(
+                f"ACTIVITY_LOG_RETENTION_DAYS={days} no es válido: usa 0 (no purgar, solo "
+                f"fuera de producción) o un valor de {MIN_ACTIVITY_LOG_RETENTION_DAYS} o más."
             )
         return self
 

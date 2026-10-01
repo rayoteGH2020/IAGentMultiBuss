@@ -59,9 +59,13 @@ def pseudonymize(value: object) -> str | None:
     return digest.hexdigest()[:_PSEUDONYM_CHARS]
 
 
-def _short_path(filename: str) -> str:
+def short_path(filename: str) -> str:
+    """Ruta relativa legible: ``app/...`` para código propio, ``site-packages/...`` si no.
+
+    ``site-packages`` va primero: en la imagen Docker el venv vive en ``/app/.venv``.
+    """
     parts = Path(filename).parts
-    for anchor in ("app", "site-packages"):
+    for anchor in ("site-packages", "app"):
         if anchor in parts:
             index = len(parts) - 1 - parts[::-1].index(anchor)
             return "/".join(parts[index:])
@@ -70,7 +74,7 @@ def _short_path(filename: str) -> str:
 
 def _frames(tb: TracebackType | None) -> list[str]:
     frames = [
-        f"{_short_path(frame.filename)}:{frame.lineno}:{frame.name}"
+        f"{short_path(frame.filename)}:{frame.lineno}:{frame.name}"
         for frame in traceback.extract_tb(tb)
     ]
     return frames[-_MAX_FRAMES:]
@@ -90,7 +94,7 @@ def exception_summary(exc: BaseException) -> str:
     return "\n".join(lines)
 
 
-def _resolve_exception(value: Any) -> BaseException | None:
+def resolve_exception(value: Any) -> BaseException | None:
     """Excepción de ``exc_info`` en cualquiera de sus formas (instancia, tupla, True)."""
     if isinstance(value, BaseException):
         return value
@@ -105,7 +109,7 @@ def redact_exc_info(
     _logger: Any, _method: str, event_dict: MutableMapping[str, Any]
 ) -> MutableMapping[str, Any]:
     """Procesador structlog: sustituye ``exc_info`` por ``exception_summary``."""
-    exc = _resolve_exception(event_dict.pop("exc_info", None))
+    exc = resolve_exception(event_dict.pop("exc_info", None))
     if exc is not None:
         event_dict["exception"] = exception_summary(exc)
     return event_dict

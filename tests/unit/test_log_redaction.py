@@ -169,7 +169,7 @@ def restore_logging() -> Iterator[None]:
 
 
 def _fake_settings(*, is_dev: bool) -> SimpleNamespace:
-    return SimpleNamespace(is_dev=is_dev, log_level="INFO")
+    return SimpleNamespace(is_dev=is_dev, log_level="INFO", activity_log_enabled=False)
 
 
 def test_configure_logging_redacts_outside_development(

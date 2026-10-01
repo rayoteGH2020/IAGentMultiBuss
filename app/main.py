@@ -9,6 +9,7 @@ from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import get_settings
+from app.core.activity.middleware import ActivityMiddleware
 from app.core.cache import close_redis
 from app.core.db import dispose_engine
 from app.core.errors import register_error_handlers
@@ -46,6 +47,7 @@ from app.routes.web.admin import documents as sadm_documents
 from app.routes.web.admin import organizations as sadm_organizations
 from app.routes.web.admin import plans as sadm_plans
 from app.routes.web.admin import usage as sadm_usage
+from app.services import activity_log_service
 
 
 @asynccontextmanager
@@ -55,9 +57,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # `yield` corre al iniciar; lo que está después, al apagar.
     configure_logging()
     log = get_logger(__name__)
+    # Volcado periódico de activity_log de este proceso (D029); uno por worker de uvicorn.
+    activity_flusher = activity_log_service.start_flusher()
     log.info("app.starting")
     yield
     log.info("app.shutting_down")
+    if activity_flusher is not None:
+        await activity_flusher.stop()
     # Se cierran explícitamente los pools de conexión para que el proceso
     # termine limpio. Sin esto, asyncpg y aioredis pueden lanzar warnings de
     # "event loop closed" o dejar conexiones abiertas en Postgres/Redis.
@@ -105,6 +111,9 @@ def create_app() -> FastAPI:
         # Solo con HTTPS real: en localhost HTTP rompe /static (CSS/JS/Alpine).
         upgrade_insecure_requests=_enforce_https,
     )
+    # Último en añadirse = primero en ejecutarse: mide toda la petición, incluidas
+    # las redirecciones de auth, y fija el request_id antes que nadie (D029).
+    app.add_middleware(ActivityMiddleware)
 
     # El directorio es relativo a la raíz del proyecto, que es desde donde
     # Uvicorn debe lanzarse (`uv run uvicorn app.main:app`).

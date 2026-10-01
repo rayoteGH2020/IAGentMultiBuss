@@ -9,6 +9,7 @@
 #    estar importados (y por tanto registrados en Base.metadata) antes de que
 #    Alembic inspeccione el metadata. Importarlos aquí garantiza que basta con
 #    `from app.models import Base` en env.py de Alembic para tenerlos todos.
+from app.models.activity_log import ActivityLog
 from app.models.appointment import Appointment
 from app.models.audit_log import AuditLog
 from app.models.base import Base, IdMixin, TimestampMixin
@@ -58,6 +59,7 @@ from app.models.usage_meter import UsageMeter
 from app.models.user import User
 
 __all__ = [
+    "ActivityLog",
     "Appointment",
     "AuditLog",
     "Base",

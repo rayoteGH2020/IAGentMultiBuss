@@ -11,6 +11,7 @@ from arq.connections import ArqRedis, RedisSettings
 from arq.constants import default_queue_name, job_key_prefix, result_key_prefix
 
 from app.config import get_settings
+from app.core.activity.context import job_parent_kwargs
 from app.core.log_redaction import pseudonymize
 
 logger = structlog.get_logger(__name__)
@@ -88,6 +89,7 @@ async def enqueue_invoice_processing(
         # click, retry del usuario), la segunda llamada devuelve None en lugar
         # de crear un segundo job, evitando doble extracción LLM y doble coste.
         _job_id=job_id,
+        **job_parent_kwargs(),
     )
     # job es None cuando ya existe un job con el mismo _job_id en la cola.
     # En el flujo normal esto no debería ocurrir porque la UI deshabilita el
@@ -122,6 +124,7 @@ async def enqueue_ticket_processing(
         str(tenant_id),
         max_pdf_pages,
         _job_id=job_id,
+        **job_parent_kwargs(),
     )
     if job is None:
         logger.warning(
@@ -152,6 +155,7 @@ async def enqueue_contract_processing(
         str(tenant_id),
         max_pdf_pages,
         _job_id=job_id,
+        **job_parent_kwargs(),
     )
     if job is None:
         logger.warning(
@@ -182,6 +186,7 @@ async def enqueue_insurance_processing(
         str(tenant_id),
         max_pdf_pages,
         _job_id=job_id,
+        **job_parent_kwargs(),
     )
     if job is None:
         logger.warning(
@@ -224,6 +229,7 @@ async def enqueue_channel_message(
             message_text,
             integration_id,
             _job_id=deterministic_id,
+            **job_parent_kwargs(),
         )
     else:
         job = await pool.enqueue_job(
@@ -233,6 +239,7 @@ async def enqueue_channel_message(
             customer_identifier,
             message_text,
             integration_id,
+            **job_parent_kwargs(),
         )
     if job is None:
         logger.warning(
@@ -289,6 +296,7 @@ async def enqueue_knowledge_indexing(
         str(document_id),
         str(tenant_id),
         _job_id=job_id,
+        **job_parent_kwargs(),
     )
     if job is None:
         logger.warning(

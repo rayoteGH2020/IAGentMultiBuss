@@ -1,5 +1,6 @@
 import json
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 import structlog
@@ -8,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
 from app.config import get_settings
+from app.core.activity.context import set_identity
 from app.core.csrf import CSRF_HEADER_NAME, csrf_tenant_id_for_request, validate_csrf_token
 from app.core.db import get_sessionmaker, set_tenant_context
 from app.core.errors import AuthError
@@ -27,6 +29,9 @@ from app.services.auth_service import (
     resolve_user,
 )
 from app.services.membership_service import REMOVAL_SOURCE_REQUEST, apply_due_removal
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 log = structlog.get_logger(__name__)
 
@@ -343,6 +348,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
             await try_resolve_clerk_session(request)
+            # getattr: mypy estrecha request.state.* a None por la asignación de arriba.
+            tenant_id: UUID | None = getattr(request.state.tenant, "id", None)
+            user_id: UUID | None = getattr(request.state.user, "id", None)
+            set_identity(tenant_id=tenant_id, user_id=user_id)
 
             # Cookie/Bearer presente pero JWT inválido/expirado: no dejar la UI
             # "aparentemente logada" ni devolver CSRF 403 en POST HTMX.

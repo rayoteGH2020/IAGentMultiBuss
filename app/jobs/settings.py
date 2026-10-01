@@ -12,7 +12,10 @@ from arq import func as arq_func
 from arq.connections import RedisSettings
 
 from app.config import get_settings
+from app.core.activity.context import set_process_source
+from app.core.activity.jobs import tracked_job
 from app.core.logging import configure_worker_logging
+from app.jobs.activity_jobs import purge_activity_log
 from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.contract_jobs import process_contract
@@ -23,11 +26,21 @@ from app.jobs.membership_jobs import expire_member_removals
 from app.jobs.plan_jobs import apply_scheduled_plan_changes
 from app.jobs.provider_alert_jobs import send_llm_provider_billing_alert
 from app.jobs.ticket_jobs import process_ticket
+from app.services import activity_log_service
 
 
-async def startup(_ctx: dict[str, Any]) -> None:
-    """Configura el logging del worker tras el ``dictConfig`` del CLI de arq."""
+async def startup(ctx: dict[str, Any]) -> None:
+    """Logging del worker (tras el ``dictConfig`` del CLI de arq) y volcado de actividad."""
     configure_worker_logging()
+    set_process_source("worker")
+    ctx["activity_flusher"] = activity_log_service.start_flusher()
+
+
+async def shutdown(ctx: dict[str, Any]) -> None:
+    """Último volcado de ``activity_log`` antes de salir."""
+    flusher = ctx.get("activity_flusher")
+    if flusher is not None:
+        await flusher.stop()
 
 
 class WorkerSettings:
@@ -40,15 +53,17 @@ class WorkerSettings:
     # encolados con ese nombre se ignorarán silenciosamente.
     # index_knowledge_document usa arq_func() para sobreescribir el timeout
     # global (180 s) con 600 s: los embeddings de documentos largos son lentos.
+    # tracked_job: una fila en activity_log por ejecución, con tenant y petición de
+    # origen (D029). Conserva el nombre de la función, que es por el que enruta ARQ.
     functions: ClassVar[list[object]] = [
-        process_invoice,
-        process_ticket,
-        process_contract,
-        process_insurance,
-        arq_func(index_knowledge_document, timeout=600),
-        arq_func(process_channel_message, timeout=120),
-        send_llm_budget_alert,
-        send_llm_provider_billing_alert,
+        tracked_job(process_invoice),
+        tracked_job(process_ticket),
+        tracked_job(process_contract),
+        tracked_job(process_insurance),
+        arq_func(tracked_job(index_knowledge_document), timeout=600),
+        arq_func(tracked_job(process_channel_message), timeout=120),
+        tracked_job(send_llm_budget_alert),
+        tracked_job(send_llm_provider_billing_alert),
     ]
 
     # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el
@@ -56,7 +71,7 @@ class WorkerSettings:
     # hace el middleware; esto lo persiste para quien no vuelve a entrar.
     cron_jobs: ClassVar[list[object]] = [
         cron(
-            expire_member_removals,
+            tracked_job(expire_member_removals),
             minute={0, 15, 30, 45},
             run_at_startup=True,
             unique=True,
@@ -64,9 +79,16 @@ class WorkerSettings:
         # Cambios de plan programados para el día 1 (D027). Cada hora y al
         # arrancar; hasta que corre, el plan nuevo ya rige por lectura.
         cron(
-            apply_scheduled_plan_changes,
+            tracked_job(apply_scheduled_plan_changes),
             minute={5},
             run_at_startup=True,
+            unique=True,
+        ),
+        # Purga diaria de activity_log por retención (D029), de madrugada.
+        cron(
+            tracked_job(purge_activity_log),
+            hour={3},
+            minute={30},
             unique=True,
         ),
     ]
@@ -97,5 +119,6 @@ class WorkerSettings:
     # el tope por documento sigue siendo 1 + llm_extraction_max_retries (3).
     max_tries = 2
 
-    # Logs sin datos personales también en el worker (Backlog P2c-2).
+    # Logs sin datos personales (Backlog P2c-2) y volcado de activity_log (D029).
     on_startup = startup
+    on_shutdown = shutdown

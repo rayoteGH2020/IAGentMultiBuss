@@ -12,6 +12,7 @@ from __future__ import annotations
 import structlog
 
 from app.config import get_settings
+from app.core.activity.context import job_parent_kwargs
 from app.core.cache import get_redis
 from app.core.email import send_email
 
@@ -45,7 +46,7 @@ async def _enqueue_alert(provider: str) -> None:
     from app.jobs.queue import get_arq_pool
 
     pool = await get_arq_pool()
-    await pool.enqueue_job("send_llm_provider_billing_alert", provider)
+    await pool.enqueue_job("send_llm_provider_billing_alert", provider, **job_parent_kwargs())
 
 
 async def notify_provider_billing_error(provider: str) -> None:

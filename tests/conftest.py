@@ -1,7 +1,7 @@
 """Fixtures compartidas (Postgres con rol RLS para tests de integración)."""
 
 import os
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
 from typing import Any
 
 import pytest
@@ -24,6 +24,9 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ["DATABASE_URL"] = database_url
     os.environ["RLS_TEST_DATABASE_URL"] = rls_database_url
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+    # Sin registro de actividad (D029) salvo en sus tests: el volcado en segundo
+    # plano escribiría en BD desde cualquier test que arranque la app.
+    os.environ["ACTIVITY_LOG_ENABLED"] = "false"
     # TestClient → Host: testserver; AsyncClient base_url=http://test → Host: test.
     # Infisical puede inyectar SECURITY_ALLOWED_HOSTS sin esos hosts de test.
     allowed = os.environ.get("SECURITY_ALLOWED_HOSTS", "").strip()
@@ -57,6 +60,31 @@ def _fresh_redis_client() -> Any:
     from app.core import cache
 
     cache._client = None
+
+
+@pytest.fixture
+def activity_rows(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, Any]]]:
+    """Activa el registro de actividad (apagado en tests) y devuelve lo encolado."""
+    from types import SimpleNamespace
+
+    from app.core.activity import buffer as buffer_module
+
+    monkeypatch.setattr(
+        buffer_module, "get_settings", lambda: SimpleNamespace(activity_log_enabled=True)
+    )
+    buffer = buffer_module.get_buffer()
+    buffer.drain(10**9)
+    rows: list[dict[str, Any]] = []
+    original_add = buffer.add
+
+    def _add(row: dict[str, Any]) -> None:
+        rows.append(row)
+        original_add(row)
+
+    monkeypatch.setattr(buffer, "add", _add)
+    yield rows
+    buffer.drain(10**9)
+    buffer.dropped = 0
 
 
 @pytest.fixture
