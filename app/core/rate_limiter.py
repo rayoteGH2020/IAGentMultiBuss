@@ -139,10 +139,6 @@ def support_requests_key(tenant_id: UUID, now: datetime | None = None) -> str:
     return f"rate:support_requests:{tenant_id}:{local_day_key(now)}"
 
 
-def chat_messages_tenant_key(tenant_id: UUID, now: datetime | None = None) -> str:
-    return f"rate:chat_messages:{tenant_id}:{local_day_key(now)}"
-
-
 def _utc_hour_key() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H")
 
@@ -193,46 +189,54 @@ async def check_knowledge_upload_rate(
     )
 
 
-async def check_chat_messages_rate(
+def _utc_minute_key() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M")
+
+
+async def check_chat_rate(
     redis: Any,
     *,
     tenant_id: UUID,
     user_id: UUID,
-    max_per_day: int | None,
-    max_per_user_day: int | None = None,
+    per_minute: int,
+    per_hour: int,
 ) -> None:
-    """Cuota diaria de chat: primero por usuario, luego por tenant (pool del plan)."""
-    from app.core.plan_limits import MSG_CHAT_MESSAGES_DAILY, MSG_CHAT_MESSAGES_USER_DAILY
+    """Límite de ritmo del chat por usuario dentro de su tenant (D023).
 
-    ttl_seconds = daily_ttl_seconds()
-    user_key = f"rate:chat_messages:{tenant_id}:{user_id}:{local_day_key()}"
-    tenant_key = chat_messages_tenant_key(tenant_id)
+    Ventanas fijas de minuto y de hora. Un usuario de varias organizaciones tiene un
+    contador por cada una. ``0`` desactiva la ventana. Si la hora rechaza, se
+    devuelve el minuto ya contado para no penalizar dos veces.
+    """
+    from app.core.plan_limits import MSG_CHAT_RATE
 
+    base = f"rate:chat:{tenant_id}:{user_id}"
+    minute_key = f"{base}:m:{_utc_minute_key()}"
     await increment_quota(
         redis,
-        key=user_key,
+        key=minute_key,
         delta=1,
-        max_count=max_per_user_day,
-        ttl_seconds=ttl_seconds,
-        error_message=MSG_CHAT_MESSAGES_USER_DAILY,
-        log_event="chat.messages.user_rate_limit",
+        max_count=per_minute if per_minute > 0 else None,
+        ttl_seconds=120,
+        error_message=MSG_CHAT_RATE,
+        log_event="chat.rate_limit",
         tenant_id=str(tenant_id),
-        user_id=str(user_id),
+        window="minute",
     )
     try:
         await increment_quota(
             redis,
-            key=tenant_key,
+            key=f"{base}:h:{_utc_hour_key()}",
             delta=1,
-            max_count=max_per_day,
-            ttl_seconds=ttl_seconds,
-            error_message=MSG_CHAT_MESSAGES_DAILY,
-            log_event="chat.messages.rate_limit",
+            max_count=per_hour if per_hour > 0 else None,
+            ttl_seconds=_HOUR_SECONDS + 300,
+            error_message=MSG_CHAT_RATE,
+            log_event="chat.rate_limit",
             tenant_id=str(tenant_id),
+            window="hour",
         )
     except RateLimitError:
-        if max_per_user_day is not None and max_per_user_day > 0:
-            await redis.decrby(user_key, 1)
+        if per_minute > 0:
+            await redis.decrby(minute_key, 1)
         raise
 
 

@@ -28,7 +28,11 @@ import structlog
 from sqlalchemy import func, select, text
 
 from app.core.activity.context import job_parent_kwargs
-from app.core.billing_period import current_period_start, next_period_start
+from app.core.billing_period import (
+    current_period_start,
+    renewal_date,
+    spanish_day_label,
+)
 from app.core.cache import get_redis
 from app.core.db import set_tenant_context
 from app.core.document_processing_errors import DocumentErrorCode
@@ -61,21 +65,6 @@ _ALERT_KEY_TTL_SECONDS = 40 * 24 * 3600
 # Tope por pasada: con un cupo de cientos, un lote acotado evita transacciones largas.
 _PENDING_BATCH = 200
 _PENDING_CHECK_DELAY_SECONDS = 5
-
-_MONTHS_ES = (
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,18 +106,9 @@ def _set_status(document: QuotaDocument, status: Literal["processing", "quota_pe
         document.status = TicketStatus(status)
 
 
-def renewal_date(today_period: date | None = None) -> date:
-    """Día 1 del mes siguiente: cuándo se renueva el cupo."""
-    return next_period_start(today_period or current_period_start())
-
-
-def renewal_label(day: date) -> str:
-    return f"{day.day} de {_MONTHS_ES[day.month - 1]}"
-
-
 def pending_message(reason: DocumentErrorCode) -> str:
     """Texto de la fila en ``quota_pending`` (no es un error del documento)."""
-    when = renewal_label(renewal_date())
+    when = spanish_day_label(renewal_date())
     if reason == DocumentErrorCode.llm_budget:
         return (
             "Pendiente: se ha agotado el presupuesto de IA del mes. Se procesará "
@@ -484,7 +464,7 @@ async def send_alert(db: AsyncSession, tenant_id: UUID, kind: QuotaAlertKind) ->
         "used": used,
         "cap": cap if cap is not None else "-",
         "pct": int(used * 100 / cap) if cap else 0,
-        "renewal": renewal_label(renewal_date()),
+        "renewal": spanish_day_label(renewal_date()),
     }
     await send_email(
         to=admin.email,

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.core.entitlement_codes import LIMIT_CHAT_MESSAGES_PER_DAY
+from app.core.entitlement_codes import LIMIT_CHAT_QUESTIONS_PER_MONTH
 from app.core.errors import ForbiddenError, RateLimitError, ValidationError
 from app.llm.chat_loop import ToolLoopResult, TurnMessageRecord
 from app.models import ChatThread, User
@@ -47,58 +47,46 @@ def test_trim_llm_messages_keeps_system_and_recent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enforce_rate_limit_raises_when_exceeded() -> None:
+async def test_enforce_rate_limit_per_minute_uses_tenant_and_user_key() -> None:
     redis_conn = AsyncMock()
-    # Primer incr = usuario OK; segundo = tenant supera tope.
-    redis_conn.incrby = AsyncMock(side_effect=[1, 41])
+    redis_conn.incrby = AsyncMock(return_value=11)
     redis_conn.expire = AsyncMock()
     redis_conn.decrby = AsyncMock()
-    db = AsyncMock()
-    ents = Entitlements(
-        plan_code="basic",
-        features=frozenset({"documents_chat"}),
-        limits={LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("40")},
-    )
-    with pytest.raises(RateLimitError, match="mensajes"):
-        await chat_service.enforce_rate_limit(
-            redis_conn,
-            db,
-            tenant_id=uuid4(),
-            user_id=uuid4(),
-            ents=ents,
-        )
-    redis_conn.decrby.assert_awaited()
+    tenant_id, user_id = uuid4(), uuid4()
+
+    with pytest.raises(RateLimitError, match="muy seguidas"):
+        await chat_service.enforce_rate_limit(redis_conn, tenant_id=tenant_id, user_id=user_id)
+
+    key = redis_conn.incrby.await_args_list[0].args[0]
+    assert key.startswith(f"rate:chat:{tenant_id}:{user_id}:m:")
 
 
 @pytest.mark.asyncio
-async def test_enforce_rate_limit_raises_when_user_exceeded(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.services.plan_quota_service._settings",
-        lambda: MagicMock(
-            chat_daily_message_limit=1000,
-            chat_user_daily_message_limit=2,
-        ),
-    )
+async def test_enforce_rate_limit_per_hour_returns_the_minute_count() -> None:
     redis_conn = AsyncMock()
-    redis_conn.incrby = AsyncMock(return_value=3)
+    redis_conn.incrby = AsyncMock(side_effect=[1, 61])  # minuto OK, hora supera 60
     redis_conn.expire = AsyncMock()
     redis_conn.decrby = AsyncMock()
-    db = AsyncMock()
-    ents = Entitlements(
-        plan_code="basic",
-        features=frozenset({"documents_chat"}),
-        limits={LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("1000")},
+
+    with pytest.raises(RateLimitError, match="muy seguidas"):
+        await chat_service.enforce_rate_limit(redis_conn, tenant_id=uuid4(), user_id=uuid4())
+
+    decremented = [call.args[0] for call in redis_conn.decrby.await_args_list]
+    assert any(":h:" in key for key in decremented)
+    assert any(":m:" in key for key in decremented)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_zero_disables_the_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.plan_quota_service._settings",
+        lambda: MagicMock(chat_rate_limit_per_minute=0, chat_rate_limit_per_hour=0),
     )
-    with pytest.raises(RateLimitError, match="personal"):
-        await chat_service.enforce_rate_limit(
-            redis_conn,
-            db,
-            tenant_id=uuid4(),
-            user_id=uuid4(),
-            ents=ents,
-        )
+    redis_conn = AsyncMock()
+
+    await chat_service.enforce_rate_limit(redis_conn, tenant_id=uuid4(), user_id=uuid4())
+
+    redis_conn.incrby.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -231,7 +219,7 @@ async def test_post_user_message_persists(
             return_value=Entitlements(
                 plan_code="basic",
                 features=frozenset({"documents_chat"}),
-                limits={LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("100")},
+                limits={LIMIT_CHAT_QUESTIONS_PER_MONTH: Decimal("100")},
             )
         ),
     )

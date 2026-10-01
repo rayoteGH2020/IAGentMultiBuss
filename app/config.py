@@ -246,9 +246,11 @@ class Settings(BaseSettings):
     # el filtro de calidad real es el top_k de la búsqueda.
     knowledge_chat_max_citations: int = 5
     knowledge_chat_min_score_threshold: float = 0.0
-    chat_daily_message_limit: int = 60
-    # Tope por usuario dentro del pool del tenant (anti abuso de un solo miembro).
-    chat_user_daily_message_limit: int = 40
+    # Límite de ritmo del chat por usuario y tenant (D023): freno contra scripts o
+    # cuentas comprometidas, igual para todos los planes. El cupo comercial es
+    # chat_questions_per_month (monthly_quota_service). 0 = sin límite.
+    chat_rate_limit_per_minute: int = 10
+    chat_rate_limit_per_hour: int = 60
     chat_max_message_bytes: int = 4096
     chat_history_message_limit: int = 20
     # Máximo de mensajes persistidos por hilo (user+assistant+tool).

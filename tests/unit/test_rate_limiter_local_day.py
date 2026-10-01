@@ -57,24 +57,19 @@ def test_daily_ttl_lasts_until_local_midnight_even_on_dst_days(
 
 @pytest.mark.asyncio
 async def test_daily_quota_keys_use_local_day(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Los límites diarios que quedan (documentos, conocimiento, chat) usan el día local."""
+    """Los límites diarios que quedan (documentos y conocimiento) usan el día local."""
     monkeypatch.setattr(rate_limiter, "local_day_key", lambda now=None: "2026-07-15")
     monkeypatch.setattr(rate_limiter, "daily_ttl_seconds", lambda now=None: 1234)
     redis = AsyncMock()
     redis.incrby = AsyncMock(return_value=1)
-    tenant_id, user_id = uuid4(), uuid4()
+    tenant_id = uuid4()
 
     await rate_limiter.check_documents_upload_rate(redis, tenant_id=tenant_id, max_per_day=5)
     await rate_limiter.check_knowledge_upload_rate(redis, tenant_id=tenant_id, max_per_day=5)
-    await rate_limiter.check_chat_messages_rate(
-        redis, tenant_id=tenant_id, user_id=user_id, max_per_day=5, max_per_user_day=5
-    )
 
     keys = [call.args[0] for call in redis.incrby.await_args_list]
     assert keys == [
         f"rate:documents_upload:{tenant_id}:2026-07-15",
         f"rate:knowledge_upload:{tenant_id}:2026-07-15",
-        f"rate:chat_messages:{tenant_id}:{user_id}:2026-07-15",
-        f"rate:chat_messages:{tenant_id}:2026-07-15",
     ]
     assert {call.args[1] for call in redis.expire.await_args_list} == {1234}

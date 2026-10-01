@@ -9,6 +9,7 @@ import structlog
 from sqlalchemy import func, select
 
 from app.config import get_settings
+from app.core.billing_period import renewal_date, spanish_day_label
 from app.core.document_processing_errors import (
     PROCESSING_INTERRUPTED_USER_MESSAGE,
     DocumentErrorCode,
@@ -568,7 +569,7 @@ async def _charge_retry(
     if document_kind in ("invoice", "ticket") and not await document_quota_service.reserve(
         db, ents, row
     ):
-        renewal = document_quota_service.renewal_label(document_quota_service.renewal_date())
+        renewal = spanish_day_label(renewal_date())
         raise RateLimitError(MSG_RETRY_NO_DOCUMENT_QUOTA.format(renewal=renewal))
 
     if free:
@@ -576,7 +577,7 @@ async def _charge_retry(
     if not await monthly_quota_service.try_consume(
         db, ents, tenant_id, LIMIT_DOCUMENT_RETRIES_PER_MONTH
     ):
-        renewal = document_quota_service.renewal_label(document_quota_service.renewal_date())
+        renewal = spanish_day_label(renewal_date())
         raise RateLimitError(MSG_RETRIES_MONTH.format(renewal=renewal))
     row.manual_retry_count += 1
     return True

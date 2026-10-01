@@ -10,6 +10,8 @@ import structlog
 from sqlalchemy import func, select
 
 from app.config import get_settings
+from app.core.billing_period import current_period_start, renewal_date, spanish_day_label
+from app.core.entitlement_codes import LIMIT_CHAT_QUESTIONS_PER_MONTH
 from app.core.errors import ForbiddenError, NotFoundError, ValidationError
 from app.llm.chat_prompts import build_chat_system_prompt, resolve_chat_prompt_version
 from app.llm.client import get_llm_client
@@ -27,6 +29,7 @@ from app.services import (
     chat_tool_runner,
     entitlement_service,
     llm_budget_alert_service,
+    monthly_quota_service,
     plan_quota_service,
     usage_meter_service,
 )
@@ -40,7 +43,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.llm.chat_loop import TurnMessageRecord
-    from app.schemas.entitlements import Entitlements
 
 logger = structlog.get_logger(__name__)
 
@@ -64,20 +66,16 @@ _PROMPT_EXFIL_MARKERS: tuple[str, ...] = (
 
 async def enforce_rate_limit(
     redis_conn: redis.Redis,
-    db: AsyncSession,
     *,
     tenant_id: UUID,
     user_id: UUID,
-    ents: Entitlements | None = None,
 ) -> None:
-    """Cuota diaria de mensajes de chat por usuario y por tenant (plan comercial)."""
-    resolved = ents or await entitlement_service.resolve_tenant(db, tenant_id)
-    await plan_quota_service.ensure_chat_message(
-        redis_conn,
-        resolved,
-        tenant_id,
-        user_id,
-    )
+    """Límite de ritmo por usuario y tenant al enviar (D023).
+
+    El cupo comercial (`chat_questions_per_month`) se cuenta al ejecutar el turno,
+    no aquí: solo gasta cupo una pregunta que llega a tener respuesta del modelo.
+    """
+    await plan_quota_service.ensure_chat_rate(redis_conn, tenant_id, user_id)
 
 
 def validate_message_content(content: str) -> str:
@@ -391,6 +389,46 @@ async def _persist_turn_messages(
     return last_assistant
 
 
+async def _append_fixed_reply(
+    db: AsyncSession, *, tenant_id: UUID, thread: ChatThread, text: str
+) -> None:
+    """Guarda una respuesta fija del asistente (sin LLM) al final del hilo."""
+    db.add(
+        ChatMessage(
+            tenant_id=tenant_id,
+            thread_id=thread.id,
+            role=ChatMessageRole.assistant,
+            content=text,
+            created_at=await _next_message_created_at(db, tenant_id=tenant_id, thread_id=thread.id),
+        )
+    )
+    thread.updated_at = datetime.now(tz=UTC)
+    await db.flush()
+
+
+def build_quota_exhausted_message(renewal: str, phone: str | None, email: str | None) -> str:
+    """Respuesta fija al agotar `chat_questions_per_month` (D023)."""
+    contact = " - ".join(part for part in (phone, email) if part)
+    base = (
+        f"Has alcanzado las preguntas de este mes. Se renuevan el {renewal}. Si lo "
+        "necesitas antes, contacta con el administrador de tu organización"
+    )
+    return f"{base} ({contact})." if contact else f"{base}."
+
+
+async def _reply_quota_exhausted(db: AsyncSession, *, tenant_id: UUID, thread: ChatThread) -> str:
+    """Respuesta fija sin LLM con el cupo mensual de preguntas agotado (D023)."""
+    admin = await llm_budget_alert_service.tenant_admin(db, tenant_id)
+    text = build_quota_exhausted_message(
+        spanish_day_label(renewal_date()),
+        admin.phone if admin is not None else None,
+        admin.email if admin is not None else None,
+    )
+    await _append_fixed_reply(db, tenant_id=tenant_id, thread=thread, text=text)
+    logger.info("chat.quota_exhausted_reply", thread_id=str(thread.id), tenant_id=str(tenant_id))
+    return text
+
+
 async def _reply_budget_cutoff(
     db: AsyncSession,
     *,
@@ -403,17 +441,7 @@ async def _reply_budget_cutoff(
     al admin (con tope de frecuencia en ``llm_budget_alert_service``).
     """
     text = await llm_budget_alert_service.chat_cutoff_message(db, tenant_id)
-    db.add(
-        ChatMessage(
-            tenant_id=tenant_id,
-            thread_id=thread.id,
-            role=ChatMessageRole.assistant,
-            content=text,
-            created_at=await _next_message_created_at(db, tenant_id=tenant_id, thread_id=thread.id),
-        )
-    )
-    thread.updated_at = datetime.now(tz=UTC)
-    await db.flush()
+    await _append_fixed_reply(db, tenant_id=tenant_id, thread=thread, text=text)
     await audit_service.log_action(
         db,
         tenant_id=tenant_id,
@@ -539,6 +567,15 @@ async def _run_assistant_turn(
     if await llm_budget_alert_service.chat_cutoff_reached(db, tenant_id):
         yield await _reply_budget_cutoff(db, tenant_id=tenant_id, thread=thread)
         return
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    # Una pregunta = un turno con respuesta del modelo (D023). Se cuenta antes de
+    # llamar al LLM y se devuelve si el proveedor falla (ver más abajo).
+    period = current_period_start()
+    if not await monthly_quota_service.try_consume(
+        db, ents, tenant_id, LIMIT_CHAT_QUESTIONS_PER_MONTH, period=period
+    ):
+        yield await _reply_quota_exhausted(db, tenant_id=tenant_id, thread=thread)
+        return
     history = await _load_history(db, tenant_id=tenant_id, thread_id=thread_id)
     company_name = await _tenant_company_name(db, tenant_id)
     system_prompt = build_chat_system_prompt(company_name=company_name, settings=settings)
@@ -546,7 +583,6 @@ async def _run_assistant_turn(
     prompt_version = resolve_chat_prompt_version(settings)
 
     registry = chat_tool_runner.get_chat_registry()
-    ents = await entitlement_service.resolve_tenant(db, tenant_id)
     allowed = chat_tool_families_for_entitlements(ents)
     registry = ToolRegistry(
         _tools=dict(registry._tools),
@@ -570,6 +606,11 @@ async def _run_assistant_turn(
     )
     thread.updated_at = datetime.now(tz=UTC)
     await db.flush()
+    if loop_result.failed:
+        # Error del proveedor: la respuesta es un aviso, no gasta pregunta.
+        await monthly_quota_service.release(
+            db, tenant_id, LIMIT_CHAT_QUESTIONS_PER_MONTH, period=period
+        )
 
     if loop_result.knowledge_tools_used:
         last_user = next(
@@ -618,14 +659,7 @@ async def post_user_message(
 ) -> ChatMessageRead:
     """Persiste mensaje usuario (rate-limit + ownership); sin ejecutar el LLM."""
     text = validate_message_content(content)
-    ents = await entitlement_service.resolve_tenant(db, tenant_id)
-    await enforce_rate_limit(
-        redis_conn,
-        db,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        ents=ents,
-    )
+    await enforce_rate_limit(redis_conn, tenant_id=tenant_id, user_id=user_id)
 
     thread = await get_thread(db, tenant_id=tenant_id, user_id=user_id, thread_id=thread_id)
     await ensure_thread_message_capacity(

@@ -13,8 +13,7 @@ MSG_KNOWLEDGE_UPLOADS_DAILY = (
     "Has alcanzado el limite diario de subidas a la base de conocimiento de tu plan."
 )
 MSG_KNOWLEDGE_DOCS_MAX = "Has alcanzado el numero maximo de documentos de conocimiento de tu plan."
-MSG_CHAT_MESSAGES_DAILY = "Has alcanzado el limite de mensajes de hoy."
-MSG_CHAT_MESSAGES_USER_DAILY = "Has alcanzado tu limite personal de mensajes de chat de hoy."
+MSG_CHAT_RATE = "Estás enviando preguntas muy seguidas. Espera un momento y vuelve a intentarlo."
 MSG_CHANNEL_MESSAGES_HOURLY = "Has alcanzado el limite horario de mensajes del canal de tu plan."
 MSG_VOICE_NOTES_HOURLY = "Has alcanzado el limite horario de notas de voz de tu plan."
 MSG_MEMBERS_MAX = "Has alcanzado el numero maximo de miembros de tu plan."

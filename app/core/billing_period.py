@@ -44,6 +44,32 @@ def current_period_start(now: datetime | None = None) -> date:
     return period_start(local_date(now))
 
 
+_MONTHS_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+def renewal_date(period: date | None = None) -> date:
+    """Día en que se renuevan los cupos: el 1 del mes siguiente al periodo."""
+    return next_period_start(period or current_period_start())
+
+
+def spanish_day_label(day: date) -> str:
+    """``1 de noviembre``: fecha para los mensajes al usuario."""
+    return f"{day.day} de {_MONTHS_ES[day.month - 1]}"
+
+
 def initial_load_window_end(tenant_created_at: datetime) -> date:
     """Último día de la ventana de carga inicial de contratos (D027).
 

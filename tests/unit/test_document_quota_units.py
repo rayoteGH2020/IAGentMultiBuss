@@ -21,8 +21,10 @@ from app.services.document_processing_service import retries_exhausted
 
 
 def test_renewal_is_first_day_of_next_month_in_spanish() -> None:
-    assert document_quota_service.renewal_date(date(2026, 12, 1)) == date(2027, 1, 1)
-    assert document_quota_service.renewal_label(date(2026, 11, 1)) == "1 de noviembre"
+    from app.core.billing_period import renewal_date, spanish_day_label
+
+    assert renewal_date(date(2026, 12, 1)) == date(2027, 1, 1)
+    assert spanish_day_label(date(2026, 11, 1)) == "1 de noviembre"
 
 
 def test_pending_messages_explain_reason_and_when() -> None:

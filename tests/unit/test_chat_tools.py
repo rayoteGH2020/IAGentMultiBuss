@@ -200,6 +200,7 @@ async def test_run_tool_loop_executes_tool_and_finishes(monkeypatch: pytest.Monk
     assert result.final_text == "Listo."
     assert result.tool_calls_executed == ["ping"]
     assert len(result.llm_call_ids) == 2
+    assert result.failed is False
 
 
 @pytest.mark.asyncio

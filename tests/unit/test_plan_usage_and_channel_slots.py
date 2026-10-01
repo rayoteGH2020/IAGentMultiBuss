@@ -14,7 +14,6 @@ import pytest
 from app.core.entitlement_codes import PLAN_FEATURES, PLAN_LIMITS
 from app.core.errors import ValidationError
 from app.core.rate_limiter import (
-    chat_messages_tenant_key,
     documents_upload_key,
     knowledge_upload_key,
 )
@@ -36,10 +35,8 @@ def _no_platform_caps(monkeypatch: pytest.MonkeyPatch) -> None:
         "_settings",
         lambda: SimpleNamespace(
             knowledge_max_uploads_per_day=None,
-            chat_daily_message_limit=None,
             channel_rate_limit_msg_per_hour=None,
             voice_rate_limit_per_hour=None,
-            chat_user_daily_message_limit=0,
         ),
     )
 
@@ -56,7 +53,6 @@ async def test_get_limit_usage_reads_same_keys_and_counts_as_enforcement(
     counters = {
         documents_upload_key(tenant_id): b"12",
         knowledge_upload_key(tenant_id): None,  # sin actividad hoy
-        chat_messages_tenant_key(tenant_id): "95",
     }
     redis = MagicMock()
     redis.get = AsyncMock(side_effect=lambda key: counters.get(key))
@@ -70,7 +66,8 @@ async def test_get_limit_usage_reads_same_keys_and_counts_as_enforcement(
     # Retirado en el bloque 3: lo sustituye el cupo mensual de reintentos.
     assert "document_retries_per_day" not in usage
     assert usage["knowledge_uploads_per_day"] == QuotaUsage(used=0, cap=25)
-    assert usage["chat_messages_per_day"] == QuotaUsage(used=95, cap=100)
+    # Retirado en el bloque 4 (D023): cupo mensual de preguntas + límite de ritmo.
+    assert "chat_messages_per_day" not in usage
     assert usage["knowledge_docs_max"] == QuotaUsage(used=40, cap=100)
     assert usage["members_max"] == QuotaUsage(used=2, cap=3)
     assert usage["channel_external_slots"] == QuotaUsage(used=0, cap=0)
@@ -86,7 +83,6 @@ async def test_get_limit_usage_uses_platform_cap_when_lower(
         "_settings",
         lambda: SimpleNamespace(
             knowledge_max_uploads_per_day=10,  # más bajo que los 25 del plan
-            chat_daily_message_limit=None,
             channel_rate_limit_msg_per_hour=None,
             voice_rate_limit_per_hour=None,
         ),
@@ -136,7 +132,7 @@ def test_plan_summary_with_usage_shows_effective_cap_and_percent() -> None:
     # Freno contra scripts (D027): se aplica pero ya no se muestra en «Mi cuenta».
     assert "Documentos procesados al día" not in items
     # Sin uso medible: se muestra el tope sin barra.
-    assert items["Mensajes de chat al día"].percent is None
+    assert "Mensajes de chat al día" not in items  # retirado (bloque 4, D023)
 
 
 def test_plan_summary_percent_is_capped_and_none_when_unlimited() -> None:

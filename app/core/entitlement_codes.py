@@ -90,6 +90,8 @@ LIMIT_DOCUMENTS_PER_DAY: Final = "documents_per_day"
 LIMIT_DOCUMENT_RETRIES_PER_DAY: Final = "document_retries_per_day"
 LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Final = "knowledge_uploads_per_day"
 LIMIT_KNOWLEDGE_DOCS_MAX: Final = "knowledge_docs_max"
+# Retirado (bloque 4, p81, D023): lo sustituyen chat_questions_per_month y el límite
+# de ritmo por usuario. Código válido para overrides antiguos; fuera del catálogo.
 LIMIT_CHAT_MESSAGES_PER_DAY: Final = "chat_messages_per_day"
 LIMIT_CHANNEL_MESSAGES_PER_HOUR: Final = "channel_messages_per_hour"
 LIMIT_VOICE_NOTES_PER_HOUR: Final = "voice_notes_per_hour"
@@ -188,7 +190,6 @@ def feature_ui_label(code: str) -> str:
 LIMIT_UI_LABELS: Final[dict[str, str]] = {
     LIMIT_KNOWLEDGE_DOCS_MAX: "Documentos en la base de conocimiento",
     LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: "Subidas a la base de conocimiento al día",
-    LIMIT_CHAT_MESSAGES_PER_DAY: "Mensajes de chat al día",
     LIMIT_CHANNEL_EXTERNAL_SLOTS: "Canales de mensajería conectados",
     LIMIT_CHANNEL_MESSAGES_PER_HOUR: "Mensajes por cliente y hora en canales",
     LIMIT_MEMBERS_MAX: "Miembros del equipo",
@@ -236,7 +237,6 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("50"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("25"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("100"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("100"),
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("0"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("3"),
@@ -255,7 +255,6 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("200"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("60"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("400"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("250"),
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("80"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("9"),
@@ -274,7 +273,6 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("800"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("200"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("1500"),
-        LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("600"),
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: Decimal("200"),
         LIMIT_VOICE_NOTES_PER_HOUR: Decimal("0"),
         LIMIT_MEMBERS_MAX: Decimal("20"),

@@ -12,7 +12,6 @@ from app.config import Settings, get_settings
 from app.core.entitlement_codes import (
     LIMIT_CHANNEL_EXTERNAL_SLOTS,
     LIMIT_CHANNEL_MESSAGES_PER_HOUR,
-    LIMIT_CHAT_MESSAGES_PER_DAY,
     LIMIT_DOCUMENTS_PER_DAY,
     LIMIT_KNOWLEDGE_DOCS_MAX,
     LIMIT_KNOWLEDGE_UPLOADS_PER_DAY,
@@ -30,9 +29,8 @@ from app.core.plan_limits import (
     resolve_quota_cap,
 )
 from app.core.rate_limiter import (
-    chat_messages_tenant_key,
     check_channel_messages_rate,
-    check_chat_messages_rate,
+    check_chat_rate,
     check_documents_upload_rate,
     check_knowledge_upload_rate,
     check_voice_notes_rate,
@@ -65,7 +63,6 @@ def _platform_cap(code: str, settings: Settings) -> int | None:
     """Tope global de plataforma (kill-switch) que puede rebajar el del plan."""
     caps: dict[str, int | None] = {
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: settings.knowledge_max_uploads_per_day,
-        LIMIT_CHAT_MESSAGES_PER_DAY: settings.chat_daily_message_limit,
         LIMIT_CHANNEL_MESSAGES_PER_HOUR: settings.channel_rate_limit_msg_per_hour,
         LIMIT_VOICE_NOTES_PER_HOUR: settings.voice_rate_limit_per_hour,
     }
@@ -116,20 +113,15 @@ async def ensure_knowledge_upload(
     )
 
 
-async def ensure_chat_message(
-    redis: Any,
-    ents: Entitlements,
-    tenant_id: UUID,
-    user_id: UUID,
-) -> None:
-    cap = effective_quota_cap(ents, LIMIT_CHAT_MESSAGES_PER_DAY)
-    user_cap = _settings().chat_user_daily_message_limit
-    await check_chat_messages_rate(
+async def ensure_chat_rate(redis: Any, tenant_id: UUID, user_id: UUID) -> None:
+    """Límite de ritmo del chat por usuario y tenant (D023), igual en todos los planes."""
+    settings = _settings()
+    await check_chat_rate(
         redis,
         tenant_id=tenant_id,
         user_id=user_id,
-        max_per_day=cap,
-        max_per_user_day=user_cap if user_cap > 0 else None,
+        per_minute=settings.chat_rate_limit_per_minute,
+        per_hour=settings.chat_rate_limit_per_hour,
     )
 
 
@@ -286,7 +278,6 @@ async def get_limit_usage(
     counts: dict[str, int | None] = {
         LIMIT_DOCUMENTS_PER_DAY: await _redis_count(redis, documents_upload_key(tenant_id)),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: await _redis_count(redis, knowledge_upload_key(tenant_id)),
-        LIMIT_CHAT_MESSAGES_PER_DAY: await _redis_count(redis, chat_messages_tenant_key(tenant_id)),
         LIMIT_KNOWLEDGE_DOCS_MAX: await _count_knowledge_docs(db, tenant_id),
         LIMIT_MEMBERS_MAX: await _count_active_members(db, tenant_id),
         LIMIT_CHANNEL_EXTERNAL_SLOTS: await _count_active_channels(db, tenant_id),

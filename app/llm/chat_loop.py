@@ -83,6 +83,8 @@ class ToolLoopResult:
     turn_messages: tuple[TurnMessageRecord, ...] = ()
     citations: tuple[ChatCitation, ...] = ()
     knowledge_tools_used: bool = False
+    # True si el turno acabó en error del proveedor (respuesta de error, no del modelo).
+    failed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +125,7 @@ async def run_tool_loop(
     citation_batches: list[list[ChatCitation]] = []
     final_text: str | None = None
     knowledge_tools_used = False
+    failed = False
 
     rag_obs = langfuse.start_observation(
         trace_context=trace_ctx,
@@ -231,6 +234,7 @@ async def run_tool_loop(
                 )
         except Exception as exc:
             status = "error"
+            failed = True
             error = str(exc)[:1000]
             error_type = type(exc).__name__
             logger.error(
@@ -384,6 +388,7 @@ async def run_tool_loop(
         turn_messages=tuple(turn_messages),
         citations=tuple(final_citations),
         knowledge_tools_used=knowledge_tools_used,
+        failed=failed,
     )
 
 

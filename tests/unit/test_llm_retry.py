@@ -186,6 +186,8 @@ async def _run_loop_with_error(monkeypatch: pytest.MonkeyPatch, exc: Exception) 
         anthropic_client=AsyncMock(),
         google_client=MagicMock(),
     )
+    # El chat devuelve la pregunta del cupo mensual cuando el turno falla (D023).
+    assert result.failed is True
     return result.final_text
 
 
