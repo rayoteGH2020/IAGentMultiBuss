@@ -459,7 +459,7 @@ Motivo:
 Consecuencia:
 
 - Seed `PLAN_LIMITS` y migracion `p76_llm_budget_01` (solo `plan_entitlements`; los overrides por tenant no se tocan).
-- Al 100 % se bloquea toda llamada al LLM (`ensure_llm_budget`): los documentos fallan con "Has alcanzado el presupuesto mensual de IA de tu plan" y se pueden reintentar en el siguiente periodo; todavia no pasan a `quota_pending` (paso 4 de §9). Avisos y corte del chat sin cambios (D019: 80 % email, 90 % corte del chat).
+- Al 100 % se bloquea toda llamada al LLM (`ensure_llm_budget`). Desde el bloque 2 (2026-10-01), las facturas y tickets no fallan: quedan en `quota_pending` con motivo `llm_budget` y se procesan solos al renovarse el presupuesto (D027, detalles de los bloques 2 y 3). Contratos y polizas siguen fallando con "Has alcanzado el presupuesto mensual de IA de tu plan" hasta el bloque 5. Avisos y corte del chat sin cambios (D019: 80 % email, 90 % corte del chat).
 - Un tenant que ya haya gastado mas del nuevo tope en el mes en curso queda bloqueado hasta el siguiente periodo o hasta un override del SADM en `/sadm/plans`.
 - La cifra de uso normal sale de pocas muestras: revisar con trafico real (coste por tenant en `/sadm` y `llm_calls`) y ajustar por override o nuevo seed.
 
@@ -484,7 +484,25 @@ Motivo:
 Consecuencia:
 
 - Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
-- Los limites mensuales estan en el catalogo pero **aun no se aplican**: cada bloque los activa y retira el diario correspondiente (2 facturas/tickets + `quota_pending`, 3 reintentos, 4 chat D023, 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta").
+- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`); pendientes 4 chat D023, 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta".
+
+Detalles de implementacion de los bloques 2 y 3 (aprobados 2026-10-01):
+
+1. **Reserva al encolar y devolucion si no termina bien**, en vez de consumir al terminar: se reserva una unidad de la bolsa facturas + tickets al encolar y se devuelve si el documento falla, se interrumpe, pasa a esperar presupuesto de IA o se borra en el mes en curso. Efecto neto = solo cuenta lo que se extrae bien (spec §4.2), sin pasarse del tope con subidas simultaneas. `quota_period` guarda el mes de la reserva: la devolucion va a ese mes y no se repite.
+2. **Borrar devuelve la unidad si es del mes en curso.** Cubre los duplicados que el hash no detecta (otra foto del mismo ticket, el PDF del email y el escaneo) y los ficheros subidos por error. Un documento que no termino bien la devuelve siempre; uno procesado en un mes cerrado, no. El abuso (subir, leer, borrar) lo limita el presupuesto de IA.
+3. **Presupuesto de IA agotado = `quota_pending`** (motivo `llm_budget`) en vez de `failed` (spec §4.7). El worker lo comprueba antes de llamar al LLM.
+4. **Los fallos que no causa el usuario no gastan reintento**: `processing_interrupted`, `provider_overload` y `provider_billing` (solo los marca el sistema).
+5. **Reintentar sin cupo de documentos se rechaza** con un mensaje claro, sin gastar el reintento (no pasa a pendiente).
+6. **Duplicados por SHA-256**: bloquea cualquier factura o ticket no oculto con el mismo hash, tambien los fallidos ("usa Reintentar"); si no, borrar y volver a subir saltaria el limite de reintentos. Los ocultados no bloquean. Los documentos anteriores a `p80` no tienen hash (no se recalcula).
+7. **El procesado excepcional del SADM no consume cupo**: se cobra aparte (`processing_charges`).
+8. **Emails al admin al 80 % y con el primer documento pendiente del mes**, uno por mes de cada tipo (deduplicado en Redis). Los avisos dentro de la app son del bloque 7.
+
+Ademas:
+
+- `process_quota_pending`: cron horario (minuto 10, tras el cambio de plan del dia 1 en el minuto 5) y al arrancar el worker; tambien se lanza tras una ampliacion del SADM de facturas o tickets y al devolverse una reserva del mes si hay pendientes. Procesa del mas antiguo al mas nuevo, con `FOR UPDATE SKIP LOCKED`, y encola despues del commit. No hace nada mientras el presupuesto de IA siga agotado.
+- La fila "Pendiente de cupo" no hace polling: se ve procesada al recargar el panel.
+- `documents_per_day` se mantiene (50 / 200 / 800) como freno contra scripts y deja de mostrarse en "Mi cuenta". `document_retries_per_day` sale del catalogo (`p80`), pero el codigo sigue siendo valido para no romper overrides antiguos.
+- Corregido de paso un fallo previo: confirmar el tipo sugerido (factura ↔ ticket) llamaba a `dismiss_from_panel`, que solo admite documentos fallidos, y el documento original estaba pendiente; el cambio de tipo fallaba. Ahora el original se oculta directamente y el hash pasa al documento nuevo.
 
 ## D028 - Tailwind 3.4 como version vigente; migracion a v4 despues del producto minimo
 

@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
 Fecha: 2026-08-05 · Actualizado: 2026-10-01
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 2-8; la 0, la 1 y la 1b ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 4-8; la 0, la 1, la 1b, la 2 y la 3 ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo, con una excepcion: las Fases 2-7 no dependen del codigo y se hacen en paralelo a la Fase 1 y al cierre del codigo (Backlog, filas 1-8; orden completo en "Orden de ejecucion" del Backlog). Desde la Fase 8, no empezar una fase si alguna anterior (incluida la Fase 1) tiene casillas abiertas sin aceptacion explicita; justo antes de la Fase 8, repasar la Fase 5 por si los bloques del cierre anadieron variables. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Cerrar el codigo del producto minimo (Backlog, filas 2-8: bloques 2-7 y cierre; las filas 0, 1 (P2c 1-3 de la Fase 1.5) y 1b (registro de actividad) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 4-8: bloques 4-7 y cierre; las filas 0, 1 (P2c 1-3 de la Fase 1.5), 1b (registro de actividad), 2 y 3 (facturas, tickets y reintentos) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-01: `p79_activity_log_01`; los bloques 2-7 anadiran migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-01: `p80_document_quota_01`; los bloques 4-7 pueden anadir migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -498,7 +498,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p79_activity_log_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p80_document_quota_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -592,8 +592,25 @@ Se valida el comportamiento del codigo desplegado (`Planes_Entitlements.md`). Es
 - [ ] Cuota bloquea antes de gastar LLM.
 - [ ] Primera asignacion de plan en `/sadm/plans` inmediata; un segundo cambio queda programado para el dia 1 del mes siguiente (D027).
 - [ ] Ampliacion de un cupo del mes desde `/sadm/plans/tenants/{id}` se refleja en el cupo y queda en `audit_log` (`sadm.quota_extra_added`).
-- [ ] Facturas + tickets (bloque 2): subir el mismo fichero dos veces → aviso de duplicado sin consumir cupo; con el cupo agotado (tenant de prueba con un override bajo del cupo) el documento queda "pendiente de cupo" y se procesa tras una ampliacion.
-- [ ] Reintentos (bloque 3): tras 3 reintentos manuales el documento muestra "Revision manual" y no ofrece "Reintentar".
+- [ ] Facturas + tickets (bloque 2), con un tenant de prueba y un override bajo en `/sadm/plans` (p. ej. `invoices_per_month` = 2 y `tickets_per_month` = 0):
+  - Subir el mismo fichero dos veces → la segunda vez sale "ya está subido como factura... No se ha vuelto a procesar ni consume cupo" y no aparece una fila nueva.
+  - Subir 3 facturas distintas → las 2 primeras se procesan; la tercera sale como "Pendiente de cupo" con aviso al subir, y el admin recibe el email del 80 % y el de cupo agotado (uno de cada al mes).
+  - Ampliar el cupo de facturas en 1 desde `/sadm/plans/tenants/{id}` → en unos segundos la pendiente pasa a procesarse (recargar el panel: la fila pendiente no hace polling).
+  - Borrar una factura procesada este mes → el consumo del mes baja en 1.
+  - Comprobar que el consumo cuadra con los documentos reservados (debe salir la misma cifra en las dos columnas):
+
+```sql
+SELECT
+  (SELECT COALESCE(SUM(used), 0) FROM quota_usage
+    WHERE tenant_id = '<tenant>' AND period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date
+      AND code IN ('invoices_per_month', 'tickets_per_month')) AS consumo,
+  (SELECT count(*) FROM invoices WHERE tenant_id = '<tenant>'
+      AND quota_period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date)
+  + (SELECT count(*) FROM tickets WHERE tenant_id = '<tenant>'
+      AND quota_period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date) AS reservados;
+```
+
+- [ ] Reintentos (bloque 3): con un documento que falla siempre (p. ej. una imagen sin texto subida como factura), "Reintentar" 3 veces → la fila muestra "Revision manual" y ya no ofrece "Reintentar". Con `document_retries_per_month` = 0 por override, "Reintentar" responde "Has agotado los reintentos de procesado de este mes".
 - [ ] Chat (bloque 4): con el cupo del mes agotado (override bajo) responde con el mensaje fijo sin llamar al modelo.
 - [ ] Contratos (bloque 5): "Marcar como sustituido" libera el hueco de activo; un contrato de mas de 100 paginas se rechaza.
 - [ ] Historico (bloque 6): en Basico no se ven facturas ni tickets de hace mas de 12 meses.

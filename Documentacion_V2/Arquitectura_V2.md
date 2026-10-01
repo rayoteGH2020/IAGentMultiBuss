@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-14 · Actualizado: 2026-10-01
 Estado: **arquitectura vigente del monolito** (el codigo es la fuente de verdad).
-HEAD migraciones: `p79_activity_log_01`.
+HEAD migraciones: `p80_document_quota_01`.
 
 Si un doc antiguo o un backlog desfasado contradice este fichero o el codigo, gana el codigo + `Documentacion_V2` (ver `Decision_Log.md` D001–D002).
 
@@ -255,8 +255,14 @@ Registro en `app/jobs/settings.py`:
 | `process_channel_message` | Respuesta canales WA/TG (timeout 120s) |
 | `send_llm_budget_alert` | Emails de presupuesto de IA (80 % admin, 90 % SADM, corte del chat; D019) |
 | `send_llm_provider_billing_alert` | Email al SADM si un proveedor LLM rechaza por saldo (402; D025) |
+| `process_quota_pending` | Facturas y tickets pendientes de cupo o de presupuesto de IA: los encola cuando hay hueco (tras una ampliacion del SADM, una reserva devuelta o el cron) |
+| `send_documents_quota_alert` | Emails al admin: 80 % de la bolsa facturas + tickets y primer documento pendiente del mes |
 
-Crons: `expire_member_removals` (cada 15 min + al arrancar; bajas con fecha efectiva vencida) y `apply_scheduled_plan_changes` (cambios de plan programados, D027).
+Todos los jobs se registran envueltos con `tracked_job` (`activity_log`, D029).
+
+Crons: `expire_member_removals` (cada 15 min + al arrancar; bajas con fecha efectiva vencida), `apply_scheduled_plan_changes` (cambios de plan programados, D027), `process_quota_pending` (cada hora en el minuto 10 + al arrancar; renovacion del cupo el dia 1) y `purge_activity_log` (diario, 03:30; D029).
+
+Cupo de facturas y tickets (D027, bloques 2 y 3): `document_quota_service` reserva una unidad al encolar y la devuelve si el documento no termina bien (`mark_failed`, extraccion inservible, abandono por atasco, presupuesto de IA agotado o borrado en el mes en curso). Sin hueco, el documento queda en `quota_pending`.
 
 Cada worker de procesado revalida feature de plan y puede devolver `skipped` / `plan_required` sin gastar LLM.
 

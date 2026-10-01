@@ -267,7 +267,7 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
   - **80 %:** email al admin del tenant (una vez al mes). Alerta en SADM dentro de la app: pendiente (Backlog P2b-18).
   - **90 %:** el chat de la app responde con mensaje fijo sin llamar al modelo (contacto del admin, D020) y email al SADM (una vez al mes).
   - **100 %: tope duro** (`ensure_llm_budget`). Se bloquean las funciones que llaman al LLM y aparece un banner en todas las páginas del panel:
-    - Los documentos fallan con un mensaje reintentable; pasarán a pendientes de cupo (`status = quota_pending`) con el bloque 2 del cierre del producto mínimo.
+    - Facturas y tickets pasan a pendientes (`status = quota_pending`, motivo `llm_budget`) y se procesan solos al renovarse el presupuesto (hecho, bloque 2, 2026-10-01). Contratos y pólizas siguen fallando con un mensaje reintentable hasta el bloque 5.
     - El asistente de canales responderá con el mensaje fijo (Backlog P2b-17, fuera del producto mínimo).
     - Nada se pierde.
 - **Ampliación:**
@@ -417,8 +417,8 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 
 1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
 2. ~~Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.~~ Hecho (P2b-14, D019, D026). Falta la ampliación mensual del presupuesto (Backlog P2b-27).
-3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; falta conectarlo a cada límite (pasos 4 y siguientes).
-4. Cuotas en facturas y tickets (`quota_pending`).
+3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; conectado a facturas, tickets y reintentos (paso 4); falta en el resto de límites.
+4. ~~Cuotas en facturas y tickets (`quota_pending`).~~ Hecho (bloques 2 y 3, 2026-10-01, `p80_document_quota_01`): reserva al encolar y devolución si no termina bien, `quota_pending` con su job, hash SHA-256, avisos por email al 80 % y al primer pendiente, y reintentos al mes con máximo 3 por documento. Detalles en D027.
 5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
 7. Usuarios (hecho, D022) e histórico (`history_months`, bloque 6).

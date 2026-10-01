@@ -66,12 +66,11 @@ Pendiente / ops:
 > **Cifras vigentes de producto: `especificacion-planes-y-cuotas.md` §3** (limites mensuales, presupuesto de IA 6 / 15 / 30 EUR, chat D023, etc.).
 > Esta tabla describe lo que hoy tiene el seed del codigo (`PLAN_LIMITS`). Difiere de la especificacion en los limites diarios, que esta sustituye por mensuales (pasos 3-4 de su §9 y D023, pendientes).
 > Ya alineados: `members_max` 3 / 9 / 20 (D022, migracion `p74`) y `llm_budget_eur_month` 6 / 15 / 30 (D026, migracion `p76`).
-> Limites mensuales de la spec §3 (facturas, tickets, reintentos, chat, contratos) en el catalogo desde `p77` (D027), aun sin aplicar: se activan por bloques y entonces se retiran los diarios de esta tabla.
+> Limites mensuales de la spec §3 (facturas, tickets, reintentos, chat, contratos) en el catalogo desde `p77` (D027); se activan por bloques y entonces se retiran los diarios de esta tabla. **Aplicados (2026-10-01, `p80`):** `invoices_per_month` + `tickets_per_month` (bolsa 40 + 30 / 150 + 80 / 400 + 200) y `document_retries_per_month` (40 / 150 / 400, maximo 3 por documento). Retirado `document_retries_per_day`.
 
 | Limit code | Unidad | Basico | Avanzado | Premium |
 | --- | --- | ---: | ---: | ---: |
 | `documents_per_day` | ficheros | 50 | 200 | 800 |
-| `document_retries_per_day` | reintentos | 20 | 80 | 300 |
 | `knowledge_uploads_per_day` | ficheros | 25 | 60 | 200 |
 | `knowledge_docs_max` | docs activos | 100 | 400 | 1500 |
 | `chat_messages_per_day` | mensajes | 100 | 250 | 600 |
@@ -88,8 +87,10 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 ## 6. Implementacion
 
 - Resolucion: `entitlement_service` + gates `require_feature`.
-- Cuotas Redis + budget: `plan_quota_service` (duro: hoy bloquea al llegar al techo). La especificacion cambia los documentos a `quota_pending` sin bloquear la subida (§4.2 y §4.3), pendiente de implementar (bloque 2 del cierre del producto minimo).
-- Cupos mensuales (D027): `monthly_quota_service` + tabla `quota_usage` (consumo atomico por bolsa, bolsa facturas + tickets, devoluciones, mes natural en hora de Espana). Base hecha; cada bloque del cierre lo conecta a su limite y retira el diario correspondiente.
+- Cuotas Redis + budget: `plan_quota_service` (duro: bloquea al llegar al techo). `documents_per_day` queda como freno contra scripts en todas las subidas de documentos y ya no se muestra en "Mi cuenta".
+- Cupos mensuales (D027): `monthly_quota_service` + tabla `quota_usage` (consumo atomico por bolsa, bolsa facturas + tickets, devoluciones, mes natural en hora de Espana). Cada bloque del cierre lo conecta a su limite y retira el diario correspondiente.
+- Facturas y tickets (bloque 2): `document_quota_service`. Reserva al encolar y devolucion si el documento no termina bien o se borra en el mes en curso; al 100 %, `quota_pending` sin bloquear la subida (job `process_quota_pending`); presupuesto de IA agotado tambien deja el documento pendiente; hash SHA-256 contra resubidas del mismo fichero; emails al admin al 80 % y con el primer pendiente del mes. El procesado excepcional del SADM no consume cupo.
+- Reintentos (bloque 3): `document_retries_per_month` y maximo 3 por documento (`manual_retry_count`, "Revision manual" en el panel). Los fallos que no causa el usuario no gastan reintento.
 - Presupuesto de IA (D019, D026): email al admin al 80 %, corte del chat y email al SADM al 90 %, bloqueo de toda la IA al 100 % (`ensure_llm_budget`).
 - SADM `/sadm/plans`: assign + override permanente (`entitlements_override`) + ampliacion de un cupo solo para el mes en curso (`quota_usage.extra`, auditada). El presupuesto de IA no tiene ampliacion mensual: solo override permanente (Backlog P2b-27).
 - Unico punto de cambio de plan: SADM (ningun rol de tenant, D016). La primera asignacion es inmediata; las siguientes se programan para el dia 1 del mes siguiente (`plan_change_service` + cron `apply_scheduled_plan_changes`, D027).
