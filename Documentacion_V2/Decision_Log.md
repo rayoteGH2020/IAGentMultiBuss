@@ -509,7 +509,7 @@ Decision (cerrada 2026-09-30, pendiente de implementar; fila 1b del cierre del p
 - **Sin datos personales ni contenido:** de los datos extra de cada evento solo se guardan claves de una lista permitida (ids, codigos, estados, conteos, duraciones); nunca mensajes de excepcion, nombres, emails, nombres de fichero, importes, IP, parametros de URL ni cuerpos. No se registran DEBUG, `/static`, `/health` ni el polling HTMX de estado.
 - **Escritura:** buffer en memoria acotado por proceso (API y worker), volcado en bloque cada ~2 s fuera de la transaccion de la peticion; si falla, la app sigue. No se usa Redis (`noeviction`, 512 MB: una avalancha de eventos podria tumbar la cola ARQ).
 - **Seguridad:** RLS por tenant; `saas_app` solo `INSERT`; la purga la hace una funcion `SECURITY DEFINER` que solo borra filas mas antiguas que la retencion, lanzada por un cron ARQ.
-- **Retencion:** `ACTIVITY_LOG_RETENTION_DAYS`, 90 por defecto; `0` = no se purga nunca.
+- **Retencion:** `ACTIVITY_LOG_RETENTION_DAYS`, 90 por defecto; `0` = no se purga nunca. **En produccion `0` no se admite** (decidido 2026-10-01): la app se niega a arrancar con un mensaje que explica el motivo y como corregirlo, igual que con `LANGFUSE_CAPTURE_CONTENT=true`. En development y staging se permite `0`. Motivo: cada fila lleva `user_id` (dato personal) y guardarlo sin limite choca con la minimizacion del RGPD, impide fijar un plazo en la politica de privacidad y, a 1-3 millones de filas al mes, engorda sin control la BD y los backups.
 
 Motivo:
 

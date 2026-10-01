@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
-Fecha: 2026-08-05 · Actualizado: 2026-09-30
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1-8; la 0 ya esta hecha y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Fecha: 2026-08-05 · Actualizado: 2026-10-01
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 1b-8; la 0 y la 1 ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo, con una excepcion: las Fases 2-7 no dependen del codigo y se hacen en paralelo a la Fase 1 y al cierre del codigo (Backlog, filas 1-8; orden completo en "Orden de ejecucion" del Backlog). Desde la Fase 8, no empezar una fase si alguna anterior (incluida la Fase 1) tiene casillas abiertas sin aceptacion explicita; justo antes de la Fase 8, repasar la Fase 5 por si los bloques del cierre anadieron variables. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1-8: P2c 1-3 de la Fase 1.5, bloques 2-7 y cierre; la fila 0 ya esta hecha) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 1b-8: registro de actividad, bloques 2-7 y cierre; las filas 0 y 1 (P2c 1-3 de la Fase 1.5) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-09-30: `p77_quota_usage_01`; los bloques 2-7 y P2c-1 anadiran migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-01: `p78_audit_insert_only_01`; la fila 1b y los bloques 2-7 anadiran migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -124,30 +124,50 @@ git grep -n "TOKEN\|PASSWORD\|SECRET\|API_KEY\|Bearer" -- ':!*.lock'
 
 No bloquean el cierre funcional del producto minimo, pero **si la entrada del primer cliente real**: despues los logs y la auditoria ya tendrian datos que no se pueden limpiar facilmente (RGPD).
 
-1. **`audit_log` solo insercion (P2c-1, ~1 h).** Migracion con `REVOKE UPDATE, DELETE ON audit_log FROM saas_app` (hoy concedido en `p16`); los tests que borran filas de `audit_log` pasan a usar el rol propietario. Comprobar (debe devolver `f | f`):
+Codigo de P2c 1-3 hecho el 2026-10-01 (Backlog, fila 1; detalle en `Seguridad_V2.md` §8b). Queda comprobarlo en cada entorno y decidir P2c-7 (datos personales que quedan en la metadata de `audit_log`).
+
+1. **`audit_log` solo insercion (P2c-1).** Migracion `p78_audit_insert_only_01` (`REVOKE UPDATE, DELETE ON audit_log FROM saas_app`). En prod la aplica `deploy.sh` (Fase 8); despues, comprobar con el superusuario. Debe devolver `t | f | f` (puede insertar, no modificar ni borrar):
 
 ```powershell
-psql "<url del superusuario>" -c "SELECT has_table_privilege('saas_app','audit_log','UPDATE'), has_table_privilege('saas_app','audit_log','DELETE');"
+# Dev (contenedor saas-postgres); en la VPS, el mismo SELECT con psql dentro del contenedor postgres.
+docker exec -i saas-postgres psql -U saas -d saas -c "SELECT has_table_privilege('saas_app','audit_log','INSERT'), has_table_privilege('saas_app','audit_log','UPDATE'), has_table_privilege('saas_app','audit_log','DELETE');"
 ```
 
-2. **Datos personales fuera de los logs (P2c-2, 2-3 h).** `customer_identifier` (canales), nombres de fichero al subir, comercio/total en `worker.ticket.done`, `str(exc)` en workers y knowledge, destinatario/asunto en `email.py`, `client_name` en la metadata de `scheduling.appointment_created`. Sustituir por hash HMAC, contadores o tipos. Comprobar que no quedan (ninguna coincidencia en llamadas a `logger`):
+2. **Datos personales fuera de los logs (P2c-2).** La guardia estatica cubre los `logger.*` de `app/` y los tests de redaccion cubren tracebacks y ARQ:
 
 ```powershell
-git grep -n "customer_identifier=customer_identifier" -- app/services/channel_chat_service.py app/jobs/channel_jobs.py
-git grep -n "str(exc)" -- app/jobs app/services
+infisical run -- uv run pytest tests/unit/test_logs_no_personal_data.py tests/unit/test_log_redaction.py -q
 ```
 
-3. **IP fiable en la auditoria (P2c-3, ~30-45 min).** Usar solo `request.client.host` (quitar el parseo manual de `X-Forwarded-For` en `app/routes/web/audit_context.py` y `documents.py`, y las copias de `_audit_request_context`) y limitar `--forwarded-allow-ips` a la red interna de Docker (`Dockerfile`, `deploy/docker-compose.prod.yml`). Comprobar:
+   Tras el primer deploy (Fase 8), subir un documento, provocar un fallo (p. ej. un PDF corrupto) y revisar que los logs de `api` y `worker` no tienen nombres de fichero, importes, emails ni telefonos, y que los tracebacks salen como tipo + `fichero:linea:funcion`, sin mensaje:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml logs --since 15m api worker | grep -iE "filename|@|exception"
+```
+
+3. **IP fiable en la auditoria (P2c-3).** Helper unico `app/routes/web/audit_context.py` (`request.client.host`) y `--forwarded-allow-ips=172.30.0.0/24`, la subred fija de la red interna de Compose. Antes del primer deploy, comprobar que esa subred no choca con ninguna red de la VPS (si choca, cambiarla en `networks.default` y en el comando de la API de `deploy/docker-compose.prod.yml`; el test exige que coincidan):
+
+```bash
+ip -4 route   # en la VPS: ninguna ruta debe solaparse con 172.30.0.0/24
+```
 
 ```powershell
-git grep -n -i "x-forwarded-for" -- app
-git grep -n "forwarded-allow-ips=\*" -- Dockerfile deploy
-infisical run -- uv run pytest tests/unit/test_deploy_config.py -q
+infisical run -- uv run pytest tests/unit/test_audit_context.py tests/unit/test_deploy_config.py -q
 ```
 
-- [ ] P2c-1 aplicado: la consulta devuelve `f | f`.
-- [ ] P2c-2 aplicado: sin datos personales en los logs revisados.
-- [ ] P2c-3 aplicado: sin `x-forwarded-for` manual ni `forwarded-allow-ips=*`; `test_deploy_config.py` verde.
+   Tras el deploy, abrir el detalle de un documento y consultar la IP de esa entrada con el superusuario. Debe ser tu IP publica, no `172.30.0.x` (la de Caddy):
+
+```sql
+SELECT created_at, action, ip FROM audit_log ORDER BY created_at DESC LIMIT 5;
+```
+
+- [x] P2c-1 en codigo; `p78` aplicada en dev y `saas_test` (2026-10-01).
+- [ ] P2c-1 en prod: la consulta devuelve `t | f | f`.
+- [x] P2c-2 en codigo; guardia y tests verdes (2026-10-01).
+- [ ] P2c-2 en prod: logs revisados tras el primer deploy, sin datos personales.
+- [x] P2c-3 en codigo; `test_audit_context.py` y `test_deploy_config.py` verdes (2026-10-01).
+- [ ] P2c-3 en prod: subred sin conflicto en la VPS e IP real en `audit_log`.
+- [ ] P2c-7 decidido (Backlog): metadata de `audit_log` con emails, nombres de fichero y nombres de profesionales y servicios.
 
 ---
 
@@ -350,9 +370,10 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 
 **Registro de actividad (D029, cuando este implementado):** `ACTIVITY_LOG_RETENTION_DAYS=90` (dias que se conservan las filas de `activity_log`; `0` = no purgar).
 
-**Pendiente de decidir (D029):** si la app debe negarse a arrancar en produccion con `ACTIVITY_LOG_RETENTION_DAYS=0`, como ya hace con `LANGFUSE_CAPTURE_CONTENT=true`. Recomendado: si (en development se permitiria `0`). Motivo: cada fila lleva `user_id` (dato personal) y guardarlo sin limite choca con la minimizacion del RGPD y no se puede justificar un plazo en la politica de privacidad; ademas, con 1-3 millones de filas al mes, en un ano son 12-36 millones que engordan los backups diarios y el disco de la VPS. Hasta decidirlo, no poner `0` en `prod`.
+**Decidido (D029, 2026-10-01):** con `APP_ENV=production` la app se niega a arrancar si `ACTIVITY_LOG_RETENTION_DAYS=0`, con un mensaje que explica el motivo y como corregirlo (igual que con `LANGFUSE_CAPTURE_CONTENT=true`). Se implementa con la fila 1b. Motivo: cada fila lleva `user_id` (dato personal); guardarlo sin limite choca con la minimizacion del RGPD y, con 1-3 millones de filas al mes, engorda sin control los backups y el disco de la VPS. En `prod`, dejar 90 o poner otro valor mayor que 0.
 
-- [ ] Decidido si `ACTIVITY_LOG_RETENTION_DAYS=0` se bloquea en produccion (y, si se bloquea, anotado en D029 e implementado con la fila 1b).
+- [x] Decidido que `ACTIVITY_LOG_RETENTION_DAYS=0` se bloquea en produccion (D029, 2026-10-01).
+- [ ] Implementado con la fila 1b: arrancar con `APP_ENV=production` y `ACTIVITY_LOG_RETENTION_DAYS=0` falla con el mensaje del motivo.
 
 **Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
 
@@ -450,7 +471,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-09-30: `p77_quota_usage_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p78_audit_insert_only_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 

@@ -1,6 +1,6 @@
 # Backlog_Priorizado
 
-Fecha actualizacion: 2026-09-30
+Fecha actualizacion: 2026-10-01
 Estado: alineado con codigo en `RamaCursor01` (planes D012 `p67`; Stripe retirado D016 `p68`).
 
 Leyenda: **Hecho** = en codigo y tests. **Ops** = falta accion humana / entorno. **Pendiente** = producto no implementado.
@@ -12,8 +12,8 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | # | Que | Incluye | Estado | Dias (estim.) |
 | --- | --- | --- | --- | ---: |
 | 0 | Base de cupos mensuales (bloque 1) | Tabla `quota_usage`, consumo atomico y devoluciones, mes natural, ampliacion del SADM por mes, cambios de plan programados | **Hecho** (`67220be`) | — |
-| 1 | Seguridad P2c 1-3 | `audit_log` solo insercion, datos personales fuera de los logs, IP de auditoria. Antes que los bloques: fija la norma de logs sin datos personales y P2c-2 toca el flujo de subida del bloque 2 | Pendiente | 0,5 |
-| 1b | Registro de actividad en BD (D029) | Tabla `activity_log` para seguir la ejecucion y localizar errores, consultada solo por SQL: una fila por peticion (`request`: plantilla de ruta, metodo, estado, duracion, HTMX), por job ARQ (`job`: nombre, intento, resultado, duracion), por cada `log.info/warning/error` del codigo (`event`: nombre, nivel, modulo, funcion, linea) y por excepcion no controlada (`error`: tipo y fichero:linea:funcion de `app/`, sin mensaje). Todas con `tenant_id`, `user_id`, `request_id`, `job_id` y `parent_request_id` (enlaza el job con la peticion que lo lanzo). Datos extra solo de una lista permitida (ids, codigos, estados, conteos, duraciones); sin IP, parametros de URL, cuerpos ni DEBUG; excluye `/static`, `/health` y polling HTMX. Buffer en memoria por proceso volcado en bloque cada ~2 s (no Redis: `noeviction`). RLS; `saas_app` solo inserta; purga por funcion `SECURITY DEFINER` + cron con `ACTIVITY_LOG_RETENTION_DAYS` (90 por defecto, 0 = no purgar). Va tras la fila 1 para que los bloques 2-7 y el piloto queden registrados | Pendiente | 1,5-2 |
+| 1 | Seguridad P2c 1-3 | `audit_log` solo insercion, datos personales fuera de los logs, IP de auditoria. Antes que los bloques: fija la norma de logs sin datos personales y P2c-2 toca el flujo de subida del bloque 2 | **Hecho** (`d099e55`, `p78_audit_insert_only_01`; detalle en P2c) | — |
+| 1b | Registro de actividad en BD (D029) | Tabla `activity_log` para seguir la ejecucion y localizar errores, consultada solo por SQL: una fila por peticion (`request`: plantilla de ruta, metodo, estado, duracion, HTMX), por job ARQ (`job`: nombre, intento, resultado, duracion), por cada `log.info/warning/error` del codigo (`event`: nombre, nivel, modulo, funcion, linea) y por excepcion no controlada (`error`: tipo y fichero:linea:funcion de `app/`, sin mensaje). Todas con `tenant_id`, `user_id`, `request_id`, `job_id` y `parent_request_id` (enlaza el job con la peticion que lo lanzo). Datos extra solo de una lista permitida (ids, codigos, estados, conteos, duraciones); sin IP, parametros de URL, cuerpos ni DEBUG; excluye `/static`, `/health` y polling HTMX. Buffer en memoria por proceso volcado en bloque cada ~2 s (no Redis: `noeviction`). RLS; `saas_app` solo inserta; purga por funcion `SECURITY DEFINER` + cron con `ACTIVITY_LOG_RETENTION_DAYS` (90 por defecto, 0 = no purgar; en produccion `0` impide arrancar con un mensaje claro, D029). Va tras la fila 1 para que los bloques 2-7 y el piloto queden registrados | Pendiente | 1,5-2 |
 | 2 | Facturas y tickets (bloque 2) | Bolsa 40 + 30; se consume al extraer bien y se devuelve al descartar; `quota_pending` y job que los procesa al renovarse el cupo o tras una ampliacion; aviso al 80 %; hash SHA-256 contra duplicados; `documents_per_day` queda solo como freno alto contra scripts | Pendiente | 1,5-2 |
 | 3 | Reintentos (bloque 3) | 40 al mes y maximo 3 por documento; al agotarlos, `failed` con "Revision manual" en la interfaz; se retira `document_retries_per_day` | Pendiente | 0,5 |
 | 4 | Chat (bloque 4) | 400 preguntas al mes (D023), limite de ritmo por usuario y mensaje al 100 %; se retiran los tres topes diarios del chat (cierra P2b-24) | Pendiente | 1 |
@@ -23,15 +23,15 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2; cierra P2b-10), fusionar el PR #1 en `main` (el tag de produccion sale de `main`) | Pendiente | 0,5 |
 | 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13, en dos tandas. **Tanda A, desde ya y en paralelo a las filas 1-8 (Fases 2-7, no dependen del codigo):** dominio, VPS, buckets R2, claves LLM de prod y clave de Google aparte para CI (P2b-2), rotacion de secretos (P0-1), endurecer la VPS, Machine Identity de Infisical, Infisical `prod` con SMTP y `EMAIL_SADM` y sin `LLM_MODEL_*` para que rijan los modelos del codigo (P2b-1), Clerk prod con limite de miembros por organizacion >= 20 (P2b-23) y webhook con `user.deleted` (D021), DNS. **Tanda B, despues de la fila 8 (Fases 8-13):** repaso de la Fase 5 por si los bloques anadieron variables, primer deploy, backups y restore probado, alta del piloto con telefono del admin (P2b-19), QA manual de la Fase 11 con alcance Clerk/R2/documentos/chat/planes (P1-7), verificacion de seguridad y firma en `Paso10` | Pendiente (ops) | 1-2 |
 
-Codigo pendiente: unos 9-11 dias.
+Codigo pendiente: unos 8,5-10,5 dias.
 
 ### Orden de ejecucion
 
-**Hecho:** fila 0, base de cupos mensuales (`67220be`). Los bloques 2-7 se apoyan en ella.
+**Hecho:** fila 0, base de cupos mensuales (`67220be`). Los bloques 2-7 se apoyan en ella. Fila 1, seguridad P2c 1-3 (2026-10-01): fija la norma de logs sin datos personales (`Seguridad_V2.md` §8b) que deben seguir los bloques siguientes.
 
 **Codigo (asistente), en este orden:**
 
-1. **Fila 1, seguridad P2c 1-3.** Primero porque fija la norma de logs sin datos personales para todo lo que viene, y P2c-2 toca el flujo de subida del bloque 2.
+1. ~~**Fila 1, seguridad P2c 1-3.**~~ Hecha.
 2. **Fila 1b, registro de actividad (D029).** Despues de P2c porque aplica su norma de logs sin datos personales; antes de los bloques para que todo lo nuevo quede registrado.
 3. **Filas 2 -> 3, facturas y tickets y reintentos.** Mismo flujo de documentos, seguidas.
 4. **Fila 4, chat.**
@@ -168,12 +168,13 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 
 | # | Item | Estado |
 | --- | --- | --- |
-| 1 | `audit_log` solo insercion: `REVOKE UPDATE, DELETE ON audit_log FROM saas_app` (concedido en `p16`). Los tests que borran filas de `audit_log` (p. ej. `_cleanup` en `test_document_override.py`) pasaran a usar el rol propietario. ~1 h | **Pendiente** |
-| 2 | Datos personales en logs: `customer_identifier` (`channel_jobs.py`), nombres de fichero en subida (`documents.py`), comercio/total en `worker.ticket.done`, ramas `except Exception` que loguean `str(exc)` en workers/knowledge, destinatario/asunto en debug de `email.py`, `client_name` en metadata de `scheduling.appointment_created` (legible por SADM via `audit_log`). Sustituir por hash HMAC / contadores / tipos. 2-3 h | **Pendiente** |
-| 3 | IP de auditoria: hoy no falsificable (Caddy es el borde sin `trusted_proxies`). Unificar en `request.client.host` (quitar parseo manual de `X-Forwarded-For` en `audit_context.py` y `documents.py`, y las 5 copias de `_audit_request_context`), restringir `--forwarded-allow-ips=*` a la red interna y test en `test_deploy_config.py`. ~30-45 min | **Pendiente** (robustez) |
+| 1 | `audit_log` solo insercion: `REVOKE UPDATE, DELETE ON audit_log FROM saas_app` (concedido en `p16`). Migracion `p78_audit_insert_only_01`; el `_cleanup` de `test_document_override.py` ya no borra `audit_log` (cae con el CASCADE del tenant, que Postgres ejecuta como propietario). Tests: `test_audit_insert_only.py` (permisos y FK de tenant/usuario) y `test_migrations_audit_insert_only.py` (ninguna migracion nueva lo re-concede) | **Hecho** (`d099e55`; aplicada en dev y `saas_test`) |
+| 2 | Datos personales en logs. Norma y helpers en `app/core/log_redaction.py` (`Seguridad_V2.md` §8b): `pseudonymize()` (HMAC) para telefono, `chat_id` y emails; `error_type` en vez de `str(exc)`; fuera nombres de fichero, importes, comercios, proveedores, partes contrarias y aseguradoras (unos 60 puntos en `app/`). Tracebacks sin mensaje ni variables fuera de `development` (structlog y handlers de uvicorn/arq). Ademas de lo previsto: el worker ARQ no configuraba el logging (usaba el de structlog por defecto, que con `rich` vuelca variables locales) y ARQ registraba los argumentos de cada job, incluidos telefono y texto del cliente en `process_channel_message`. Metadata de `audit_log`: fuera `client_name` (cita), el titulo del evento de voz y el texto de excepciones (`knowledge.index_failed`, error de tools del chat; el fallo inesperado de indexacion muestra ahora un mensaje fijo en la UI). Guardia: `test_logs_no_personal_data.py` | **Hecho** (`d099e55`) |
+| 3 | IP de auditoria: un unico helper (`app/routes/web/audit_context.py`, solo `request.client.host`); retiradas las 5 copias y el parseo manual de `X-Forwarded-For`. `--forwarded-allow-ips` limitado a la subred fija de la red interna de Compose (`172.30.0.0/24`) y a `127.0.0.1` en el `Dockerfile`. Tests: `test_audit_context.py` y `test_deploy_config.py` | **Hecho** (`d099e55`) |
 | 4 | Al activar Cloudflare delante: `trusted_proxies` con rangos de Cloudflare en Caddy y firewall solo desde Cloudflare; si no, todas las IPs auditadas seran de Cloudflare | **Ops** (bloqueante al activar Cloudflare) |
 | 5 | `/metrics`: restriccion de red en proxy/infra ademas del token (hoy Caddy responde 404 a `/metrics`) | **Ops** |
 | 6 | CSP sin `unsafe-eval` / `unsafe-inline`: migrar a `@alpinejs/csp` (~156 usos de Alpine) + nonces para ~10 scripts inline. 1-2 dias | **Pendiente** (backlog) |
+| 7 | Datos personales que quedan en la metadata de `audit_log` (los lee el SADM), detectados al cerrar P2c-2: email del miembro en altas, bajas y solicitudes (`membership_service`), nombre de fichero al subir y borrar documentos y knowledge, `display_name` de profesionales, nombre de servicios del catalogo y `google_email` del calendario (fuera de oferta, D012). Decidir para cada uno entre seudonimizar (HMAC), quitarlo o mantenerlo por su valor forense: quitar el email o el nombre de fichero empobrece la respuesta a "quien toco que dato" (`AGENTS.md` §7), sobre todo tras borrar el documento. ~1 h tras la decision | **Pendiente de decision** (antes del primer cliente real) |
 
 `p71` y `p72` aplicadas en dev y `saas_test` (2026-09-29). En prod las aplica `deploy.sh` con el resto de migraciones (`PasosParaProduccion.md` Fase 8).
 
@@ -204,7 +205,7 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 
 ## Orden recomendado restante
 
-1. Producto minimo: seguir la tabla "Cierre del producto minimo" al inicio de este fichero (P2c 1-3 va en su fila 1: antes del primer cliente real, incluido el soft launch, porque despues los logs y el `audit_log` ya tendrian datos personales dificiles de limpiar, RGPD).
+1. Producto minimo: seguir la tabla "Cierre del producto minimo" al inicio de este fichero (P2c 1-3, su fila 1, hecha el 2026-10-01). Decidir P2c-7 antes del primer cliente real, incluido el soft launch: despues el `audit_log` ya tendria datos personales dificiles de limpiar (RGPD).
 2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
 3. P2c-4 al activar Cloudflare.
 

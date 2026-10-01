@@ -171,9 +171,16 @@ Incluye:
 
 ## 8b. Logs y auditoria
 
-- **Logs sin datos personales:** nunca nombres, emails, telefonos, identificadores de cliente final, nombres de fichero, importes/comercios extraidos ni `str(exc)` de errores que puedan contener contenido. Usar hash HMAC, contadores o tipos. Pendiente de aplicar al codigo existente (Backlog P2c-2), antes del primer cliente real.
-- **`audit_log` solo insercion:** `saas_app` sin `UPDATE`/`DELETE` (Backlog P2c-1, pendiente). La metadata de auditoria tampoco lleva datos personales en claro (el SADM la lee).
-- **IP de auditoria:** solo `request.client.host`, con `--forwarded-allow-ips` limitado a la red interna (Backlog P2c-3, pendiente). Al poner Cloudflare delante: `trusted_proxies` en Caddy (P2c-4).
+- **Logs sin datos personales** (Backlog P2c-2, hecho 2026-10-01). Norma en `app/core/log_redaction.py`:
+  - Identificadores de personas (telefono, `chat_id`, email): `pseudonymize()`, un HMAC-SHA256 con `APP_SECRET_KEY` truncado a 16 hex, en campos `*_ref` (`customer_ref`, `to_ref`, `email_ref`). Permite correlacionar lineas del mismo cliente sin exponer el dato. Si se rota `APP_SECRET_KEY`, cambian los seudonimos.
+  - Excepciones de terceros (SDK, BD, Redis, SMTP, parsers): `error_type=type(exc).__name__`, nunca `str(exc)`. Los mensajes de `AppError` y `UploadValidationError` los escribe la app y si se registran (`exc.message`); por eso **no** deben interpolar datos personales ni texto de terceros (el detalle de Google va en `details`, que el log de `app_error` ya no registra).
+  - Nunca nombres de fichero, importes, comercios, proveedores, partes contrarias ni aseguradoras extraidos.
+  - Tracebacks fuera de `development`: tipo de la excepcion y de sus causas mas frames `fichero:linea:funcion`, sin mensaje ni variables locales. Lo aplican el procesador de structlog y un filtro en los handlers de stdlib (root, `uvicorn`, `arq`). En `development` se mantiene el traceback completo.
+  - Worker ARQ: configura el mismo logging en `on_startup` (antes usaba el de structlog por defecto, que con `rich` vuelca las variables locales). Los argumentos de cada job no se registran (`process_channel_message` recibe telefono y texto del cliente) ni el texto de la excepcion en "job failed".
+  - Guardia en CI: `tests/unit/test_logs_no_personal_data.py` falla si un `logger.*` de `app/` usa campos como `filename`, `email`, `customer_identifier`, `total`... o `str(exc)`.
+- **`audit_log` solo insercion** (Backlog P2c-1, hecho 2026-10-01, migracion `p78_audit_insert_only_01`): `saas_app` sin `UPDATE`/`DELETE`. Borrar un tenant (CASCADE) o un usuario (SET NULL) sigue funcionando: Postgres ejecuta las acciones de FK como propietario de la tabla. Ninguna migracion nueva puede re-concederlo (`tests/unit/test_migrations_audit_insert_only.py`).
+- **Metadata de auditoria sin datos personales en claro** (el SADM la lee): fuera `client_name` de `scheduling.appointment_created`, el titulo del evento de voz y el texto de excepciones en `knowledge.index_failed` y en el error de las tools del chat. Quedan datos personales en otras entradas, pendientes de decision (Backlog P2c-7).
+- **IP de auditoria** (Backlog P2c-3, hecho 2026-10-01): un unico helper, `app/routes/web/audit_context.py`, que usa solo `request.client.host`. Uvicorn la toma de `X-Forwarded-For` solo si la conexion viene de `--forwarded-allow-ips`, limitado a la subred fija de la red interna de Compose (`172.30.0.0/24`, la de Caddy). En el `Dockerfile` sin Compose, `127.0.0.1`. Al poner Cloudflare delante: `trusted_proxies` en Caddy (P2c-4).
 - **Ficheros de cliente:** se sirven por una ruta que audita y redirige (302) a una URL prefirmada de vida corta; nunca incrustar URLs prefirmadas en el HTML (`AGENTS.md` §7).
 - Alcance de lo que se audita: `AGENTS.md` §7.
 
