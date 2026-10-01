@@ -16,8 +16,10 @@ from app.core.storage import get_storage
 from app.jobs import extraction_guard
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_ticket
+from app.models.document_processing_attempt import ProcessingAttemptStatus
 from app.services import (
     document_processing_service,
+    document_quota_service,
     entitlement_service,
     processing_charge_service,
     ticket_service,
@@ -90,6 +92,20 @@ async def process_ticket(
             document_id=ticket_uuid,
         ):
             return {"status": "interrupted", "ticket_id": ticket_id}
+
+        # Presupuesto de IA agotado: el documento espera (quota_pending) y devuelve su
+        # reserva de cupo en vez de fallar; se procesa solo al renovarse (spec §4.7).
+        if await document_quota_service.hold_if_budget_exhausted(db, ticket_row):
+            await document_processing_service.finalize_processing_attempt(
+                db,
+                tenant_id=tenant_uuid,
+                document_kind="ticket",
+                document_id=ticket_uuid,
+                status=ProcessingAttemptStatus.failed,
+                error_code=DocumentErrorCode.llm_budget.value,
+            )
+            await db.commit()
+            return {"status": "quota_pending", "ticket_id": ticket_id}
 
         try:
             storage = get_storage()

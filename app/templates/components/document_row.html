@@ -61,6 +61,34 @@
   </tr>
 </tbody>
 
+{% elif document.is_quota_pending %}
+{# Pendiente de cupo o de presupuesto de IA: sin polling (no cambia hasta que el
+   job de pendientes lo procese) y sin «Reintentar» (se procesa solo). #}
+<tbody
+  id="document-group-{{ document.id }}"
+  data-status="{{ document.status }}"
+  class="invoice-group is-quota-pending{% if is_new %} is-new{% endif %}">
+  <tr id="document-{{ document.id }}">
+    <td colspan="{{ col_count }}" class="text-sm">
+      <div class="min-w-0 space-y-1">
+        <span class="inline-flex items-center gap-2 flex-wrap min-w-0">
+          {% include "components/document_type_icon.html" %}
+          <span class="font-medium text-slate-700">{{ document.doc_type_label }}</span>
+          <span class="status-pill bg-violet-50 text-violet-800 ring-1 ring-violet-100">{{ document.status | status_label }}</span>
+          <span class="text-slate-400 line-clamp-2 break-all max-w-[18rem]"
+                title="{{ document.source_filename or '' }}">
+            — {{ document.source_filename or "—" }}
+          </span>
+          <span class="text-xs text-slate-400 whitespace-nowrap">
+            {{ document.created_at | local_datetime }}
+          </span>
+        </span>
+        <p class="text-slate-600 leading-snug">{{ document.error_message or "" }}</p>
+      </div>
+    </td>
+  </tr>
+</tbody>
+
 {% elif document.status in ("pending", "processing") %}
 {# Polling HTMX nativo (mismo patrón que knowledge_row). Atributos anti-boost
    explícitos: el poll no debe heredar hx-boost/push-url del sidebar. #}
@@ -143,8 +171,16 @@
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <p class="text-red-800 leading-snug">
+            {% if document.needs_manual_review %}
+            <span class="status-pill bg-slate-100 text-slate-700 ring-1 ring-slate-200 mr-1">Revisión manual</span>
+            {% endif %}
             {{ document.error_message | user_processing_error(document.source_filename) }}
           </p>
+          {% if document.needs_manual_review %}
+          <p class="mt-1 text-xs text-red-700">
+            Se ha reintentado 3 veces sin éxito. Comprueba que el fichero sea legible o contacta con soporte.
+          </p>
+          {% endif %}
           {% if document.source_filename %}
           <p class="mt-1 text-xs text-red-600/80 line-clamp-2 break-all" title="{{ document.source_filename }}">
             {{ document.source_filename }}

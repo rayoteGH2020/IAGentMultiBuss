@@ -19,6 +19,7 @@ from app.jobs.activity_jobs import purge_activity_log
 from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.contract_jobs import process_contract
+from app.jobs.document_quota_jobs import process_quota_pending, send_documents_quota_alert
 from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
@@ -64,6 +65,8 @@ class WorkerSettings:
         arq_func(tracked_job(process_channel_message), timeout=120),
         tracked_job(send_llm_budget_alert),
         tracked_job(send_llm_provider_billing_alert),
+        tracked_job(process_quota_pending),
+        tracked_job(send_documents_quota_alert),
     ]
 
     # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el
@@ -81,6 +84,14 @@ class WorkerSettings:
         cron(
             tracked_job(apply_scheduled_plan_changes),
             minute={5},
+            run_at_startup=True,
+            unique=True,
+        ),
+        # Documentos pendientes de cupo (bloque 2): cada hora, después del cambio de
+        # plan del día 1 (minuto 5) para aplicar ya el cupo nuevo, y al arrancar.
+        cron(
+            tracked_job(process_quota_pending),
+            minute={10},
             run_at_startup=True,
             unique=True,
         ),

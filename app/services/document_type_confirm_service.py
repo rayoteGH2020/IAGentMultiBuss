@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
@@ -10,15 +11,20 @@ import structlog
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import ValidationError
 from app.jobs.queue import enqueue_invoice_processing, enqueue_ticket_processing
-from app.models import DocTypeCode, InvoiceStatus, TicketStatus
-from app.services import invoice_service, ticket_service
+from app.models import DocTypeCode, InvoiceStatus, Ticket, TicketStatus
+from app.services import (
+    document_quota_service,
+    entitlement_service,
+    invoice_service,
+    ticket_service,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.models import Invoice, Ticket
+    from app.models import Invoice
     from app.services.document_classification import TypeVerificationResult
 
 logger = structlog.get_logger(__name__)
@@ -145,149 +151,120 @@ async def confirm_document_type(
     document_id: UUID,
     choice: ConfirmChoice,
 ) -> ConfirmTypeResult:
-    """Confirma el tipo: mantiene el elegido o cambia al sugerido y encola."""
+    """Confirma el tipo: mantiene el elegido o cambia al sugerido y encola.
+
+    El documento a la espera de confirmar no tiene reserva de cupo: se reserva aquí,
+    sobre el documento que se va a procesar; sin hueco, queda en ``quota_pending``.
+    """
     if kind == "invoice":
-        return await _confirm_invoice(
+        invoice = await invoice_service.get_invoice(db, tenant_id, document_id)
+        meta = _pending_meta(invoice)
+        if choice == "keep" or meta.suggested == DocTypeCode.factura:
+            return await _process_as_is(db, tenant_id=tenant_id, document=invoice, meta=meta)
+        source_key = _require_file(invoice)
+        ticket = await ticket_service.create_ticket_from_existing_storage(
             db,
             tenant_id=tenant_id,
-            invoice_id=document_id,
-            choice=choice,
+            source_file_key=source_key,
+            source_filename=invoice.source_filename or "document",
+            source_mime=invoice.source_mime or "application/pdf",
+            doc_type=DocTypeCode.ticket,
         )
-    return await _confirm_ticket(
-        db,
-        tenant_id=tenant_id,
-        ticket_id=document_id,
-        choice=choice,
-    )
+        return await _switch(db, tenant_id=tenant_id, source=invoice, target=ticket)
 
-
-async def _confirm_invoice(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    invoice_id: UUID,
-    choice: ConfirmChoice,
-) -> ConfirmTypeResult:
-    invoice = await invoice_service.get_invoice(db, tenant_id, invoice_id)
-    meta = parse_type_confirm_meta(invoice.raw_extraction)
-    if invoice.error_code != DocumentErrorCode.type_confirmation_required.value or meta is None:
-        raise ValidationError("Este documento no espera confirmación de tipo.")
-
-    if choice == "keep":
-        invoice.error_code = None
-        invoice.error_message = None
-        invoice.raw_extraction = None
-        invoice.status = InvoiceStatus.processing
-        await db.flush()
-        await enqueue_invoice_processing(invoice.id, tenant_id)
-        logger.info(
-            "document_type_confirm.keep",
-            kind="invoice",
-            document_id=str(invoice.id),
-            doc_type=meta.user_choice.value,
-        )
-        return ConfirmTypeResult(kind="invoice", document_id=invoice.id)
-
-    if meta.suggested == DocTypeCode.factura:
-        invoice.error_code = None
-        invoice.error_message = None
-        invoice.raw_extraction = None
-        invoice.status = InvoiceStatus.processing
-        await db.flush()
-        await enqueue_invoice_processing(invoice.id, tenant_id)
-        return ConfirmTypeResult(kind="invoice", document_id=invoice.id)
-
-    source_file_key = invoice.source_file_key
-    if not source_file_key:
-        raise ValidationError("El documento no tiene fichero almacenado.")
-    ticket = await ticket_service.create_ticket_from_existing_storage(
-        db,
-        tenant_id=tenant_id,
-        source_file_key=source_file_key,
-        source_filename=invoice.source_filename or "document",
-        source_mime=invoice.source_mime or "application/pdf",
-        doc_type=DocTypeCode.ticket,
-    )
-    from app.services import document_processing_service
-
-    await document_processing_service.dismiss_from_panel(
-        db,
-        tenant_id=tenant_id,
-        document_kind="invoice",
-        document_id=invoice.id,
-    )
-    await enqueue_ticket_processing(ticket.id, tenant_id)
-    logger.info(
-        "document_type_confirm.switch",
-        from_kind="invoice",
-        to_kind="ticket",
-        from_id=str(invoice.id),
-        to_id=str(ticket.id),
-    )
-    return ConfirmTypeResult(kind="ticket", document_id=ticket.id)
-
-
-async def _confirm_ticket(
-    db: AsyncSession,
-    *,
-    tenant_id: UUID,
-    ticket_id: UUID,
-    choice: ConfirmChoice,
-) -> ConfirmTypeResult:
-    ticket = await ticket_service.get_ticket(db, tenant_id, ticket_id)
-    meta = parse_type_confirm_meta(ticket.raw_extraction)
-    if ticket.error_code != DocumentErrorCode.type_confirmation_required.value or meta is None:
-        raise ValidationError("Este documento no espera confirmación de tipo.")
-
-    if choice == "keep":
-        ticket.error_code = None
-        ticket.error_message = None
-        ticket.raw_extraction = None
-        ticket.status = TicketStatus.processing
-        await db.flush()
-        await enqueue_ticket_processing(ticket.id, tenant_id)
-        logger.info(
-            "document_type_confirm.keep",
-            kind="ticket",
-            document_id=str(ticket.id),
-            doc_type=meta.user_choice.value,
-        )
-        return ConfirmTypeResult(kind="ticket", document_id=ticket.id)
-
-    if meta.suggested == DocTypeCode.ticket:
-        ticket.error_code = None
-        ticket.error_message = None
-        ticket.raw_extraction = None
-        ticket.status = TicketStatus.processing
-        await db.flush()
-        await enqueue_ticket_processing(ticket.id, tenant_id)
-        return ConfirmTypeResult(kind="ticket", document_id=ticket.id)
-
-    source_file_key = ticket.source_file_key
-    if not source_file_key:
-        raise ValidationError("El documento no tiene fichero almacenado.")
+    ticket = await ticket_service.get_ticket(db, tenant_id, document_id)
+    meta = _pending_meta(ticket)
+    if choice == "keep" or meta.suggested == DocTypeCode.ticket:
+        return await _process_as_is(db, tenant_id=tenant_id, document=ticket, meta=meta)
+    source_key = _require_file(ticket)
     invoice = await invoice_service.create_invoice_from_existing_storage(
         db,
         tenant_id=tenant_id,
-        source_file_key=source_file_key,
+        source_file_key=source_key,
         source_filename=ticket.source_filename or "document",
         source_mime=ticket.source_mime or "application/pdf",
         doc_type=DocTypeCode.factura,
     )
-    from app.services import document_processing_service
+    return await _switch(db, tenant_id=tenant_id, source=ticket, target=invoice)
 
-    await document_processing_service.dismiss_from_panel(
-        db,
-        tenant_id=tenant_id,
-        document_kind="ticket",
-        document_id=ticket.id,
+
+def _pending_meta(document: Invoice | Ticket) -> TypeConfirmMeta:
+    meta = parse_type_confirm_meta(document.raw_extraction)
+    if document.error_code != DocumentErrorCode.type_confirmation_required.value or meta is None:
+        raise ValidationError("Este documento no espera confirmación de tipo.")
+    return meta
+
+
+def _require_file(document: Invoice | Ticket) -> str:
+    if not document.source_file_key:
+        raise ValidationError("El documento no tiene fichero almacenado.")
+    return document.source_file_key
+
+
+def _kind(document: Invoice | Ticket) -> ConfirmKind:
+    return "ticket" if isinstance(document, Ticket) else "invoice"
+
+
+async def _reserve_and_enqueue(
+    db: AsyncSession, *, tenant_id: UUID, document: Invoice | Ticket
+) -> None:
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    if not await document_quota_service.reserve_or_hold(db, ents, document):
+        return
+    if isinstance(document, Ticket):
+        await enqueue_ticket_processing(document.id, tenant_id)
+    else:
+        await enqueue_invoice_processing(document.id, tenant_id)
+
+
+async def _process_as_is(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document: Invoice | Ticket,
+    meta: TypeConfirmMeta,
+) -> ConfirmTypeResult:
+    document.error_code = None
+    document.error_message = None
+    document.raw_extraction = None
+    if isinstance(document, Ticket):
+        document.status = TicketStatus.processing
+    else:
+        document.status = InvoiceStatus.processing
+    await db.flush()
+    await _reserve_and_enqueue(db, tenant_id=tenant_id, document=document)
+    logger.info(
+        "document_type_confirm.keep",
+        kind=_kind(document),
+        document_id=str(document.id),
+        doc_type=meta.user_choice.value,
     )
-    await enqueue_invoice_processing(invoice.id, tenant_id)
+    return ConfirmTypeResult(kind=_kind(document), document_id=document.id)
+
+
+async def _switch(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source: Invoice | Ticket,
+    target: Invoice | Ticket,
+) -> ConfirmTypeResult:
+    """Procesa el fichero como el tipo sugerido y oculta el registro original.
+
+    El original está en ``pending`` (a la espera de confirmar), así que se oculta
+    directamente: ``dismiss_from_panel`` solo admite documentos fallidos.
+    """
+    target.file_sha256 = source.file_sha256
+    source.file_sha256 = None
+    source.dismissed_at = datetime.now(tz=UTC)
+    source.updated_at = source.dismissed_at
+    await db.flush()
+    await _reserve_and_enqueue(db, tenant_id=tenant_id, document=target)
     logger.info(
         "document_type_confirm.switch",
-        from_kind="ticket",
-        to_kind="invoice",
-        from_id=str(ticket.id),
-        to_id=str(invoice.id),
+        from_kind=_kind(source),
+        to_kind=_kind(target),
+        from_id=str(source.id),
+        to_id=str(target.id),
     )
-    return ConfirmTypeResult(kind="invoice", document_id=invoice.id)
+    return ConfirmTypeResult(kind=_kind(target), document_id=target.id)

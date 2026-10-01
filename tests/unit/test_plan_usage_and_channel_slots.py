@@ -15,7 +15,6 @@ from app.core.entitlement_codes import PLAN_FEATURES, PLAN_LIMITS
 from app.core.errors import ValidationError
 from app.core.rate_limiter import (
     chat_messages_tenant_key,
-    document_retries_key,
     documents_upload_key,
     knowledge_upload_key,
 )
@@ -56,7 +55,6 @@ async def test_get_limit_usage_reads_same_keys_and_counts_as_enforcement(
     tenant_id = uuid4()
     counters = {
         documents_upload_key(tenant_id): b"12",
-        document_retries_key(tenant_id): b"3",
         knowledge_upload_key(tenant_id): None,  # sin actividad hoy
         chat_messages_tenant_key(tenant_id): "95",
     }
@@ -69,7 +67,8 @@ async def test_get_limit_usage_reads_same_keys_and_counts_as_enforcement(
     usage = await plan_quota_service.get_limit_usage(AsyncMock(), redis, _ents("basic"), tenant_id)
 
     assert usage["documents_per_day"] == QuotaUsage(used=12, cap=50)
-    assert usage["document_retries_per_day"] == QuotaUsage(used=3, cap=20)
+    # Retirado en el bloque 3: lo sustituye el cupo mensual de reintentos.
+    assert "document_retries_per_day" not in usage
     assert usage["knowledge_uploads_per_day"] == QuotaUsage(used=0, cap=25)
     assert usage["chat_messages_per_day"] == QuotaUsage(used=95, cap=100)
     assert usage["knowledge_docs_max"] == QuotaUsage(used=40, cap=100)
@@ -121,6 +120,7 @@ async def test_get_limit_usage_skips_redis_counters_if_redis_down(
 def test_plan_summary_with_usage_shows_effective_cap_and_percent() -> None:
     usage = {
         "documents_per_day": QuotaUsage(used=12, cap=50),
+        "knowledge_docs_max": QuotaUsage(used=24, cap=100),
         "members_max": QuotaUsage(used=5, cap=5),
         "knowledge_uploads_per_day": QuotaUsage(used=4, cap=10),  # tope de plataforma
         "channel_external_slots": QuotaUsage(used=0, cap=0),
@@ -128,24 +128,26 @@ def test_plan_summary_with_usage_shows_effective_cap_and_percent() -> None:
     summary = build_plan_summary(_ents("basic"), usage)
     items = {item.label: item for item in summary.limits}
 
-    assert items["Documentos procesados al día"].percent == 24
-    assert items["Documentos procesados al día"].used == 12
+    assert items["Documentos en la base de conocimiento"].percent == 24
+    assert items["Documentos en la base de conocimiento"].used == 24
     assert items["Miembros del equipo"].percent == 100
     assert items["Subidas a la base de conocimiento al día"].value == "10"
     assert "Canales de mensajería conectados" not in items  # tope 0: no incluido
+    # Freno contra scripts (D027): se aplica pero ya no se muestra en «Mi cuenta».
+    assert "Documentos procesados al día" not in items
     # Sin uso medible: se muestra el tope sin barra.
-    assert items["Documentos en la base de conocimiento"].percent is None
+    assert items["Mensajes de chat al día"].percent is None
 
 
 def test_plan_summary_percent_is_capped_and_none_when_unlimited() -> None:
     usage = {
-        "documents_per_day": QuotaUsage(used=80, cap=50),  # override a la baja
+        "knowledge_docs_max": QuotaUsage(used=80, cap=50),  # override a la baja
         "members_max": QuotaUsage(used=7, cap=None),
     }
     summary = build_plan_summary(_ents("basic", members_max=None), usage)
     items = {item.label: item for item in summary.limits}
 
-    assert items["Documentos procesados al día"].percent == 100
+    assert items["Documentos en la base de conocimiento"].percent == 100
     assert items["Miembros del equipo"].percent is None
     assert items["Miembros del equipo"].value == "Ilimitado"
 

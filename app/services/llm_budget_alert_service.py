@@ -207,7 +207,7 @@ async def chat_cutoff_message(db: AsyncSession, tenant_id: UUID) -> str:
     Teléfono y email son los del admin del tenant en ``users`` (D020): el
     teléfono lo mantiene el propio admin desde la ficha de miembro.
     """
-    admin = await _tenant_admin(db, tenant_id)
+    admin = await tenant_admin(db, tenant_id)
     phone = admin.phone if admin is not None else None
     email = admin.email if admin is not None else None
     if phone is None or email is None:
@@ -220,7 +220,7 @@ async def chat_cutoff_message(db: AsyncSession, tenant_id: UUID) -> str:
     return build_chat_cutoff_message(phone, email)
 
 
-async def _tenant_admin(db: AsyncSession, tenant_id: UUID) -> User | None:
+async def tenant_admin(db: AsyncSession, tenant_id: UUID) -> User | None:
     """Miembro activo con rol admin (uno por tenant)."""
     stmt = (
         select(User)
@@ -264,7 +264,7 @@ async def send_sadm_alert(db: AsyncSession, tenant_id: UUID) -> bool:
         logger.warning("llm_budget.sadm_email_missing", tenant_id=str(tenant_id))
         return False
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
-    admin = await _tenant_admin(db, tenant_id)
+    admin = await tenant_admin(db, tenant_id)
     contact = (
         await _admin_contact(admin)
         if admin is not None
@@ -301,7 +301,7 @@ async def is_budget_exhausted(db: AsyncSession, tenant_id: UUID, ents: Entitleme
 
 async def send_admin_alert(db: AsyncSession, tenant_id: UUID, kind: AdminAlertKind) -> bool:
     """Envía el email de aviso al admin del tenant. False si no hay destinatario."""
-    admin = await _tenant_admin(db, tenant_id)
+    admin = await tenant_admin(db, tenant_id)
     to = admin.email if admin is not None else None
     if not to:
         logger.warning("llm_budget.alert_no_admin", tenant_id=str(tenant_id), kind=kind)

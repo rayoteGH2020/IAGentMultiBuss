@@ -10,6 +10,16 @@ from app.core.errors import NotFoundError, ValidationError
 from app.services import document_delete_service
 
 
+@pytest.fixture(autouse=True)
+def _release_on_delete(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """La devolución de cupo al borrar se prueba con BD en test_document_quota.py."""
+    release = AsyncMock()
+    monkeypatch.setattr(
+        document_delete_service.document_quota_service, "release_on_delete", release
+    )
+    return release
+
+
 @pytest.mark.asyncio
 async def test_delete_invoice_removes_db_attempts_llm_call_and_r2() -> None:
     db = AsyncMock()

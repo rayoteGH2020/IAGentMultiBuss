@@ -9,9 +9,6 @@ if TYPE_CHECKING:
     from app.schemas.entitlements import Entitlements
 
 MSG_DOCUMENTS_DAILY = "Has alcanzado el limite diario de documentos de tu plan."
-MSG_DOCUMENT_RETRIES_DAILY = (
-    "Has alcanzado el limite diario de reintentos de documentos de tu plan."
-)
 MSG_KNOWLEDGE_UPLOADS_DAILY = (
     "Has alcanzado el limite diario de subidas a la base de conocimiento de tu plan."
 )

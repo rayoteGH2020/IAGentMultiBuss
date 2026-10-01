@@ -14,6 +14,7 @@ STATUS_LABELS: dict[str, str] = {
     "ready": "Listo",
     "failed": "Error",
     "reviewed": "Revisado",
+    "quota_pending": "Pendiente de cupo",
     # Conocimiento (KnowledgeDocumentStatus)
     "indexing": "Indexando",
     # Citas (AppointmentStatus)

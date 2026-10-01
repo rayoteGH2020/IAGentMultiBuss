@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from app.core.document_processing_errors import is_retryable
-from app.services.document_processing_service import is_processing_stale
+from app.services.document_processing_service import is_processing_stale, retries_exhausted
 
 if TYPE_CHECKING:
     from app.models import Contract, Insurance, Invoice, LLMCall, Ticket
@@ -84,6 +84,7 @@ class PanelDocumentRow:
     # Contratos: periodicidad de la cuota mostrada en total ("/ mes").
     total_suffix: str | None = None
     suggested_doc_type: str | None = None
+    manual_retry_count: int = 0
     invoice: Invoice | None = None
     ticket: Ticket | None = None
     contract: Contract | None = None
@@ -115,12 +116,26 @@ class PanelDocumentRow:
         return "—"
 
     @property
+    def is_quota_pending(self) -> bool:
+        """Guardado sin procesar por falta de cupo o de presupuesto de IA (bloque 2)."""
+        return self.status == "quota_pending"
+
+    @property
+    def needs_manual_review(self) -> bool:
+        """«Revisión manual»: fallido con los 3 reintentos manuales agotados (D027)."""
+        return (
+            self.status == "failed"
+            and is_retryable(self.error_code)
+            and retries_exhausted(self.manual_retry_count, self.error_code)
+        )
+
+    @property
     def can_retry(self) -> bool:
         """Reintento en failed (si el código lo permite) o processing/pending stale."""
         if self.awaits_type_confirmation:
             return False
         if self.status == "failed":
-            return is_retryable(self.error_code)
+            return is_retryable(self.error_code) and not self.needs_manual_review
         if self.status in ("pending", "processing"):
             return is_processing_stale(self.updated_at)
         return False

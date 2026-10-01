@@ -156,6 +156,29 @@ async def try_consume(
     return True
 
 
+async def bag_usage(
+    db: AsyncSession,
+    ents: Entitlements,
+    tenant_id: UUID,
+    code: str,
+    *,
+    period: date | None = None,
+) -> tuple[int, int | None]:
+    """(usado, tope) de la bolsa de ``code`` en el periodo. Tope ``None`` = sin límite."""
+    _require_monthly_code(code)
+    current = period or current_period_start()
+    bag = monthly_quota_bag(code)
+    rows = await _rows(db, tenant_id, current, bag)
+    used = sum(row.used for row in rows.values())
+    caps = [_plan_cap(ents, member) for member in bag]
+    if any(cap is None for cap in caps):
+        return used, None
+    total_cap = sum(cap for cap in caps if cap is not None) + sum(
+        row.extra for row in rows.values()
+    )
+    return used, total_cap
+
+
 async def release(
     db: AsyncSession,
     tenant_id: UUID,

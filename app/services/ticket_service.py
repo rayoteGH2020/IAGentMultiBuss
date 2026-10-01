@@ -39,6 +39,12 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+async def _release_quota(db: AsyncSession, document: Ticket) -> None:
+    from app.services import document_quota_service
+
+    await document_quota_service.release_reservation(db, document)
+
+
 async def list_tickets(
     db: AsyncSession,
     tenant_id: UUID,
@@ -170,6 +176,8 @@ async def apply_extraction_result(
     if not ticket_extraction_is_usable(recibo):
         ticket.status = TicketStatus.failed
         ticket.error_code = DocumentErrorCode.extraction_failed.value
+        # Extracción inservible: no consume cupo (bloque 2).
+        await _release_quota(db, ticket)
         ticket.error_message = failure_message(
             UNUSABLE_EXTRACTION_TECHNICAL,
             error_code=DocumentErrorCode.extraction_failed,
@@ -239,6 +247,8 @@ async def mark_failed(
     ticket.status = TicketStatus.failed
     if llm_call_id is not None:
         ticket.llm_call_id = llm_call_id
+    # Un documento que no termina bien no consume cupo (bloque 2).
+    await _release_quota(db, ticket)
     logger.warning(
         "ticket.processing_failed",
         ticket_id=str(ticket_id),

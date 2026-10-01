@@ -125,11 +125,6 @@ def daily_ttl_seconds(now: datetime | None = None) -> int:
     return int(remaining.total_seconds()) + _DAY_TTL_MARGIN_SECONDS
 
 
-def document_retries_key(tenant_id: UUID, now: datetime | None = None) -> str:
-    """Clave del contador diario de reintentos (check y registro deben coincidir)."""
-    return f"rate:document_retries:{tenant_id}:{local_day_key(now)}"
-
-
 # Claves de contadores diarios por tenant: únicas para el control de cuota y
 # para mostrar el consumo en Mi cuenta (plan_quota_service.get_limit_usage).
 def documents_upload_key(tenant_id: UUID, now: datetime | None = None) -> str:
@@ -172,27 +167,6 @@ async def check_documents_upload_rate(
         log_event="documents.upload.rate_limit",
         tenant_id=str(tenant_id),
         n_files=n_files,
-    )
-
-
-async def check_document_retries_rate(
-    redis: Any,
-    *,
-    tenant_id: UUID,
-    max_per_day: int | None,
-) -> None:
-    key = document_retries_key(tenant_id)
-    from app.core.plan_limits import MSG_DOCUMENT_RETRIES_DAILY
-
-    await increment_quota(
-        redis,
-        key=key,
-        delta=1,
-        max_count=max_per_day,
-        ttl_seconds=daily_ttl_seconds(),
-        error_message=MSG_DOCUMENT_RETRIES_DAILY,
-        log_event="documents.retry.rate_limit",
-        tenant_id=str(tenant_id),
     )
 
 

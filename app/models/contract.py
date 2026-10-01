@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     func,
@@ -93,6 +94,10 @@ class Contract(Base):
     error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Reintentos lanzados por el usuario: máximo 3 por documento (D027).
+    manual_retry_count: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
     llm_call_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     llm_call: Mapped[LLMCall | None] = relationship(
         "LLMCall",

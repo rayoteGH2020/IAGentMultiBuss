@@ -13,7 +13,6 @@ from app.core.entitlement_codes import (
     LIMIT_CHANNEL_EXTERNAL_SLOTS,
     LIMIT_CHANNEL_MESSAGES_PER_HOUR,
     LIMIT_CHAT_MESSAGES_PER_DAY,
-    LIMIT_DOCUMENT_RETRIES_PER_DAY,
     LIMIT_DOCUMENTS_PER_DAY,
     LIMIT_KNOWLEDGE_DOCS_MAX,
     LIMIT_KNOWLEDGE_UPLOADS_PER_DAY,
@@ -37,7 +36,6 @@ from app.core.rate_limiter import (
     check_documents_upload_rate,
     check_knowledge_upload_rate,
     check_voice_notes_rate,
-    document_retries_key,
     documents_upload_key,
     knowledge_upload_key,
 )
@@ -99,45 +97,6 @@ async def ensure_documents_upload(
         tenant_id=tenant_id,
         max_per_day=cap,
         n_files=n_files,
-    )
-
-
-async def ensure_document_retry(
-    redis: Any,
-    ents: Entitlements,
-    tenant_id: UUID,
-) -> None:
-    """Comprueba cupo de reintentos sin consumir (consumo tras encolar OK)."""
-    cap = resolve_quota_cap(
-        ents,
-        LIMIT_DOCUMENT_RETRIES_PER_DAY,
-        platform_cap=None,
-    )
-    from app.core.plan_limits import MSG_DOCUMENT_RETRIES_DAILY
-    from app.core.rate_limiter import assert_quota_headroom, document_retries_key
-
-    key = document_retries_key(tenant_id)
-
-    await assert_quota_headroom(
-        redis,
-        key=key,
-        delta=1,
-        max_count=cap,
-        error_message=MSG_DOCUMENT_RETRIES_DAILY,
-        log_event="documents.retry.rate_limit",
-        tenant_id=str(tenant_id),
-    )
-
-
-async def record_document_retry(
-    redis: Any,
-    tenant_id: UUID,
-) -> None:
-    """Registra un reintento consumido tras encolar con exito."""
-    from app.core.rate_limiter import daily_ttl_seconds, document_retries_key, record_quota_usage
-
-    await record_quota_usage(
-        redis, key=document_retries_key(tenant_id), delta=1, ttl_seconds=daily_ttl_seconds()
     )
 
 
@@ -326,7 +285,6 @@ async def get_limit_usage(
     """
     counts: dict[str, int | None] = {
         LIMIT_DOCUMENTS_PER_DAY: await _redis_count(redis, documents_upload_key(tenant_id)),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: await _redis_count(redis, document_retries_key(tenant_id)),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: await _redis_count(redis, knowledge_upload_key(tenant_id)),
         LIMIT_CHAT_MESSAGES_PER_DAY: await _redis_count(redis, chat_messages_tenant_key(tenant_id)),
         LIMIT_KNOWLEDGE_DOCS_MAX: await _count_knowledge_docs(db, tenant_id),

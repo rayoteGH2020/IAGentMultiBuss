@@ -163,7 +163,7 @@ async def test_cutoff_message_uses_tenant_admin_contact(
     monkeypatch: pytest.MonkeyPatch, admin: Any, expected: str
 ) -> None:
     """Teléfono y email del admin del tenant en ``users`` (D020), sin Clerk."""
-    monkeypatch.setattr(svc, "_tenant_admin", AsyncMock(return_value=admin))
+    monkeypatch.setattr(svc, "tenant_admin", AsyncMock(return_value=admin))
     assert await svc.chat_cutoff_message(AsyncMock(), uuid4()) == expected
 
 

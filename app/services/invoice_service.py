@@ -47,6 +47,12 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+async def _release_quota(db: AsyncSession, document: Invoice) -> None:
+    from app.services import document_quota_service
+
+    await document_quota_service.release_reservation(db, document)
+
+
 @dataclass(frozen=True, slots=True)
 class InvoiceDateStats:
     """Contadores de facturas por `Invoice.fecha` (fecha del documento, no subida)."""
@@ -290,6 +296,8 @@ async def apply_extraction_result(
     if not invoice_extraction_is_usable(factura):
         invoice.status = InvoiceStatus.failed
         invoice.error_code = DocumentErrorCode.extraction_failed.value
+        # Extracción inservible: no consume cupo (bloque 2).
+        await _release_quota(db, invoice)
         invoice.error_message = failure_message(
             UNUSABLE_EXTRACTION_TECHNICAL,
             error_code=DocumentErrorCode.extraction_failed,
@@ -400,6 +408,8 @@ async def mark_failed(
     invoice.status = InvoiceStatus.failed
     if llm_call_id is not None:
         invoice.llm_call_id = llm_call_id
+    # Un documento que no termina bien no consume cupo (bloque 2).
+    await _release_quota(db, invoice)
     logger.warning(
         "invoice.processing_failed",
         invoice_id=str(invoice_id),

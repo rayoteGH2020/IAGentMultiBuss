@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import RateLimitError, ValidationError
 from app.core.templating import render
 from app.core.uploads import (
@@ -24,6 +25,7 @@ from app.services import (
     document_delete_service,
     document_panel_service,
     document_processing_service,
+    document_quota_service,
     document_type_confirm_service,
     document_upload_service,
     entitlement_service,
@@ -184,6 +186,7 @@ async def upload_documents(
 
     created_document_ids: list[str] = []
     errors: list[dict[str, str]] = []
+    notices: list[dict[str, str]] = []
     ents = await entitlement_service.resolve_entitlements(db, tenant)
 
     # Ingest secuencial (misma sesión DB); el paralelismo de extracción es ARQ.
@@ -206,6 +209,15 @@ async def upload_documents(
                 request_ctx=audit_request_context(request),
             )
             created_document_ids.append(str(result.record_id))
+            if result.quota_pending:
+                notices.append(
+                    {
+                        "filename": display_name,
+                        "message": document_quota_service.pending_message(
+                            DocumentErrorCode.monthly_quota
+                        ),
+                    }
+                )
 
         except RateLimitError as exc:
             errors.append({"filename": display_name, "error": exc.message})
@@ -228,6 +240,7 @@ async def upload_documents(
         db,
         tenant.id,
         upload_errors=errors,
+        upload_notices=notices,
         just_uploaded_ids=created_document_ids,
     )
 

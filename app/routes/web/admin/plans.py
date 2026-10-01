@@ -20,6 +20,7 @@ from app.deps import CurrentUser, SuperAdmin, get_db_no_tenant
 from app.schemas.entitlements import EntitlementsOverride
 from app.services import (
     admin_service,
+    document_quota_service,
     entitlement_service,
     monthly_quota_service,
     plan_change_service,
@@ -166,6 +167,7 @@ async def add_quota_extra(
         actor_user_id=user.id,
         reason=reason.strip() or None,
     )
+    await document_quota_service.on_quota_extra_added(db, tenant_id=tenant.id, code=code.strip())
     label = MONTHLY_QUOTA_UI_LABELS.get(code, code)
     return render(
         request,

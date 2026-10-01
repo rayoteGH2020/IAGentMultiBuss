@@ -17,6 +17,7 @@ from app.models.document_processing_attempt import DocumentProcessingAttempt
 from app.services import (
     audit_service,
     contract_service,
+    document_quota_service,
     insurance_service,
     invoice_service,
     ticket_service,
@@ -90,6 +91,9 @@ async def delete_document(
         },
         request_ctx=request_ctx,
     )
+
+    if document_kind in ("invoice", "ticket"):
+        await document_quota_service.release_on_delete(db, loaded.entity)
 
     await db.execute(
         delete(DocumentProcessingAttempt).where(

@@ -37,8 +37,8 @@ def test_upload_slots_show_filename_in_two_lines_with_tooltip() -> None:
 def test_document_rows_show_filename_in_two_lines_with_tooltip() -> None:
     html = _read("document_row.html")
     tags = _tags_showing(html, "document.source_filename")
-    # confirmar tipo, procesando y error.
-    assert len(tags) == 3
+    # confirmar tipo, pendiente de cupo, procesando y error.
+    assert len(tags) == 4
     _assert_two_lines_with_tooltip(tags, 'title="{{ document.source_filename')
 
 

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     func,
@@ -39,6 +40,9 @@ class InvoiceStatus(enum.StrEnum):
     ready = "ready"  # extracción completada, datos disponibles
     failed = "failed"  # error en extracción; error_message contiene el detalle
     reviewed = "reviewed"  # un usuario humano revisó y confirmó los datos
+    # Sin cupo mensual o sin presupuesto de IA: guardado, no encolado; lo procesa
+    # process_quota_pending al renovarse el cupo o tras una ampliación (spec §4.2).
+    quota_pending = "quota_pending"
 
 
 class Invoice(Base):
@@ -118,6 +122,15 @@ class Invoice(Base):
     error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # SHA-256 del fichero: detecta resubidas del mismo fichero sin llamar al LLM.
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Mes (día 1) en que se reservó la unidad del cupo facturas + tickets; NULL =
+    # sin reserva. La devolución va siempre a ese mes (document_quota_service).
+    quota_period: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Reintentos lanzados por el usuario: máximo 3 por documento (D027).
+    manual_retry_count: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
     # Sin ForeignKey explícito a llm_calls: la relación es opcional (puede no
     # existir si el job falló antes de registrar la llamada) y evita dependencias
     # de integridad referencial entre dos tablas de ciclos de vida distintos.
@@ -176,6 +189,12 @@ class Invoice(Base):
         # y la futura feature de búsqueda por período en la UI.
         Index("ix_invoices_tenant_fecha", "tenant_id", "fecha"),
         Index("ix_invoices_tenant_dismissed", "tenant_id", "dismissed_at"),
+        Index(
+            "ix_invoices_tenant_sha256",
+            "tenant_id",
+            "file_sha256",
+            postgresql_where=text("file_sha256 IS NOT NULL"),
+        ),
         Index(
             "ix_invoices_error_code",
             "error_code",

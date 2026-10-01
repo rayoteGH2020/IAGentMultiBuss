@@ -10,6 +10,7 @@ import structlog
 
 from app.core.errors import ValidationError
 from app.core.media_limits import MediaLimitExceeded, inspect_document
+from app.core.uploads import UploadValidationError
 from app.jobs.queue import (
     enqueue_contract_processing,
     enqueue_insurance_processing,
@@ -21,7 +22,9 @@ from app.services import (
     audit_service,
     contract_service,
     document_classification,
+    document_quota_service,
     document_type_confirm_service,
+    entitlement_service,
     insurance_service,
     invoice_service,
     ticket_service,
@@ -56,6 +59,8 @@ class DocumentIngestResult:
     rejected: bool = False
     # True cuando hay mismatch de tipo y se espera confirmación HTMX.
     awaiting_type_confirmation: bool = False
+    # True cuando no había cupo mensual: guardado en quota_pending, sin encolar.
+    quota_pending: bool = False
 
     @property
     def record_id(self) -> UUID:
@@ -110,6 +115,7 @@ async def ingest_uploaded_document(
             "size_bytes": len(file_bytes),
             "rejected": result.rejected,
             "awaiting_type_confirmation": result.awaiting_type_confirmation,
+            "quota_pending": result.quota_pending,
         },
         request_ctx=request_ctx,
     )
@@ -136,7 +142,26 @@ async def _ingest_uploaded_document(
     Los límites de recursos se comprueban aquí, antes de encolar: si el
     documento no los cumple se sube igualmente a R2 y se registra en estado
     fallido, pero no llega al worker.
+
+    Facturas y tickets: antes de nada se descarta un fichero ya subido (SHA-256,
+    sin R2 ni LLM ni cupo) y, al encolar, se reserva el cupo mensual; sin hueco,
+    el documento queda en `quota_pending` (`document_quota_service`).
     """
+    sha256: str | None = None
+    if doc_type in {DocTypeCode.factura, DocTypeCode.ticket}:
+        sha256 = document_quota_service.file_sha256(file_bytes)
+        duplicate = await document_quota_service.find_duplicate(db, tenant_id, sha256)
+        if duplicate is not None:
+            logger.info(
+                "document_ingest.duplicate",
+                tenant_id=str(tenant_id),
+                document_kind=duplicate.kind,
+                document_id=str(duplicate.document_id),
+            )
+            raise UploadValidationError(
+                document_quota_service.duplicate_message(duplicate, filename=filename)
+            )
+
     if redis is not None and ents is not None:
         from app.services import plan_quota_service
 
@@ -172,8 +197,10 @@ async def _ingest_uploaded_document(
             source_filename=filename,
         )
 
-    if doc_type == DocTypeCode.factura:
-        return await _ingest_invoice(
+    if doc_type in {DocTypeCode.factura, DocTypeCode.ticket}:
+        quota_ents = ents or await entitlement_service.resolve_tenant(db, tenant_id)
+        ingest = _ingest_invoice if doc_type == DocTypeCode.factura else _ingest_ticket
+        return await ingest(
             db,
             tenant_id=tenant_id,
             filename=filename,
@@ -181,17 +208,8 @@ async def _ingest_uploaded_document(
             mime_type=mime_type,
             rejection=rejection,
             verification=verification,
-        )
-
-    if doc_type == DocTypeCode.ticket:
-        return await _ingest_ticket(
-            db,
-            tenant_id=tenant_id,
-            filename=filename,
-            file_bytes=file_bytes,
-            mime_type=mime_type,
-            rejection=rejection,
-            verification=verification,
+            sha256=sha256,
+            ents=quota_ents,
         )
 
     if doc_type == DocTypeCode.contrato:
@@ -284,6 +302,8 @@ async def _ingest_invoice(
     mime_type: str,
     rejection: MediaLimitExceeded | None,
     verification: document_classification.TypeVerificationResult | None,
+    sha256: str | None,
+    ents: Entitlements,
 ) -> DocumentIngestResult:
     doc_type = DocTypeCode.factura
     invoice = await invoice_service.create_invoice_from_upload(
@@ -294,6 +314,7 @@ async def _ingest_invoice(
         mime_type=mime_type,
         doc_type=doc_type,
     )
+    invoice.file_sha256 = sha256
     await db.flush()
     if rejection is not None:
         await invoice_service.mark_failed(
@@ -325,6 +346,14 @@ async def _ingest_invoice(
             awaiting_type_confirmation=True,
         )
 
+    if not await document_quota_service.reserve_or_hold(db, ents, invoice):
+        return DocumentIngestResult(
+            kind="invoice",
+            doc_type=doc_type,
+            invoice=invoice,
+            quota_pending=True,
+        )
+
     await enqueue_invoice_processing(invoice.id, tenant_id)
     logger.info(
         "document_ingest.invoice",
@@ -348,6 +377,8 @@ async def _ingest_ticket(
     mime_type: str,
     rejection: MediaLimitExceeded | None,
     verification: document_classification.TypeVerificationResult | None,
+    sha256: str | None,
+    ents: Entitlements,
 ) -> DocumentIngestResult:
     doc_type = DocTypeCode.ticket
     ticket = await ticket_service.create_ticket_from_upload(
@@ -358,6 +389,7 @@ async def _ingest_ticket(
         mime_type=mime_type,
         doc_type=doc_type,
     )
+    ticket.file_sha256 = sha256
     await db.flush()
     if rejection is not None:
         await ticket_service.mark_failed(
@@ -387,6 +419,14 @@ async def _ingest_ticket(
             doc_type=doc_type,
             ticket=ticket,
             awaiting_type_confirmation=True,
+        )
+
+    if not await document_quota_service.reserve_or_hold(db, ents, ticket):
+        return DocumentIngestResult(
+            kind="ticket",
+            doc_type=doc_type,
+            ticket=ticket,
+            quota_pending=True,
         )
 
     await enqueue_ticket_processing(ticket.id, tenant_id)

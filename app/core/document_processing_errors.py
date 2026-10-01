@@ -33,6 +33,10 @@ class DocumentErrorCode(StrEnum):
     plan_feature_disabled = "plan_feature_disabled"
     # Mismatch de tipo factura/ticket: esperando confirmación HTMX (no encolar).
     type_confirmation_required = "type_confirmation_required"
+    # Motivos de ``quota_pending`` (no son fallos): sin cupo mensual de facturas y
+    # tickets, o sin presupuesto de IA. Se procesan solos al haber hueco.
+    monthly_quota = "monthly_quota"
+    llm_budget = "llm_budget"
 
 
 # Rechazos que dependen del fichero, no del momento: reintentar con el mismo
@@ -48,6 +52,23 @@ NON_RETRYABLE_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset(
         DocumentErrorCode.plan_feature_disabled,
     },
 )
+
+# Fallos que no causa el usuario (reinicio del worker, proveedor saturado o sin
+# saldo): reintentarlos no gasta reintento del mes ni del documento (decisión
+# 2026-10-01, bloque 3).
+FREE_RETRY_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset(
+    {
+        DocumentErrorCode.processing_interrupted,
+        DocumentErrorCode.provider_overload,
+        DocumentErrorCode.provider_billing,
+    },
+)
+
+
+def is_free_retry(error_code: str | None) -> bool:
+    """True si el fallo previo no lo causó el usuario y el reintento no se cobra."""
+    return error_code in {code.value for code in FREE_RETRY_ERROR_CODES}
+
 
 _ADMIN_CONTACT_HINT = (
     "Ponte en contacto con el administrador del sitio para gestionar su procesado."

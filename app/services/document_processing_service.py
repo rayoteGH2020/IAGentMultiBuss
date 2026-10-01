@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 from sqlalchemy import func, select
@@ -12,10 +12,12 @@ from app.config import get_settings
 from app.core.document_processing_errors import (
     PROCESSING_INTERRUPTED_USER_MESSAGE,
     DocumentErrorCode,
+    is_free_retry,
     is_retryable,
     rejection_message,
 )
-from app.core.errors import ValidationError
+from app.core.entitlement_codes import LIMIT_DOCUMENT_RETRIES_PER_MONTH
+from app.core.errors import RateLimitError, ValidationError
 from app.jobs.queue import (
     enqueue_contract_processing,
     enqueue_insurance_processing,
@@ -34,9 +36,12 @@ from app.models.invoice import InvoiceStatus
 from app.models.ticket import TicketStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.schemas.entitlements import Entitlements
 
 logger = structlog.get_logger(__name__)
 
@@ -45,6 +50,17 @@ DocumentKindLiteral = Literal["invoice", "ticket", "contract", "insurance"]
 _NOT_RETRYABLE_MESSAGE = (
     "Este documento no se puede reintentar porque no cumple los límites de procesado. "
     "Ponte en contacto con el administrador del sitio."
+)
+# Bloque 3 (D027): máximo de reintentos manuales por documento.
+MAX_MANUAL_RETRIES_PER_DOCUMENT = 3
+MSG_DOCUMENT_RETRIES_EXHAUSTED = (
+    "Este documento ya se ha reintentado 3 veces y queda para revisión manual. "
+    "Comprueba que el fichero sea legible o contacta con soporte."
+)
+MSG_RETRIES_MONTH = "Has agotado los reintentos de procesado de este mes. Se renuevan el {renewal}."
+MSG_RETRY_NO_DOCUMENT_QUOTA = (
+    "No se puede reintentar: has usado todas las facturas y tickets de este mes. "
+    "El cupo se renueva el {renewal}."
 )
 _STILL_PROCESSING_MESSAGE = (
     "Este documento sigue en procesado. Espera a que termine o inténtalo más tarde "
@@ -217,6 +233,13 @@ async def finalize_processing_attempt(
     )
 
 
+async def _release_quota(db: AsyncSession, document: Any) -> None:
+    """Un documento que no termina bien no consume cupo (bloque 2)."""
+    from app.services import document_quota_service
+
+    await document_quota_service.release_reservation(db, document)
+
+
 async def abandon_stale_processing(
     db: AsyncSession,
     *,
@@ -258,6 +281,7 @@ async def abandon_stale_processing(
         invoice_row.error_code = DocumentErrorCode.processing_interrupted.value
         invoice_row.error_message = user_msg
         invoice_row.updated_at = datetime.now(tz=UTC)
+        await _release_quota(db, invoice_row)
     elif document_kind == DocumentKind.ticket.value:
         from app.services import ticket_service
 
@@ -275,6 +299,7 @@ async def abandon_stale_processing(
         ticket_row.error_code = DocumentErrorCode.processing_interrupted.value
         ticket_row.error_message = user_msg
         ticket_row.updated_at = datetime.now(tz=UTC)
+        await _release_quota(db, ticket_row)
     elif document_kind == DocumentKind.contract.value:
         from app.services import contract_service
 
@@ -448,6 +473,115 @@ async def _prepare_retry_or_raise(
     raise ValidationError("Solo se puede reintentar un documento en estado de error.")
 
 
+async def _load_document(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    document_kind: DocumentKindLiteral,
+    document_id: UUID,
+) -> Any:
+    if document_kind == DocumentKind.invoice.value:
+        from app.services import invoice_service
+
+        return await invoice_service.get_invoice(db, tenant_id, document_id)
+    if document_kind == DocumentKind.ticket.value:
+        from app.services import ticket_service
+
+        return await ticket_service.get_ticket(db, tenant_id, document_id)
+    if document_kind == DocumentKind.contract.value:
+        from app.services import contract_service
+
+        return await contract_service.get_contract(db, tenant_id, document_id)
+    if document_kind == DocumentKind.insurance.value:
+        from app.services import insurance_service
+
+        return await insurance_service.get_insurance(db, tenant_id, document_id)
+    raise ValidationError("Tipo de documento no válido.")
+
+
+_RETRY_STATUSES: dict[str, tuple[object, object, tuple[object, ...]]] = {
+    # kind: (failed, processing, estados en curso que admiten reintento si están atascados)
+    "invoice": (
+        InvoiceStatus.failed,
+        InvoiceStatus.processing,
+        (InvoiceStatus.processing, InvoiceStatus.pending),
+    ),
+    "ticket": (
+        TicketStatus.failed,
+        TicketStatus.processing,
+        (TicketStatus.processing, TicketStatus.pending),
+    ),
+    "contract": (
+        ContractStatus.failed,
+        ContractStatus.processing,
+        (ContractStatus.processing, ContractStatus.pending),
+    ),
+    "insurance": (
+        InsuranceStatus.failed,
+        InsuranceStatus.processing,
+        (InsuranceStatus.processing, InsuranceStatus.pending),
+    ),
+}
+
+
+def _enqueue_for_retry(document_kind: DocumentKindLiteral) -> Callable[..., Awaitable[str]]:
+    # Se resuelve al llamar (no en un dict de módulo) para que los tests puedan
+    # parchear enqueue_*_processing en este módulo.
+    return {
+        "invoice": enqueue_invoice_processing,
+        "ticket": enqueue_ticket_processing,
+        "contract": enqueue_contract_processing,
+        "insurance": enqueue_insurance_processing,
+    }[document_kind]
+
+
+def retries_exhausted(manual_retry_count: int, error_code: str | None) -> bool:
+    """True si el documento ya agotó sus reintentos manuales («Revisión manual»).
+
+    Un fallo que no causó el usuario (``FREE_RETRY_ERROR_CODES``) se puede reintentar
+    siempre: ese reintento no cuenta.
+    """
+    return manual_retry_count >= MAX_MANUAL_RETRIES_PER_DOCUMENT and not is_free_retry(error_code)
+
+
+async def _charge_retry(
+    db: AsyncSession,
+    ents: Entitlements,
+    *,
+    tenant_id: UUID,
+    document_kind: DocumentKindLiteral,
+    row: Any,
+) -> bool:
+    """Aplica los límites del reintento. Devuelve True si el reintento cuenta.
+
+    Orden (todo en la transacción de la petición: si algo falla, no se gasta nada):
+    1. Máximo de reintentos por documento.
+    2. Facturas y tickets: reserva del cupo de documentos (se devolvió al fallar).
+    3. Reintento del mes.
+    """
+    from app.services import document_quota_service, monthly_quota_service
+
+    free = is_free_retry(row.error_code)
+    if retries_exhausted(row.manual_retry_count, row.error_code):
+        raise ValidationError(MSG_DOCUMENT_RETRIES_EXHAUSTED)
+
+    if document_kind in ("invoice", "ticket") and not await document_quota_service.reserve(
+        db, ents, row
+    ):
+        renewal = document_quota_service.renewal_label(document_quota_service.renewal_date())
+        raise RateLimitError(MSG_RETRY_NO_DOCUMENT_QUOTA.format(renewal=renewal))
+
+    if free:
+        return False
+    if not await monthly_quota_service.try_consume(
+        db, ents, tenant_id, LIMIT_DOCUMENT_RETRIES_PER_MONTH
+    ):
+        renewal = document_quota_service.renewal_label(document_quota_service.renewal_date())
+        raise RateLimitError(MSG_RETRIES_MONTH.format(renewal=renewal))
+    row.manual_retry_count += 1
+    return True
+
+
 async def retry_processing(
     db: AsyncSession,
     *,
@@ -457,175 +591,63 @@ async def retry_processing(
 ) -> None:
     """Reencola extracción sobre el mismo registro y fichero R2.
 
-    Acepta ``failed`` (reintento normal) o ``processing``/``pending`` stale
-    (abandona el attempt huérfano y reencola).
+    Acepta ``failed`` (reintento normal) o ``processing``/``pending`` atascados
+    (abandona el attempt huérfano y reencola). Límites del bloque 3 (D027): máximo
+    3 reintentos manuales por documento y ``document_retries_per_month``; un fallo
+    que no causó el usuario no gasta reintento.
     """
-    from app.core.cache import get_redis
-    from app.services import entitlement_service, plan_quota_service
+    from app.services import entitlement_service
 
-    redis = get_redis()
-    ents = await entitlement_service.resolve_tenant(db, tenant_id)
-    await plan_quota_service.ensure_document_retry(redis, ents, tenant_id)
-
-    now = datetime.now(tz=UTC)
-
-    if document_kind == DocumentKind.invoice.value:
-        from app.services import invoice_service
-
-        invoice_row = await invoice_service.get_invoice(db, tenant_id, document_id)
-        await _prepare_retry_or_raise(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-            status=invoice_row.status,
-            failed_status=InvoiceStatus.failed,
-            processing_statuses=(InvoiceStatus.processing, InvoiceStatus.pending),
-            error_code=invoice_row.error_code,
-            source_file_key=invoice_row.source_file_key,
-            updated_at=invoice_row.updated_at,
-        )
-        # Releer tras posible abandon.
-        invoice_row = await invoice_service.get_invoice(db, tenant_id, document_id)
-        invoice_row.status = InvoiceStatus.processing
-        invoice_row.error_code = None
-        invoice_row.error_message = None
-        invoice_row.dismissed_at = None
-        invoice_row.updated_at = now
-        await db.flush()
-        await begin_processing_attempt(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-        )
-        try:
-            await enqueue_invoice_processing(
-                invoice_row.id,
-                tenant_id,
-                replace_existing=True,
-            )
-        except Exception as exc:
-            raise RuntimeError("No se pudo encolar el reintento.") from exc
-    elif document_kind == DocumentKind.ticket.value:
-        from app.services import ticket_service
-
-        ticket_row = await ticket_service.get_ticket(db, tenant_id, document_id)
-        await _prepare_retry_or_raise(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-            status=ticket_row.status,
-            failed_status=TicketStatus.failed,
-            processing_statuses=(TicketStatus.processing, TicketStatus.pending),
-            error_code=ticket_row.error_code,
-            source_file_key=ticket_row.source_file_key,
-            updated_at=ticket_row.updated_at,
-        )
-        ticket_row = await ticket_service.get_ticket(db, tenant_id, document_id)
-        ticket_row.status = TicketStatus.processing
-        ticket_row.error_code = None
-        ticket_row.error_message = None
-        ticket_row.dismissed_at = None
-        ticket_row.updated_at = now
-        await db.flush()
-        await begin_processing_attempt(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-        )
-        try:
-            await enqueue_ticket_processing(
-                ticket_row.id,
-                tenant_id,
-                replace_existing=True,
-            )
-        except Exception as exc:
-            raise RuntimeError("No se pudo encolar el reintento.") from exc
-    elif document_kind == DocumentKind.contract.value:
-        from app.services import contract_service
-
-        contract_row = await contract_service.get_contract(db, tenant_id, document_id)
-        await _prepare_retry_or_raise(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-            status=contract_row.status,
-            failed_status=ContractStatus.failed,
-            processing_statuses=(ContractStatus.processing, ContractStatus.pending),
-            error_code=contract_row.error_code,
-            source_file_key=contract_row.source_file_key,
-            updated_at=contract_row.updated_at,
-        )
-        contract_row = await contract_service.get_contract(db, tenant_id, document_id)
-        contract_row.status = ContractStatus.processing
-        contract_row.error_code = None
-        contract_row.error_message = None
-        contract_row.dismissed_at = None
-        contract_row.updated_at = now
-        await db.flush()
-        await begin_processing_attempt(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-        )
-        try:
-            await enqueue_contract_processing(
-                contract_row.id,
-                tenant_id,
-                replace_existing=True,
-            )
-        except Exception as exc:
-            raise RuntimeError("No se pudo encolar el reintento.") from exc
-    elif document_kind == DocumentKind.insurance.value:
-        from app.services import insurance_service
-
-        insurance_row = await insurance_service.get_insurance(db, tenant_id, document_id)
-        await _prepare_retry_or_raise(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-            status=insurance_row.status,
-            failed_status=InsuranceStatus.failed,
-            processing_statuses=(InsuranceStatus.processing, InsuranceStatus.pending),
-            error_code=insurance_row.error_code,
-            source_file_key=insurance_row.source_file_key,
-            updated_at=insurance_row.updated_at,
-        )
-        insurance_row = await insurance_service.get_insurance(db, tenant_id, document_id)
-        insurance_row.status = InsuranceStatus.processing
-        insurance_row.error_code = None
-        insurance_row.error_message = None
-        insurance_row.dismissed_at = None
-        insurance_row.updated_at = now
-        await db.flush()
-        await begin_processing_attempt(
-            db,
-            tenant_id=tenant_id,
-            document_kind=document_kind,
-            document_id=document_id,
-        )
-        try:
-            await enqueue_insurance_processing(
-                insurance_row.id,
-                tenant_id,
-                replace_existing=True,
-            )
-        except Exception as exc:
-            raise RuntimeError("No se pudo encolar el reintento.") from exc
-    else:
+    if document_kind not in _RETRY_STATUSES:
         raise ValidationError("Tipo de documento no válido.")
+    failed_status, processing_status, busy_statuses = _RETRY_STATUSES[document_kind]
 
-    await plan_quota_service.record_document_retry(redis, tenant_id)
+    row = await _load_document(
+        db, tenant_id=tenant_id, document_kind=document_kind, document_id=document_id
+    )
+    await _prepare_retry_or_raise(
+        db,
+        tenant_id=tenant_id,
+        document_kind=document_kind,
+        document_id=document_id,
+        status=row.status,
+        failed_status=failed_status,
+        processing_statuses=busy_statuses,
+        error_code=row.error_code,
+        source_file_key=row.source_file_key,
+        updated_at=row.updated_at,
+    )
+    # Releer tras un posible abandono (cambia estado y error_code).
+    row = await _load_document(
+        db, tenant_id=tenant_id, document_kind=document_kind, document_id=document_id
+    )
+    ents = await entitlement_service.resolve_tenant(db, tenant_id)
+    counted = await _charge_retry(
+        db, ents, tenant_id=tenant_id, document_kind=document_kind, row=row
+    )
+
+    row.status = processing_status
+    row.error_code = None
+    row.error_message = None
+    row.dismissed_at = None
+    row.updated_at = datetime.now(tz=UTC)
+    await db.flush()
+    await begin_processing_attempt(
+        db,
+        tenant_id=tenant_id,
+        document_kind=document_kind,
+        document_id=document_id,
+    )
+    try:
+        await _enqueue_for_retry(document_kind)(row.id, tenant_id, replace_existing=True)
+    except Exception as exc:
+        raise RuntimeError("No se pudo encolar el reintento.") from exc
 
     logger.info(
         "document.retry_enqueued",
         tenant_id=str(tenant_id),
         document_kind=document_kind,
         document_id=str(document_id),
+        manual_retry_count=row.manual_retry_count,
+        retry_counted=counted,
     )

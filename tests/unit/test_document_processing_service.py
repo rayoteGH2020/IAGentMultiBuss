@@ -4,24 +4,43 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 from app.core.db import set_tenant_context
 from app.core.document_processing_errors import DocumentErrorCode
+from app.core.entitlement_codes import (
+    LIMIT_DOCUMENT_RETRIES_PER_MONTH,
+    LIMIT_INVOICES_PER_MONTH,
+    LIMIT_TICKETS_PER_MONTH,
+)
 from app.core.errors import ValidationError
 from app.models import DocTypeCode, Invoice, InvoiceStatus, Tenant
 from app.models.document_processing_attempt import (
     DocumentProcessingAttempt,
     ProcessingAttemptStatus,
 )
+from app.schemas.entitlements import Entitlements
 from app.services import doc_type_service, document_processing_service, invoice_service
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+
+
+def _retry_ents() -> Entitlements:
+    return Entitlements(
+        plan_code="basic",
+        features=frozenset({"documents"}),
+        limits={
+            LIMIT_INVOICES_PER_MONTH: Decimal("40"),
+            LIMIT_TICKETS_PER_MONTH: Decimal("30"),
+            LIMIT_DOCUMENT_RETRIES_PER_MONTH: Decimal("40"),
+        },
+    )
 
 
 async def _failed_invoice(
@@ -156,11 +175,7 @@ async def test_retry_is_blocked_for_limit_rejections(
         patch("app.services.document_processing_service.enqueue_invoice_processing", new=enqueue),
         patch(
             "app.services.entitlement_service.resolve_tenant",
-            AsyncMock(return_value=MagicMock()),
-        ),
-        patch(
-            "app.services.plan_quota_service.ensure_document_retry",
-            AsyncMock(),
+            AsyncMock(return_value=_retry_ents()),
         ),
         patch(
             "app.core.cache.get_redis",
@@ -298,11 +313,7 @@ async def test_retry_stale_processing_abandons_and_reenqueues(
         ),
         patch(
             "app.services.entitlement_service.resolve_tenant",
-            AsyncMock(return_value=MagicMock()),
-        ),
-        patch(
-            "app.services.plan_quota_service.ensure_document_retry",
-            AsyncMock(),
+            AsyncMock(return_value=_retry_ents()),
         ),
         patch(
             "app.core.cache.get_redis",
@@ -353,11 +364,7 @@ async def test_retry_recent_processing_is_rejected(
         patch("app.services.document_processing_service.enqueue_invoice_processing", new=enqueue),
         patch(
             "app.services.entitlement_service.resolve_tenant",
-            AsyncMock(return_value=MagicMock()),
-        ),
-        patch(
-            "app.services.plan_quota_service.ensure_document_retry",
-            AsyncMock(),
+            AsyncMock(return_value=_retry_ents()),
         ),
         patch(
             "app.core.cache.get_redis",

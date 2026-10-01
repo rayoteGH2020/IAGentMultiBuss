@@ -83,7 +83,10 @@ _ADVANCED_PRODUCT: Final[frozenset[str]] = _BASE_PRODUCT | frozenset(
     }
 )
 
+# Freno contra scripts (D027): sin cambios de valores; ya no se muestra en «Mi cuenta».
 LIMIT_DOCUMENTS_PER_DAY: Final = "documents_per_day"
+# Retirado (bloque 3, p80): lo sustituye document_retries_per_month. Sigue siendo un
+# código válido para no romper overrides antiguos, pero no está en el catálogo.
 LIMIT_DOCUMENT_RETRIES_PER_DAY: Final = "document_retries_per_day"
 LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Final = "knowledge_uploads_per_day"
 LIMIT_KNOWLEDGE_DOCS_MAX: Final = "knowledge_docs_max"
@@ -183,8 +186,6 @@ def feature_ui_label(code: str) -> str:
 # Fuera a propósito: voice_notes_per_hour (no se ofrece, D012) y
 # llm_budget_eur_month (tope interno de coste, no es una prestación).
 LIMIT_UI_LABELS: Final[dict[str, str]] = {
-    LIMIT_DOCUMENTS_PER_DAY: "Documentos procesados al día",
-    LIMIT_DOCUMENT_RETRIES_PER_DAY: "Reintentos de procesado al día",
     LIMIT_KNOWLEDGE_DOCS_MAX: "Documentos en la base de conocimiento",
     LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: "Subidas a la base de conocimiento al día",
     LIMIT_CHAT_MESSAGES_PER_DAY: "Mensajes de chat al día",
@@ -233,7 +234,6 @@ PLAN_FEATURES: Final[dict[str, frozenset[str]]] = {
 PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
     PLAN_CODE_BASIC: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("50"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("20"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("25"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("100"),
         LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("100"),
@@ -253,7 +253,6 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
     },
     PLAN_CODE_ADVANCED: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("200"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("80"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("60"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("400"),
         LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("250"),
@@ -273,7 +272,6 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
     },
     PLAN_CODE_PREMIUM: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("800"),
-        LIMIT_DOCUMENT_RETRIES_PER_DAY: Decimal("300"),
         LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: Decimal("200"),
         LIMIT_KNOWLEDGE_DOCS_MAX: Decimal("1500"),
         LIMIT_CHAT_MESSAGES_PER_DAY: Decimal("600"),

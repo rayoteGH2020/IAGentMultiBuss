@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from app.core.entitlement_codes import LIMIT_DOCUMENTS_PER_DAY
+from app.core.entitlement_codes import (
+    LIMIT_DOCUMENTS_PER_DAY,
+    LIMIT_INVOICES_PER_MONTH,
+    LIMIT_TICKETS_PER_MONTH,
+)
 from app.core.errors import RateLimitError
 from app.models import DocTypeCode, Tenant
 from app.schemas.entitlements import Entitlements
@@ -65,7 +69,11 @@ async def test_upload_under_limit_enqueues(
     ents = Entitlements(
         plan_code="basic",
         features=frozenset({"documents"}),
-        limits={LIMIT_DOCUMENTS_PER_DAY: Decimal("5")},
+        limits={
+            LIMIT_DOCUMENTS_PER_DAY: Decimal("5"),
+            LIMIT_INVOICES_PER_MONTH: Decimal("40"),
+            LIMIT_TICKETS_PER_MONTH: Decimal("30"),
+        },
     )
     redis = AsyncMock()
     redis.incrby = AsyncMock(return_value=1)

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 from app.core import rate_limiter
-from app.core.rate_limiter import daily_ttl_seconds, document_retries_key, local_day_key
+from app.core.rate_limiter import daily_ttl_seconds, local_day_key
 
 _MARGIN = 3600
 
@@ -55,15 +55,9 @@ def test_daily_ttl_lasts_until_local_midnight_even_on_dst_days(
     assert daily_ttl_seconds(utc_now) == seconds_to_midnight + _MARGIN
 
 
-def test_document_retries_key_uses_local_day() -> None:
-    tenant_id = uuid4()
-    at = datetime(2026, 7, 14, 22, 30, tzinfo=UTC)
-    assert document_retries_key(tenant_id, at) == f"rate:document_retries:{tenant_id}:2026-07-15"
-
-
 @pytest.mark.asyncio
 async def test_daily_quota_keys_use_local_day(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Los 4 límites diarios (documentos, reintentos, conocimiento, chat) usan el día local."""
+    """Los límites diarios que quedan (documentos, conocimiento, chat) usan el día local."""
     monkeypatch.setattr(rate_limiter, "local_day_key", lambda now=None: "2026-07-15")
     monkeypatch.setattr(rate_limiter, "daily_ttl_seconds", lambda now=None: 1234)
     redis = AsyncMock()
@@ -71,7 +65,6 @@ async def test_daily_quota_keys_use_local_day(monkeypatch: pytest.MonkeyPatch) -
     tenant_id, user_id = uuid4(), uuid4()
 
     await rate_limiter.check_documents_upload_rate(redis, tenant_id=tenant_id, max_per_day=5)
-    await rate_limiter.check_document_retries_rate(redis, tenant_id=tenant_id, max_per_day=5)
     await rate_limiter.check_knowledge_upload_rate(redis, tenant_id=tenant_id, max_per_day=5)
     await rate_limiter.check_chat_messages_rate(
         redis, tenant_id=tenant_id, user_id=user_id, max_per_day=5, max_per_user_day=5
@@ -80,7 +73,6 @@ async def test_daily_quota_keys_use_local_day(monkeypatch: pytest.MonkeyPatch) -
     keys = [call.args[0] for call in redis.incrby.await_args_list]
     assert keys == [
         f"rate:documents_upload:{tenant_id}:2026-07-15",
-        f"rate:document_retries:{tenant_id}:2026-07-15",
         f"rate:knowledge_upload:{tenant_id}:2026-07-15",
         f"rate:chat_messages:{tenant_id}:{user_id}:2026-07-15",
         f"rate:chat_messages:{tenant_id}:2026-07-15",

@@ -34,7 +34,10 @@ def test_basic_plan_summary_lists_features_and_nonzero_limits() -> None:
         "Chat sobre conocimiento",
     ]
     limits = _limits(summary)
-    assert limits["Documentos procesados al día"] == "50"
+    assert limits["Documentos en la base de conocimiento"] == "100"
+    # Freno contra scripts (D027): se aplica, pero no se muestra al cliente.
+    assert "Documentos procesados al día" not in limits
+    assert "Reintentos de procesado al día" not in limits
     assert limits["Miembros del equipo"] == "3"
     # Límites a 0 = prestación no incluida: no se listan.
     assert "Canales de mensajería conectados" not in limits

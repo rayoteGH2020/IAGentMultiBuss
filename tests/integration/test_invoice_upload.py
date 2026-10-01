@@ -366,9 +366,11 @@ async def test_upload_two_sequential_htmx_requests(
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
+                # Ficheros distintos: el mismo fichero dos veces es un duplicado (SHA-256).
+                content = _PDF_BYTES + f"\n% {name}\n".encode()
                 response = await client.post(
                     "/documents/upload",
-                    files=[("files", (name, BytesIO(_PDF_BYTES), "application/pdf"))],
+                    files=[("files", (name, BytesIO(content), "application/pdf"))],
                     data=payload,
                     headers=headers,
                 )
