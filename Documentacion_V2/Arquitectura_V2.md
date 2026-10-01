@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-14 · Actualizado: 2026-10-01
 Estado: **arquitectura vigente del monolito** (el codigo es la fuente de verdad).
-HEAD migraciones: `p80_document_quota_01`.
+HEAD migraciones: `p81_chat_quota_01`.
 
 Si un doc antiguo o un backlog desfasado contradice este fichero o el codigo, gana el codigo + `Documentacion_V2` (ver `Decision_Log.md` D001–D002).
 

@@ -1,7 +1,7 @@
 # PasosParaProduccion
 
 Fecha: 2026-08-05 · Actualizado: 2026-10-01
-Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 4-8; la 0, la 1, la 1b, la 2 y la 3 ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
+Estado: checklist operativa go-live **en orden de ejecucion** y **unica fuente** de tareas del paso a produccion (los `PasoXX` remiten aqui). Codigo base en repo (Pasos 02–07; Stripe retirado, D016); artefactos de despliegue en repo y probados en local (D013, `Paso11`). Pendiente: cierre del codigo del producto minimo (tabla "Cierre del producto minimo" de `Backlog_Priorizado.md`, filas 5-8; la 0, la 1, la 1b, la 2, la 3 y la 4 ya estan hechas y la 9 son las Fases 2-13 de este fichero) y ops (cuentas, VPS, Infisical `prod`, Clerk prod, QA manual, firma Go/No-Go).
 Fuente: consolidado de `Documentacion_V2` (`Paso00`–`Paso11`, `Seguridad_V2`, `SADM_V2`, `Arquitectura_V2`, `Planes_Entitlements`, `Backlog_Priorizado`, `Decision_Log`) y `docs/environment-variables.md`.
 
 Como usar este fichero: ir fase a fase, de arriba abajo, con una excepcion: las Fases 2-7 no dependen del codigo y se hacen en paralelo a la Fase 1 y al cierre del codigo (Backlog, filas 1-8; orden completo en "Orden de ejecucion" del Backlog). Desde la Fase 8, no empezar una fase si alguna anterior (incluida la Fase 1) tiene casillas abiertas sin aceptacion explicita; justo antes de la Fase 8, repasar la Fase 5 por si los bloques del cierre anadieron variables. Marcar cada casilla solo con evidencia (comando, captura, fecha). Detalle ampliado del despliegue: `Paso11_Despliegue_VPS.md`.
@@ -15,7 +15,7 @@ Resumen ordenado. Cada linea remite a su fase.
 | # | Tarea | Donde | Quien | Fase |
 | --- | --- | --- | --- | --- |
 | 1 | Decidir alcance del primer go-live (recomendado: soft launch, solo invitados, sin Stripe/WA/TG/Calendar) | — | Tu | 0 |
-| 2 | Cerrar el codigo del producto minimo (Backlog, filas 4-8: bloques 4-7 y cierre; las filas 0, 1 (P2c 1-3 de la Fase 1.5), 1b (registro de actividad), 2 y 3 (facturas, tickets y reintentos) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
+| 2 | Cerrar el codigo del producto minimo (Backlog, filas 5-8: bloques 5-7 y cierre; las filas 0, 1 (P2c 1-3 de la Fase 1.5), 1b (registro de actividad), 2 y 3 (facturas, tickets y reintentos) y 4 (chat) ya estan hechas) y fusionar el PR #1 (`RamaCursor01` → `main`) con CI verde, sin la etiqueta `eval-regression-accepted` | GitHub | Tu | 1 |
 | 3 | Cambiar `DATABASE_URL` de Infisical `dev` a `saas_app` y repetir smoke manual (RLS real) | Infisical dev | Tu | 1 |
 | 4 | Comprar/elegir **dominio** (p. ej. `app.tudominio.com`) | Registrador DNS | Tu | 2 |
 | 5 | Contratar **VPS** (Hetzner u otro UE, 4 vCPU / 8 GB, Ubuntu 24.04) | Proveedor VPS | Tu | 2 |
@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-01: `p80_document_quota_01`; los bloques 4-7 pueden anadir migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-01: `p81_chat_quota_01`; los bloques 5-7 pueden anadir migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -402,7 +402,9 @@ WHERE request_id = '<uuid>' OR parent_request_id = '<uuid>'
 ORDER BY occurred_at;
 ```
 
-**Chat (Backlog P2b-24, hasta implementar D023):** `CHAT_DAILY_MESSAGE_LIMIT` vale 60 por defecto y recorta el tope diario de **todos** los planes (Basico 100, Avanzado 250, Premium 600). Fijarlo en `prod` a un valor alto (p. ej. `600`) para que solo actue como freno de emergencia. `CHAT_USER_DAILY_MESSAGE_LIMIT` (40 por usuario y dia) se deja salvo decision.
+**Chat (D023, implementado 2026-10-01):** el cupo es `chat_questions_per_month` del plan; no hay variables que definir. El limite de ritmo por usuario usa los defaults (`CHAT_RATE_LIMIT_PER_MINUTE=10`, `CHAT_RATE_LIMIT_PER_HOUR=60`); definirlas solo para cambiarlos.
+
+- [ ] Borradas de Infisical `prod` (y `dev`) `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT`, si existen: ya no se usan (se ignoran, pero confunden).
 
 ### 5.8 Email (obligatorio tambien en soft launch)
 
@@ -498,7 +500,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p80_document_quota_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p81_chat_quota_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -611,7 +613,17 @@ SELECT
 ```
 
 - [ ] Reintentos (bloque 3): con un documento que falla siempre (p. ej. una imagen sin texto subida como factura), "Reintentar" 3 veces → la fila muestra "Revision manual" y ya no ofrece "Reintentar". Con `document_retries_per_month` = 0 por override, "Reintentar" responde "Has agotado los reintentos de procesado de este mes".
-- [ ] Chat (bloque 4): con el cupo del mes agotado (override bajo) responde con el mensaje fijo sin llamar al modelo.
+- [ ] Chat (bloque 4), con un tenant de prueba y un override bajo de `chat_questions_per_month` en `/sadm/plans` (p. ej. 2):
+  - Hacer 2 preguntas → se responden. La tercera recibe "Has alcanzado las preguntas de este mes. Se renuevan el 1 de <mes>..." con el telefono y el email del admin, sin coste nuevo en `llm_calls`.
+  - Ampliar el cupo del chat en 1 desde `/sadm/plans/tenants/{id}` → la siguiente pregunta se responde.
+  - Enviar mas de 10 preguntas en un minuto (p. ej. pulsando Enviar seguido) → "Estás enviando preguntas muy seguidas..." y el mensaje no se guarda.
+  - Comprobar el consumo del mes (debe coincidir con las preguntas respondidas):
+
+```sql
+SELECT used, extra FROM quota_usage
+WHERE tenant_id = '<tenant>' AND code = 'chat_questions_per_month'
+  AND period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date;
+```
 - [ ] Contratos (bloque 5): "Marcar como sustituido" libera el hueco de activo; un contrato de mas de 100 paginas se rechaza.
 - [ ] Historico (bloque 6): en Basico no se ven facturas ni tickets de hace mas de 12 meses.
 - [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de cada cupo.
@@ -651,7 +663,7 @@ infisical run -- uv run pytest tests/unit/test_llm_observability.py tests/unit/t
   - Langfuse prod aplazado (sin tracing; el coste sigue en `llm_calls`).
   - CSP con `unsafe-inline`/`unsafe-eval` por Alpine.
   - Sin staging: el primer despliegue va directo a prod (mitigacion: backup de `deploy.sh` + restore probado en Fase 9).
-  - Solo si algun bloque 2-7 del cierre no esta hecho al firmar: parte de la spec de planes sin implementar (p. ej. `quota_pending` o D023; si falta D023, `CHAT_DAILY_MESSAGE_LIMIT` alto, Fase 5.7). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
+  - Solo si algun bloque 2-7 del cierre no esta hecho al firmar: parte de la spec de planes sin implementar (p. ej. contratos, `history_months` o el consumo en "Mi cuenta"). El presupuesto de IA 6/15/30 € ya esta aplicado (D026).
   - Presupuesto de IA sin ampliacion mensual: solo override permanente del SADM, a retirar a mano (Backlog P2b-27).
   - Documentos pendientes de cupo sin tope por tenant: el unico freno es el tope diario alto de subidas (Backlog P2b-28).
   - Cobro de planes fuera de la app (D016): factura manual, plan asignado por SADM.

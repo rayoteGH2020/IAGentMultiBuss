@@ -126,7 +126,7 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
 
 **Límites diarios actuales.** `documents_per_day`, `knowledge_uploads_per_day` y `chat_messages_per_day` **dejan de ser la referencia**; los sustituyen los mensuales.
 - En el análisis, indica si conviene conservar alguno solo como freno a ráfagas (por ejemplo, con un valor de 3 veces el mensual dividido entre 30).
-- **Chat (D023):** sin topes diarios. `chat_messages_per_day` del plan, el tope diario de plataforma (`CHAT_DAILY_MESSAGE_LIMIT`, hoy 60 por defecto) y el diario por usuario (`CHAT_USER_DAILY_MESSAGE_LIMIT`, 40) se sustituyen por `chat_questions_per_month` + un límite de ritmo por usuario (≈10 preguntas por minuto o 60 por hora) contra scripts o cuentas comprometidas.
+- **Chat (D023, hecho 2026-10-01):** sin topes diarios. `chat_messages_per_day` del plan, el tope diario de plataforma (`CHAT_DAILY_MESSAGE_LIMIT`) y el diario por usuario (`CHAT_USER_DAILY_MESSAGE_LIMIT`) se han sustituido por `chat_questions_per_month` + un límite de ritmo por usuario (10 preguntas por minuto y 60 por hora, configurable) contra scripts o cuentas comprometidas.
 - `voice_notes_per_hour` y `channel_external_slots` se quedan como están.
 
 **Documentos de conocimiento (`knowledge_docs_max`, `knowledge_uploads_per_day`).**
@@ -193,7 +193,7 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
 - **Al 100 %:** mensaje fijo sin llamar al modelo («Has alcanzado las preguntas de este mes; se renuevan el día X»), con el contacto del admin, como el corte por presupuesto (D019). Se amplía con override del SADM. Sin avisos al 80 %: es un tope técnico, no comercial.
 - **Límite de ritmo por usuario** (≈10 por minuto o 60 por hora) en lugar de los topes diarios: no lo alcanza una persona y frena en minutos un script o una cuenta comprometida.
 - El presupuesto de IA (§4.8, D019) sigue siendo el tope duro final.
-- **Estado actual:** solo hay topes diarios (plan 100/250/600, plataforma 60 por defecto, 40 por usuario). Se implementa con `plan_quota_service` mensual (paso 3 de §9).
+- **Estado actual (hecho 2026-10-01, bloque 4, `p81_chat_quota_01`):** cupo mensual con `monthly_quota_service`; la pregunta se cuenta al empezar el turno y se devuelve si el proveedor falla; el corte por presupuesto no la cuenta. Límite de ritmo por usuario y organización (10 por minuto, 60 por hora). Los topes diarios están retirados. Detalles en D023.
 - **Historial (decidido 2026-09-30, se acepta el comportamiento actual):** se reenvían los últimos 20 mensajes (`chat_history_message_limit`), incluidos los mensajes `tool` con su resultado completo. Una pregunta con herramientas ocupa ≈4 mensajes, así que son ≈4-5 turnos.
   - Los resultados de las herramientas se guardan en `chat_messages.tool_result`: los usan las trazas de chat del SADM y permiten las preguntas de continuación («¿y la segunda?»). Entran en el borrado y el export RGPD de los chats.
   - Motivo: el coste ya está acotado (máx. observado ≈0,0045 € por pregunta; las 400 preguntas del Básico (D023) ≈1,8 € en el peor caso frente a 6 € de presupuesto) y quitar los resultados arriesga las continuaciones sin un ahorro relevante.
@@ -417,7 +417,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 
 1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
 2. ~~Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.~~ Hecho (P2b-14, D019, D026). Falta la ampliación mensual del presupuesto (Backlog P2b-27).
-3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; conectado a facturas, tickets y reintentos (paso 4); falta en el resto de límites.
+3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; conectado a facturas, tickets y reintentos (paso 4) y a las preguntas del chat (D023, bloque 4); falta en contratos (paso 5).
 4. ~~Cuotas en facturas y tickets (`quota_pending`).~~ Hecho (bloques 2 y 3, 2026-10-01, `p80_document_quota_01`): reserva al encolar y devolución si no termina bien, `quota_pending` con su job, hash SHA-256, avisos por email al 80 % y al primer pendiente, y reintentos al mes con máximo 3 por documento. Detalles en D027.
 5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.

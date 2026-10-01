@@ -408,7 +408,16 @@ Motivo:
 Consecuencia:
 
 - Se implementa con los cupos mensuales de D027 (`monthly_quota_service`; el limite `chat_questions_per_month` ya esta en `PLAN_LIMITS` desde `p77`) en el bloque 4 del cierre del producto minimo; el limite de ritmo reutiliza el contador Redis de `rate_limiter.py` con ventana corta.
-- Mientras tanto, `CHAT_DAILY_MESSAGE_LIMIT` (60 por defecto) recorta Avanzado y Premium: Backlog P2b-24.
+- **Implementada 2026-10-01** (bloque 4, migracion `p81_chat_quota_01`, que retira `chat_messages_per_day` del catalogo; P2b-24 cerrado).
+
+Detalles de implementacion (aprobados 2026-10-01):
+
+1. **La pregunta se cuenta al empezar el turno** (`chat_service._run_assistant_turn`, justo antes de llamar al LLM) **y se devuelve si el proveedor falla** (`ToolLoopResult.failed`). Solo gasta cupo una pregunta con respuesta del modelo: si el usuario envia y no abre el SSE, o el proveedor esta saturado o sin saldo, no cuenta. El corte por presupuesto (D019) va antes y tampoco cuenta.
+2. **Limite de ritmo por usuario dentro de cada tenant**: 10 por minuto y 60 por hora, ventanas fijas en Redis (`rate:chat:{tenant}:{user}:...`), igual en todos los planes y configurable (`CHAT_RATE_LIMIT_PER_MINUTE`, `CHAT_RATE_LIMIT_PER_HOUR`; `0` = sin limite). Se comprueba al enviar, antes de guardar el mensaje. Sin limite de todo el tenant: lo cubren el cupo mensual y el presupuesto, y un limite comun bloquearia a los companeros si una cuenta lanza un script.
+3. **Sin entrada en `audit_log` para la respuesta del 100 %**: no encaja en `AGENTS.md` §7; queda en `activity_log` (`chat.quota_exhausted_reply`). El corte por presupuesto mantiene `chat.budget_cutoff`.
+4. **Retiradas `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT`**: si siguen en Infisical se ignoran; borrarlas de `prod` (Fase 5).
+
+Respuesta al 100 %: "Has alcanzado las preguntas de este mes. Se renuevan el 1 de <mes>. Si lo necesitas antes, contacta con el administrador de tu organizacion (telefono - email)", con el contacto del admin en `users` (D020). Se guarda como respuesta del asistente sin llamar al LLM. El SADM la levanta ampliando `chat_questions_per_month` del mes desde `/sadm/plans/tenants/{id}`.
 
 ## D024 - Contratos: importes sin IVA por periodicidad y fecha de firma separada
 
@@ -484,7 +493,7 @@ Motivo:
 Consecuencia:
 
 - Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
-- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`); pendientes 4 chat D023, 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta".
+- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`) y 4 chat D023 (2026-10-01, `p81_chat_quota_01`); pendientes 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta".
 
 Detalles de implementacion de los bloques 2 y 3 (aprobados 2026-10-01):
 
