@@ -633,3 +633,28 @@ Consecuencia:
 - Tools nuevas de la familia `scheduling` sobre `internal_appointment_service` y `appointment_slot_service`; prompt `channel_external_v2`.
 - Las respuestas de turnos con tools de citas no entran en la cache semantica del canal.
 - Normalizador E.164 (España por defecto) con la dependencia `phonenumbers` (aprobada 2026-09-30, AGENTS §1): cubre tambien numeros extranjeros.
+
+## D031 - Datos personales en la auditoria: seudonimos, retencion de 2 anos y rastreo
+
+Decision (cerrada e implementada 2026-10-03, `5c4eed3`, Backlog P2c-7, migracion `p84_audit_log_retention_01`): `audit_log` es solo insercion (P2c-1) y no tenia purga, asi que los datos personales de su metadata se habrian quedado para siempre sin poder limpiarse. Antes del primer cliente real:
+
+1. **Seudonimos en lugar del dato en claro** (HMAC-SHA256 truncado a 128 bits, `app/core/audit_pseudonym.py`):
+   - Miembros (solicitud, alta y baja): `email_ref`.
+   - Documentos y knowledge (subida y borrado): `file_ext`, `filename_ref` y `file_sha256` (el hash del contenido prueba que fichero fue, mejor que el nombre).
+   - Profesionales: `display_name_ref`. Calendario: `google_email_ref`.
+   - Se mantiene el nombre de los servicios del catalogo (no es dato personal).
+   - Normalizacion antes del HMAC: emails y ficheros sin distinguir mayusculas; nombres de persona ademas sin tildes ni espacios repetidos.
+2. **Rastreo** (`scripts/audit_lookup.py`, `audit_lookup_service`): con el email se encuentra lo que se hizo con la persona (seudonimo en la metadata) y lo que hizo ella (por `user_id`), tambien tras borrar su cuenta (D021 conserva la fila y su `user_id`; la membresia de la entrada lleva a el). Con el nombre: cuentas activas y profesionales; tras un borrado el nombre ya no existe y hace falta el email (efecto buscado del borrado). Ficheros por nombre exacto o SHA-256. El propio rastreo queda en el `audit_log` de cada tenant con resultados (`sadm.audit_lookup`, sin el dato buscado).
+3. **Retencion**: `AUDIT_LOG_RETENTION_DAYS` = 730 (2 anos) por defecto, configurable; minimo 365, impuesto tambien por la funcion de BD `purge_audit_log` (`SECURITY DEFINER`, recorre los tenants porque la tabla tiene RLS forzado); `0` (no purgar) prohibido en produccion. Cron diario a las 03:45.
+4. **Clave aparte `AUDIT_PSEUDONYM_KEY`**, obligatoria en produccion (32+ caracteres y distinta de `APP_SECRET_KEY`) y **que no se rota**: si cambiara, los seudonimos anteriores ya no se podrian recalcular y se perderia el rastro. `APP_SECRET_KEY` puede rotarse sin afectar a la auditoria. Fuera de produccion, si falta, se deriva de `APP_SECRET_KEY`.
+
+Motivo:
+
+- Guardar emails y nombres de fichero en una tabla inmutable y sin plazo choca con la minimizacion y la limitacion del plazo de conservacion (RGPD). El seudonimo sigue siendo dato personal, pero una fuga no revela nada y el rastreo sigue siendo posible si se conoce el dato.
+- 2 anos cubren el periodo en que un cliente podria reclamar sobre un acceso o un borrado. Pendiente de validar con asesoria y de reflejar en la politica de privacidad y en el registro de actividades (probable, no es asesoria juridica).
+
+Consecuencia:
+
+- Guardia en CI: `tests/unit/test_audit_pseudonym.py` falla si una llamada a `log_action` vuelve a meter `email`, `filename`, `display_name`, `google_email` o `phone` en la metadata.
+- Las entradas anteriores (solo dev y tests) conservan el dato en claro; el rastreo las encuentra igualmente.
+- `AUDIT_PSEUDONYM_KEY` va al gestor de contrasenas junto a `ENCRYPTION_KEY` (`PasosParaProduccion.md` Fase 5.1).

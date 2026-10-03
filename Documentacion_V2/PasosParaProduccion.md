@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-03: `p83_history_months_01`, head final del cierre del producto minimo salvo cambios en la fila 8).
+- [ ] `alembic heads` = un unico head (a 2026-10-03: `p84_audit_log_retention_01`, head final del cierre del producto minimo salvo cambios en la fila 8).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -167,7 +167,8 @@ SELECT created_at, action, ip FROM audit_log ORDER BY created_at DESC LIMIT 5;
 - [ ] P2c-2 en prod: logs revisados tras el primer deploy, sin datos personales.
 - [x] P2c-3 en codigo; `test_audit_context.py` y `test_deploy_config.py` verdes (2026-10-01).
 - [ ] P2c-3 en prod: subred sin conflicto en la VPS e IP real en `audit_log`.
-- [ ] P2c-7 decidido (Backlog): metadata de `audit_log` con emails, nombres de fichero y nombres de profesionales y servicios.
+- [x] P2c-7 decidido e implementado (D031, `5c4eed3`, 2026-10-03): seudonimos en la metadata de `audit_log`, retencion de 2 anos y `scripts/audit_lookup.py`.
+- [ ] P2c-7 en prod: `AUDIT_PSEUDONYM_KEY` definida (si no, la app no arranca) y una subida de prueba deja en `audit_log` `filename_ref`, `file_ext` y `file_sha256`, sin `filename` (pruebas en `TestPM.md`).
 
 ---
 
@@ -294,7 +295,7 @@ INFISICAL_API_URL=https://eu.infisical.com/api
 Valores **nuevos**, nunca copiados de `dev`. Generar aleatorios en tu PC y pegarlos directamente en Infisical:
 
 ```powershell
-uv run python -c "import secrets; print(secrets.token_urlsafe(32))"                                  # passwords, APP_SECRET_KEY
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"                                  # passwords, APP_SECRET_KEY, AUDIT_PSEUDONYM_KEY
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"      # ENCRYPTION_KEY
 ```
 
@@ -315,6 +316,17 @@ Usa `token_urlsafe` para passwords que van dentro de una URL (no contiene `@`, `
 | `SECURITY_HSTS_ENABLED` | `true` |
 | `WEBHOOK_ALLOW_UNSIGNED` | `false` |
 | `ENCRYPTION_KEY` | Fernet nueva (no la de dev/CI). **Guardar copia en tu gestor de contrasenas**: sin ella no se descifran los tokens de integraciones guardados en BD |
+| `AUDIT_PSEUDONYM_KEY` | aleatoria (`token_urlsafe(32)`), **distinta de `APP_SECRET_KEY`**. **Obligatoria**: sin ella la app no arranca. **Nunca se rota** y va al gestor de contrasenas (ver abajo) |
+
+**`AUDIT_PSEUDONYM_KEY` (P2c-7, D031).** La auditoria (`audit_log`) no guarda emails, nombres de fichero ni nombres de personas en claro: guarda un seudonimo (HMAC) calculado con esta clave. Asi, si alguien obtuviera una copia de la tabla, no podria leer esos datos; y tu puedes seguir rastreando "que se hizo con ana@empresa.com" con `scripts/audit_lookup.py`, que recalcula el seudonimo con la misma clave.
+
+- **Por que aparte de `APP_SECRET_KEY`:** `APP_SECRET_KEY` se puede rotar (P0-1, o ante una sospecha de fuga) y solo invalida sesiones. Si los seudonimos dependieran de ella, al rotarla se perderia el rastro de toda la auditoria anterior.
+- **Nunca rotarla:** con otra clave, los seudonimos antiguos ya no se pueden recalcular y el rastreo deja de encontrar el historial previo (los datos no se pierden, pero ya no se pueden asociar a una persona).
+- **Copia en el gestor de contrasenas**, junto a `ENCRYPTION_KEY`. Si se pierde, el rastreo de lo anterior es imposible.
+- **Si se filtrara:** quien tenga la clave y una copia de `audit_log` podria comprobar si un email concreto aparece (no leer la lista). Tratarla como `ENCRYPTION_KEY`: solo en Infisical `prod` y en el gestor.
+- **Generarla** con el comando de arriba (`token_urlsafe(32)` da 43 caracteres; el minimo son 32).
+
+- [ ] `AUDIT_PSEUDONYM_KEY` creada en Infisical `prod`, distinta de `APP_SECRET_KEY`, y guardada en el gestor de contrasenas.
 
 ### 5.2 Postgres y Redis (contenedores de la VPS)
 
@@ -380,6 +392,17 @@ Con `APP_ENV=production` y `ACTIVITY_LOG_RETENTION_DAYS=0` la app se niega a arr
 - [x] Decidido que `ACTIVITY_LOG_RETENTION_DAYS=0` se bloquea en produccion (D029, 2026-10-01).
 - [x] Implementado y con test (`tests/unit/test_config_activity_log.py`, 2026-10-01).
 - [ ] En `prod`, `ACTIVITY_LOG_RETENTION_DAYS` sin definir o >= 7 (revisar en Infisical antes de la Fase 8).
+
+**Retencion de la auditoria (P2c-7, D031, implementado 2026-10-03):**
+
+| Variable | Valor `prod` |
+| --- | --- |
+| `AUDIT_LOG_RETENTION_DAYS` | sin definir (730 = 2 anos) o un valor de 365 o mas. **`0` impide arrancar** |
+
+Cada dia a las 03:45 el worker borra las entradas de `audit_log` mas antiguas que ese plazo, mediante la funcion de BD `purge_audit_log`, que nunca borra el ultimo ano aunque se le pida (la app no puede borrar auditoria reciente ni comprometida). Cambiar el plazo solo requiere cambiar la variable y reiniciar el worker. Si la asesoria fija otro plazo, se ajusta aqui.
+
+- [ ] En `prod`, `AUDIT_LOG_RETENTION_DAYS` sin definir o >= 365.
+- [ ] Tras el primer deploy, la funcion existe: `SELECT proname FROM pg_proc WHERE proname = 'purge_audit_log';` (con el superusuario).
 - [ ] Tras el primer deploy (Fase 8), comprobar que se registra actividad y que la purga existe (con el superusuario, en el contenedor `postgres`):
 
 ```sql
@@ -502,7 +525,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-03: `p83_history_months_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-03: `p84_audit_log_retention_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 

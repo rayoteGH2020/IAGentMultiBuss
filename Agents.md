@@ -236,6 +236,8 @@ Objetivo: poder responder "quién tocó o vio este dato del cliente, cuándo y d
 
 Si una vista nueva no encaja claramente en una de estas categorías, decidirlo antes de implementarla y reflejarlo aquí.
 
+**Metadata sin datos personales en claro (P2c-7, D031):** emails, nombres de fichero y nombres de personas van como seudónimo HMAC con `app/core/audit_pseudonym.py` (`audit_ref`, `file_metadata`: extensión, seudónimo del nombre y SHA-256 del fichero), nunca en claro. Lo vigila `tests/unit/test_audit_pseudonym.py`. Para rastrear a una persona o un fichero: `scripts/audit_lookup.py`. `audit_log` se purga a los `AUDIT_LOG_RETENTION_DAYS` (2 años por defecto, mínimo 1 año impuesto en BD).
+
 ### Registro de actividad (`activity_log`, D029)
 
 No es auditoría: sirve para depurar (peticiones, jobs, logs y errores) y se purga por retención. Se rellena solo, sin código en cada vista: el middleware `app/core/activity/middleware.py`, el wrapper `tracked_job` de los jobs ARQ y un procesador de structlog que copia cada `log.info/warning/error`.

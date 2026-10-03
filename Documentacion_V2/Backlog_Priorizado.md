@@ -174,7 +174,7 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 | 4 | Al activar Cloudflare delante: `trusted_proxies` con rangos de Cloudflare en Caddy y firewall solo desde Cloudflare; si no, todas las IPs auditadas seran de Cloudflare | **Ops** (bloqueante al activar Cloudflare) |
 | 5 | `/metrics`: restriccion de red en proxy/infra ademas del token (hoy Caddy responde 404 a `/metrics`) | **Ops** |
 | 6 | CSP sin `unsafe-eval` / `unsafe-inline`: migrar a `@alpinejs/csp` (~156 usos de Alpine) + nonces para ~10 scripts inline. 1-2 dias | **Pendiente** (backlog) |
-| 7 | Datos personales que quedan en la metadata de `audit_log` (los lee el SADM), detectados al cerrar P2c-2: email del miembro en altas, bajas y solicitudes (`membership_service`), nombre de fichero al subir y borrar documentos y knowledge, `display_name` de profesionales, nombre de servicios del catalogo y `google_email` del calendario (fuera de oferta, D012). Decidir para cada uno entre seudonimizar (HMAC), quitarlo o mantenerlo por su valor forense: quitar el email o el nombre de fichero empobrece la respuesta a "quien toco que dato" (`AGENTS.md` §7), sobre todo tras borrar el documento. ~1 h tras la decision | **Pendiente de decision** (antes del primer cliente real) |
+| 7 | Datos personales que quedan en la metadata de `audit_log` (los lee el SADM), detectados al cerrar P2c-2: email del miembro en altas, bajas y solicitudes (`membership_service`), nombre de fichero al subir y borrar documentos y knowledge, `display_name` de profesionales, nombre de servicios del catalogo y `google_email` del calendario (fuera de oferta, D012). Decidir para cada uno entre seudonimizar (HMAC), quitarlo o mantenerlo por su valor forense: quitar el email o el nombre de fichero empobrece la respuesta a "quien toco que dato" (`AGENTS.md` §7), sobre todo tras borrar el documento. ~1 h tras la decision | **Hecho** (`5c4eed3`, D031): seudonimos HMAC con `AUDIT_PSEUDONYM_KEY`, retencion de 2 anos (`p84`) y `scripts/audit_lookup.py` para rastrear por email, nombre o fichero |
 
 `p71` y `p72` aplicadas en dev y `saas_test` (2026-09-29). En prod las aplica `deploy.sh` con el resto de migraciones (`PasosParaProduccion.md` Fase 8).
 
@@ -206,7 +206,7 @@ Contexto: revision externa de 6 puntos. Hechos y en `RamaCursor01`: metrics `hma
 
 ## Orden recomendado restante
 
-1. Producto minimo: seguir la tabla "Cierre del producto minimo" al inicio de este fichero (P2c 1-3, su fila 1, hecha el 2026-10-01). Decidir P2c-7 antes del primer cliente real, incluido el soft launch: despues el `audit_log` ya tendria datos personales dificiles de limpiar (RGPD).
+1. Producto minimo: seguir la tabla "Cierre del producto minimo" al inicio de este fichero (P2c 1-3, su fila 1, hecha el 2026-10-01). P2c-7 decidido e implementado (D031, 2026-10-03).
 2. Decidir metodo de cobro de los planes (P3-2) antes de la produccion comercial.
 3. P2c-4 al activar Cloudflare.
 

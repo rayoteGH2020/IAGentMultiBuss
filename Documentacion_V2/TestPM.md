@@ -116,6 +116,65 @@ SELECT created_at, action, ip FROM audit_log WHERE tenant_id = '<tenant>' ORDER 
 
 ---
 
+## P2c-7 — Datos personales en la auditoría (D031, `5c4eed3`)
+
+**[auto]**
+
+```powershell
+infisical run -- uv run pytest tests/unit/test_audit_pseudonym.py tests/integration/test_audit_privacy.py tests/integration/test_calendar_integration.py tests/unit/test_document_upload_routing.py -q
+```
+
+Cubre: mismo dato = mismo seudónimo (mayúsculas, tildes y espacios en nombres), distinto tipo o distinta clave = distinto seudónimo; metadata de fichero sin el nombre; guardia que impide volver a meter emails, nombres de fichero o de personas en `log_action`; validación de `AUDIT_LOG_RETENTION_DAYS` (mínimo 365, 0 prohibido en producción) y de `AUDIT_PSEUDONYM_KEY` (obligatoria en producción y distinta de `APP_SECRET_KEY`); rastreo por email antes y después de anonimizar la cuenta, por nombre de fichero y por SHA-256; el rastreo queda auditado sin el dato buscado; purga que respeta el último año y recorre todos los tenants.
+
+**[dev]** — el script `scripts/audit_lookup.py` (solo SADM; necesita la misma `AUDIT_PSEUDONYM_KEY` con la que se escribieron las entradas, así que se ejecuta con el entorno de Infisical correspondiente):
+
+```powershell
+# Ayuda y opciones
+infisical run -- uv run python scripts/audit_lookup.py --help
+# Lo que se hizo con una persona y lo que hizo ella (todos los tenants)
+infisical run -- uv run python scripts/audit_lookup.py --email ana@empresa.com
+# Por nombre (cuentas activas y profesionales) o limitado a un tenant
+infisical run -- uv run python scripts/audit_lookup.py --name "Ana García" --tenant-id <uuid>
+# Un fichero por su nombre exacto o por el SHA-256 de su contenido
+infisical run -- uv run python scripts/audit_lookup.py --filename "Nómina marzo.pdf"
+certutil -hashfile "C:\ruta\Nómina marzo.pdf" SHA256
+infisical run -- uv run python scripts/audit_lookup.py --sha256 <hash>
+```
+
+- [ ] Dar de alta un miembro de prueba (`/settings/members`) y subir un documento con ese usuario. `--email` del miembro → salen el alta (`member.created`) y la subida (`document.upload`), y «Usuarios relacionados» muestra su id.
+- [ ] La metadata de esas entradas no contiene el email ni el nombre del fichero: solo `email_ref`, `file_ext`, `filename_ref` y `file_sha256`:
+
+```sql
+SELECT action, metadata FROM audit_log
+WHERE tenant_id = '<tenant>' AND created_at > now() - interval '1 hour'
+ORDER BY created_at DESC;
+```
+
+- [ ] `--email` con el email en otras mayúsculas (`ANA@Empresa.com`) → mismo resultado.
+- [ ] Borrar la cuenta del miembro en Clerk (webhook `user.deleted`, D021) y repetir `--email` → siguen saliendo el alta y lo que hizo, aunque en `users` su email ya sea `deleted+…@deleted.invalid`. `--name` con su nombre ya no lo encuentra (efecto buscado del borrado).
+- [ ] Borrar el documento subido; `--filename` con su nombre exacto y `--sha256` con el hash de `certutil` → salen la subida y el borrado.
+- [ ] Cada rastreo con resultados deja una entrada `sadm.audit_lookup` en el tenant, con los criterios usados y sin el email ni el fichero:
+
+```sql
+SELECT created_at, metadata FROM audit_log
+WHERE action = 'sadm.audit_lookup' ORDER BY created_at DESC LIMIT 5;
+```
+
+- [ ] Sin argumentos, el script sale con «indica al menos --email, --name, --filename o --sha256».
+- [ ] Retención: la función existe y se niega a borrar menos de un año (con el superusuario):
+
+```sql
+SELECT purge_audit_log(364, 100);  -- debe fallar: retention_days must be >= 365
+```
+
+**[prod]**
+
+- [ ] Sin `AUDIT_PSEUDONYM_KEY` (o igual a `APP_SECRET_KEY`) la app no arranca y el mensaje lo explica. Con ella, arranca.
+- [ ] Repetir el primer caso de [dev] con el tenant piloto: `infisical run --env=prod -- uv run python scripts/audit_lookup.py --email <admin del piloto>` (en la VPS, desde el contenedor `api`).
+- [ ] Al día siguiente del deploy, `activity_log` tiene una ejecución de `purge_audit_log` (03:45) con `outcome = 'ok'`.
+
+---
+
 ## Fila 1b — Registro de actividad en BD (D029, `95dd274`)
 
 **[auto]**

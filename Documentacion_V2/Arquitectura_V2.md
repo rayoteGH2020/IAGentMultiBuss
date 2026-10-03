@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-14 · Actualizado: 2026-10-01
 Estado: **arquitectura vigente del monolito** (el codigo es la fuente de verdad).
-HEAD migraciones: `p83_history_months_01`.
+HEAD migraciones: `p84_audit_log_retention_01`.
 
 Si un doc antiguo o un backlog desfasado contradice este fichero o el codigo, gana el codigo + `Documentacion_V2` (ver `Decision_Log.md` D001–D002).
 
@@ -260,7 +260,7 @@ Registro en `app/jobs/settings.py`:
 
 Todos los jobs se registran envueltos con `tracked_job` (`activity_log`, D029).
 
-Crons: `expire_member_removals` (cada 15 min + al arrancar; bajas con fecha efectiva vencida), `apply_scheduled_plan_changes` (cambios de plan programados, D027), `process_quota_pending` (cada hora en el minuto 10 + al arrancar; renovacion del cupo el dia 1) y `purge_activity_log` (diario, 03:30; D029).
+Crons: `expire_member_removals` (cada 15 min + al arrancar; bajas con fecha efectiva vencida), `apply_scheduled_plan_changes` (cambios de plan programados, D027), `process_quota_pending` (cada hora en el minuto 10 + al arrancar; renovacion del cupo el dia 1) `purge_activity_log` (diario, 03:30; D029) y `purge_audit_log` (diario, 03:45; retencion de `audit_log`, D031).
 
 Cupo de facturas y tickets (D027, bloques 2 y 3): `document_quota_service` reserva una unidad al encolar y la devuelve si el documento no termina bien (`mark_failed`, extraccion inservible, abandono por atasco, presupuesto de IA agotado o borrado en el mes en curso). Sin hueco, el documento queda en `quota_pending`.
 
