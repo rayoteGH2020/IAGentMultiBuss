@@ -59,6 +59,13 @@ class DocumentSearchFilters(BaseModel):
         description="Solo contratos: nombre de la parte contraria",
     )
     numero_contrato: str | None = Field(default=None, description="Solo contratos")
+    incluir_sustituidos: bool = Field(
+        default=False,
+        description=(
+            "Solo contratos: incluir los sustituidos por una renovación (histórico). "
+            "Por defecto solo los vigentes."
+        ),
+    )
     aseguradora_query: str | None = Field(
         default=None,
         description="Solo seguros: nombre de la aseguradora",
@@ -133,6 +140,10 @@ class ContractRead(BaseModel):
     doc_type_code: Literal["contrato"] = "contrato"
     id: UUID
     status: str
+    lifecycle: str = Field(
+        default="active",
+        description="active (vigente) o replaced (sustituido por una renovación)",
+    )
     titulo: str | None = None
     numero_contrato: str | None = None
     parte_contraria: str | None = None

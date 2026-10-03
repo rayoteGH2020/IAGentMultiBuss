@@ -44,10 +44,13 @@ async def test_llm_failure_persists_raw_error_and_logs_safe_message(
     monkeypatch.setattr(service, "mark_failed", mark_failed)
     monkeypatch.setattr(jobs.document_processing_service, "begin_processing_attempt", AsyncMock())
     monkeypatch.setattr(jobs.entitlement_service, "ensure_feature", AsyncMock(return_value=True))
-    if hasattr(jobs, "document_quota_service"):  # facturas y tickets: presupuesto de IA disponible
+    if hasattr(jobs, "document_quota_service"):  # con cupo: presupuesto de IA disponible
         monkeypatch.setattr(
             jobs.document_quota_service, "hold_if_budget_exhausted", AsyncMock(return_value=False)
         )
+    if hasattr(jobs, "contract_quota_service"):  # contratos: páginas máximas del plan
+        monkeypatch.setattr(jobs.entitlement_service, "resolve_tenant", AsyncMock())
+        monkeypatch.setattr(jobs.contract_quota_service, "max_pages", lambda _ents: 100)
 
     llm_call_id = uuid4()
     error = LLMCompleteError(

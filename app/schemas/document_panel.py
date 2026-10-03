@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from app.core.document_processing_errors import is_retryable
-from app.services.document_processing_service import is_processing_stale, retries_exhausted
+from app.services.document_processing_service import (
+    is_processing_stale,
+    processing_stale_after,
+    retries_exhausted,
+)
 
 if TYPE_CHECKING:
     from app.models import Contract, Insurance, Invoice, LLMCall, Ticket
@@ -137,8 +141,20 @@ class PanelDocumentRow:
         if self.status == "failed":
             return is_retryable(self.error_code) and not self.needs_manual_review
         if self.status in ("pending", "processing"):
-            return is_processing_stale(self.updated_at)
+            return is_processing_stale(
+                self.updated_at, stale_after_seconds=processing_stale_after(self.kind)
+            )
         return False
+
+    @property
+    def is_replaced(self) -> bool:
+        """Contrato marcado como sustituido por una renovación (bloque 5)."""
+        return self.contract is not None and self.contract.lifecycle.value == "replaced"
+
+    @property
+    def can_change_lifecycle(self) -> bool:
+        """«Marcar como sustituido» / «Volver a vigente»: solo contratos procesados."""
+        return self.kind == "contract" and self.status in ("ready", "reviewed")
 
     @property
     def llm_call(self) -> LLMCall | None:

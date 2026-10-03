@@ -59,7 +59,9 @@ class WorkerSettings:
     functions: ClassVar[list[object]] = [
         tracked_job(process_invoice),
         tracked_job(process_ticket),
-        tracked_job(process_contract),
+        # Contratos de hasta 100 páginas (contract_max_pages): 600 s como el
+        # indexado de conocimiento.
+        arq_func(tracked_job(process_contract), timeout=600),
         tracked_job(process_insurance),
         arq_func(tracked_job(index_knowledge_document), timeout=600),
         arq_func(tracked_job(process_channel_message), timeout=120),

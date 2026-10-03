@@ -38,6 +38,16 @@ class ContractStatus(enum.StrEnum):
     ready = "ready"
     failed = "failed"
     reviewed = "reviewed"
+    # Guardado sin encolar: sin altas de contratos o sin presupuesto de IA (D027).
+    quota_pending = "quota_pending"
+
+
+class ContractLifecycle(enum.StrEnum):
+    """Vigencia de negocio, independiente del procesado (``status``)."""
+
+    active = "active"
+    # Sustituido por una renovación: sigue en el histórico, no ocupa hueco de activo.
+    replaced = "replaced"
 
 
 class Contract(Base):
@@ -98,6 +108,21 @@ class Contract(Base):
     manual_retry_count: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0, server_default=text("0")
     )
+    lifecycle: Mapped[ContractLifecycle] = mapped_column(
+        Enum(ContractLifecycle, name="contract_lifecycle", native_enum=True),
+        nullable=False,
+        default=ContractLifecycle.active,
+        server_default=text("'active'::contract_lifecycle"),
+    )
+    # Cupo de altas (bloque 5): SHA-256 contra resubidas; la reserva guarda mes,
+    # bolsa (mensual o carga inicial) y unidades para devolver exactamente lo mismo.
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quota_period: Mapped[date | None] = mapped_column(Date, nullable=True)
+    quota_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    upload_units: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=1, server_default=text("1")
+    )
+    page_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     llm_call_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     llm_call: Mapped[LLMCall | None] = relationship(
         "LLMCall",
@@ -129,6 +154,13 @@ class Contract(Base):
         Index("ix_contracts_tenant_status", "tenant_id", "status"),
         Index("ix_contracts_tenant_fecha_inicio", "tenant_id", "fecha_inicio"),
         Index("ix_contracts_tenant_dismissed", "tenant_id", "dismissed_at"),
+        Index("ix_contracts_tenant_lifecycle", "tenant_id", "lifecycle"),
+        Index(
+            "ix_contracts_tenant_sha256",
+            "tenant_id",
+            "file_sha256",
+            postgresql_where=text("file_sha256 IS NOT NULL"),
+        ),
         Index(
             "ix_contracts_error_code",
             "error_code",
@@ -139,4 +171,5 @@ class Contract(Base):
             "('mensual', 'trimestral', 'semestral', 'anual', 'unico')",
             name="ck_contracts_periodicidad",
         ),
+        CheckConstraint("upload_units BETWEEN 1 AND 10", name="ck_contracts_upload_units"),
     )

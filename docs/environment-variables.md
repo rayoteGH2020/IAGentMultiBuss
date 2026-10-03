@@ -100,7 +100,8 @@ Todos tienen default en `app/config.py`; se sobreescriben por entorno solo si ha
 
 | Variable | Default | Por qué existe |
 |----------|:-------:|----------------|
-| `DOCUMENT_MAX_PDF_PAGES` | `3` | Páginas admitidas por documento de negocio (factura, ticket). Todas se envían al LLM: subirlo multiplica coste y latencia por documento. |
+| `DOCUMENT_MAX_PDF_PAGES` | `3` | Páginas admitidas por documento de negocio (factura, ticket, póliza). Los contratos usan `contract_max_pages` del plan (100), con `DOCUMENT_OVERRIDE_MAX_PDF_PAGES` como techo. Todas se envían al LLM: subirlo multiplica coste y latencia por documento. |
+| `CONTRACT_UPLOAD_PAGE_TIERS` | `30,60` | Tramos de altas por contrato según sus páginas (D027): hasta 30 páginas consume 1 alta, de 31 a 60 consume 2 y más de 60 consume 3. Umbrales crecientes en CSV o JSON; un valor mal formado impide arrancar. |
 | `DOCUMENT_MAX_IMAGE_PIXELS` | `40000000` | Área máxima tras decodificar (~8000 x 5000). Es también el `Image.MAX_IMAGE_PIXELS` con el que Pillow aborta la decodificación. |
 | `DOCUMENT_MAX_IMAGE_EDGE_PX` | `20000` | Lado máximo. Descarta imágenes tipo 1 x 500.000 px que pasarían el filtro de área. |
 | `DOCUMENT_OVERRIDE_MAX_PDF_PAGES` | `100` | Techo duro del procesado excepcional que autoriza el superadmin. El override salta los límites de negocio, nunca los de supervivencia del worker. |

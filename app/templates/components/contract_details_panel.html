@@ -66,4 +66,44 @@
   {% else %}
   <p class="document-detail__empty">No hay detalle adicional para este contrato.</p>
   {% endif %}
+  {% if document.can_change_lifecycle %}
+  <div class="mt-3 flex flex-wrap items-center gap-2">
+    {% if document.is_replaced %}
+    <p class="text-xs text-slate-500">
+      Sustituido por una renovación: no ocupa hueco de contrato vigente y el chat solo lo tiene en cuenta si preguntas por contratos anteriores.
+    </p>
+    <button
+      type="button"
+      hx-post="/documents/contract/{{ document.id }}/reactivate"
+      hx-target="#document-group-{{ document.id }}"
+      hx-swap="outerHTML"
+      hx-confirm="¿Volver a marcar este contrato como vigente? Ocupará de nuevo un hueco de contrato vigente."
+      hx-indicator="#lifecycle-spinner-{{ document.id }}"
+      hx-boost="false"
+      hx-push-url="false"
+      class="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50">
+      Volver a vigente
+    </button>
+    {% else %}
+    <button
+      type="button"
+      hx-post="/documents/contract/{{ document.id }}/replace"
+      hx-target="#document-group-{{ document.id }}"
+      hx-swap="outerHTML"
+      hx-confirm="¿Marcar este contrato como sustituido? Úsalo cuando subes su renovación: deja de ocupar hueco de contrato vigente y sigue en el histórico."
+      hx-indicator="#lifecycle-spinner-{{ document.id }}"
+      hx-boost="false"
+      hx-push-url="false"
+      class="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50">
+      Marcar como sustituido
+    </button>
+    {% endif %}
+    <span id="lifecycle-spinner-{{ document.id }}" class="htmx-indicator" aria-hidden="true">
+      <svg class="animate-spin h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
+        <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
+      </svg>
+    </span>
+  </div>
+  {% endif %}
 </section>

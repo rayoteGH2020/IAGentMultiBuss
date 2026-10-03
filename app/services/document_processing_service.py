@@ -63,6 +63,10 @@ MSG_RETRY_NO_DOCUMENT_QUOTA = (
     "No se puede reintentar: has usado todas las facturas y tickets de este mes. "
     "El cupo se renueva el {renewal}."
 )
+MSG_RETRY_NO_CONTRACT_QUOTA = (
+    "No se puede reintentar: has usado todas las altas de contratos disponibles. "
+    "Tendrás altas nuevas el {renewal}."
+)
 _STILL_PROCESSING_MESSAGE = (
     "Este documento sigue en procesado. Espera a que termine o inténtalo más tarde "
     "si el estado no cambia."
@@ -73,6 +77,19 @@ def _ensure_retryable(error_code: str | None) -> None:
     """Impide reintentar rechazos que volverían a fallar con el mismo fichero."""
     if not is_retryable(error_code):
         raise ValidationError(_NOT_RETRYABLE_MESSAGE)
+
+
+# Un contrato de hasta 100 páginas puede tardar casi todo el timeout de su job
+# (600 s, app/jobs/settings.py): antes de eso no se da por huérfano.
+CONTRACT_PROCESSING_STALE_AFTER_SECONDS = 660
+
+
+def processing_stale_after(document_kind: str) -> int:
+    """Segundos en processing tras los que un documento se considera huérfano."""
+    threshold = get_settings().document_processing_stale_after_seconds
+    if document_kind == "contract" and threshold > 0:
+        return max(threshold, CONTRACT_PROCESSING_STALE_AFTER_SECONDS)
+    return threshold
 
 
 def is_processing_stale(
@@ -308,7 +325,9 @@ async def abandon_stale_processing(
         if contract_row.status not in (ContractStatus.processing, ContractStatus.pending):
             return False
         started = open_attempt.created_at if open_attempt is not None else contract_row.updated_at
-        if not force and not is_processing_stale(started):
+        if not force and not is_processing_stale(
+            started, stale_after_seconds=processing_stale_after("contract")
+        ):
             return False
         user_msg = rejection_message(
             DocumentErrorCode.processing_interrupted,
@@ -318,6 +337,7 @@ async def abandon_stale_processing(
         contract_row.error_code = DocumentErrorCode.processing_interrupted.value
         contract_row.error_message = user_msg
         contract_row.updated_at = datetime.now(tz=UTC)
+        await _release_quota(db, contract_row)
     elif document_kind == DocumentKind.insurance.value:
         from app.services import insurance_service
 
@@ -459,7 +479,9 @@ async def _prepare_retry_or_raise(
             document_id=document_id,
         )
         started = open_attempt.created_at if open_attempt is not None else updated_at
-        if not is_processing_stale(started):
+        if not is_processing_stale(
+            started, stale_after_seconds=processing_stale_after(document_kind)
+        ):
             raise ValidationError(_STILL_PROCESSING_MESSAGE)
         abandoned = await abandon_stale_processing(
             db,
@@ -557,18 +579,26 @@ async def _charge_retry(
 
     Orden (todo en la transacción de la petición: si algo falla, no se gasta nada):
     1. Máximo de reintentos por documento.
-    2. Facturas y tickets: reserva del cupo de documentos (se devolvió al fallar).
-    3. Reintento del mes.
+    2. Contratos: hueco en el archivo de activos (un fallido no lo ocupa).
+    3. Facturas, tickets y contratos: reserva del cupo (se devolvió al fallar).
+    4. Reintento del mes.
     """
-    from app.services import document_quota_service, monthly_quota_service
+    from app.services import contract_quota_service, document_quota_service, monthly_quota_service
 
     free = is_free_retry(row.error_code)
     if retries_exhausted(row.manual_retry_count, row.error_code):
         raise ValidationError(MSG_DOCUMENT_RETRIES_EXHAUSTED)
 
-    if document_kind in ("invoice", "ticket") and not await document_quota_service.reserve(
-        db, ents, row
-    ):
+    if document_kind == "contract":
+        await contract_quota_service.ensure_active_slot(db, ents, tenant_id, exclude_id=row.id)
+    if document_kind in (
+        "invoice",
+        "ticket",
+        "contract",
+    ) and not await document_quota_service.reserve(db, ents, row):
+        if document_kind == "contract":
+            renewal = spanish_day_label(await contract_quota_service.renewal_day(db, tenant_id))
+            raise RateLimitError(MSG_RETRY_NO_CONTRACT_QUOTA.format(renewal=renewal))
         renewal = spanish_day_label(renewal_date())
         raise RateLimitError(MSG_RETRY_NO_DOCUMENT_QUOTA.format(renewal=renewal))
 

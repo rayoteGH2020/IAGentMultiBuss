@@ -1,4 +1,8 @@
-"""Cupo mensual de facturas y tickets (bloque 2; spec planes §4.2, D027).
+"""Cupo mensual de facturas y tickets (bloque 2) y altas de contratos (bloque 5).
+
+Spec planes §4.2 y §4.3, D027. Lo propio de los contratos (tramos de páginas,
+bolsa de carga inicial, archivo de activos) está en ``contract_quota_service``;
+aquí se orquesta igual para los tres tipos.
 
 - **Reserva al encolar, devolución si no termina bien.** Una unidad de la bolsa
   facturas + tickets se reserva antes de encolar la extracción y se devuelve si
@@ -9,10 +13,12 @@
 - **Al 100 %:** el documento se guarda en ``quota_pending`` (no se encola).
   ``process_pending`` los procesa del más antiguo al más nuevo cuando hay hueco:
   cron horario (renovación del día 1), ampliación del SADM o una reserva devuelta.
-- **Duplicados:** SHA-256 del fichero contra las facturas y tickets del tenant
-  que no estén ocultos, antes de subir a R2 y de cualquier llamada al LLM.
+- **Duplicados:** SHA-256 del fichero contra las facturas y tickets (o contra los
+  contratos) del tenant que no estén ocultos, antes de subir a R2 y de cualquier
+  llamada al LLM.
 - **Avisos al admin:** email al cruzar el 80 % de la bolsa y con el primer
-  documento pendiente del mes (una vez por mes cada uno).
+  documento pendiente del mes (una vez por mes cada uno y bolsa).
+- **Contratos:** borrar uno ya procesado nunca devuelve sus altas.
 
 El procesado excepcional que autoriza el SADM no reserva: se cobra aparte
 (``processing_charges``).
@@ -38,10 +44,16 @@ from app.core.db import set_tenant_context
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.entitlement_codes import LIMIT_INVOICES_PER_MONTH, LIMIT_TICKETS_PER_MONTH
 from app.core.errors import RateLimitError
-from app.models import Invoice, InvoiceStatus, Ticket, TicketStatus
-from app.services import entitlement_service, monthly_quota_service, plan_quota_service
+from app.models import Contract, ContractStatus, Invoice, InvoiceStatus, Ticket, TicketStatus
+from app.services import (
+    contract_quota_service,
+    entitlement_service,
+    monthly_quota_service,
+    plan_quota_service,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, datetime
     from uuid import UUID
 
@@ -51,13 +63,26 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-QuotaKind = Literal["invoice", "ticket"]
-QuotaDocument = Invoice | Ticket
-QuotaAlertKind = Literal["documents_warning", "documents_exhausted"]
+QuotaKind = Literal["invoice", "ticket", "contract"]
+QuotaDocument = Invoice | Ticket | Contract
+QuotaAlertKind = Literal[
+    "documents_warning", "documents_exhausted", "contracts_warning", "contracts_exhausted"
+]
+QUOTA_ALERT_KINDS: dict[str, QuotaAlertKind] = {
+    "documents_warning": "documents_warning",
+    "documents_exhausted": "documents_exhausted",
+    "contracts_warning": "contracts_warning",
+    "contracts_exhausted": "contracts_exhausted",
+}
 
 _QUOTA_CODES: dict[QuotaKind, str] = {
     "invoice": LIMIT_INVOICES_PER_MONTH,
     "ticket": LIMIT_TICKETS_PER_MONTH,
+}
+_KIND_LABELS: dict[QuotaKind, str] = {
+    "invoice": "factura",
+    "ticket": "ticket",
+    "contract": "contrato",
 }
 _WARN_RATIO_PCT = 80
 # Más que un mes: la clave de aviso caduca sola tras el cambio de mes.
@@ -78,7 +103,7 @@ class DuplicateMatch:
 
     @property
     def kind_label(self) -> str:
-        return "factura" if self.kind == "invoice" else "ticket"
+        return _KIND_LABELS[self.kind]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,24 +120,45 @@ def file_sha256(file_bytes: bytes) -> str:
 
 
 def quota_kind(document: QuotaDocument) -> QuotaKind:
-    return "invoice" if isinstance(document, Invoice) else "ticket"
+    if isinstance(document, Invoice):
+        return "invoice"
+    if isinstance(document, Contract):
+        return "contract"
+    return "ticket"
+
+
+def _bag_key(kind: QuotaKind) -> str:
+    return "contracts" if kind == "contract" else "documents"
 
 
 def _set_status(document: QuotaDocument, status: Literal["processing", "quota_pending"]) -> None:
     # Ramas por tipo: cada modelo tiene su propio enum de estado.
     if isinstance(document, Invoice):
         document.status = InvoiceStatus(status)
+    elif isinstance(document, Contract):
+        document.status = ContractStatus(status)
     else:
         document.status = TicketStatus(status)
 
 
-def pending_message(reason: DocumentErrorCode) -> str:
-    """Texto de la fila en ``quota_pending`` (no es un error del documento)."""
-    when = spanish_day_label(renewal_date())
+def pending_message(
+    reason: DocumentErrorCode, kind: QuotaKind = "invoice", *, renewal: date | None = None
+) -> str:
+    """Texto de la fila en ``quota_pending`` (no es un error del documento).
+
+    ``renewal``: día en que se renueva la bolsa; por defecto, el 1 del mes que viene
+    (los contratos en carga inicial lo calculan con ``contract_quota_service``).
+    """
+    when = spanish_day_label(renewal or renewal_date())
     if reason == DocumentErrorCode.llm_budget:
         return (
             "Pendiente: se ha agotado el presupuesto de IA del mes. Se procesará "
             f"automáticamente el {when} o si se amplía el presupuesto."
+        )
+    if kind == "contract":
+        return (
+            "Pendiente de cupo: has usado todas las altas de contratos disponibles. Se "
+            f"procesará automáticamente el {when} o cuando se amplíe el cupo."
         )
     return (
         "Pendiente de cupo: has usado todas las facturas y tickets del mes. Se "
@@ -123,8 +169,24 @@ def pending_message(reason: DocumentErrorCode) -> str:
 # ── Duplicados ───────────────────────────────────────────────────────────────
 
 
-async def find_duplicate(db: AsyncSession, tenant_id: UUID, sha256: str) -> DuplicateMatch | None:
-    """Factura o ticket no oculto del tenant con el mismo fichero.
+_DUPLICATE_MODELS: dict[QuotaKind, type[Invoice] | type[Ticket] | type[Contract]] = {
+    "invoice": Invoice,
+    "ticket": Ticket,
+    "contract": Contract,
+}
+
+
+async def find_duplicate(
+    db: AsyncSession,
+    tenant_id: UUID,
+    sha256: str,
+    *,
+    kinds: Sequence[QuotaKind] = ("invoice", "ticket"),
+) -> DuplicateMatch | None:
+    """Documento no oculto del tenant, de los tipos ``kinds``, con el mismo fichero.
+
+    Facturas y tickets se comprueban juntos (un mismo fichero no es las dos
+    cosas); los contratos, entre sí (vigentes o sustituidos).
 
     Toma un bloqueo transaccional por (tenant, hash): dos subidas simultáneas del
     mismo fichero (doble clic) se serializan y la segunda ve la primera.
@@ -133,7 +195,8 @@ async def find_duplicate(db: AsyncSession, tenant_id: UUID, sha256: str) -> Dupl
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
         {"key": f"doc_sha256:{tenant_id}:{sha256}"},
     )
-    for kind, model in (("invoice", Invoice), ("ticket", Ticket)):
+    for kind in kinds:
+        model = _DUPLICATE_MODELS[kind]
         row = (
             await db.execute(
                 select(model.id, model.status, model.created_at)
@@ -148,7 +211,7 @@ async def find_duplicate(db: AsyncSession, tenant_id: UUID, sha256: str) -> Dupl
         ).first()
         if row is not None:
             return DuplicateMatch(
-                kind=kind,  # type: ignore[arg-type]
+                kind=kind,
                 document_id=row.id,
                 status=str(row.status.value),
                 created_at=row.created_at,
@@ -171,8 +234,18 @@ def duplicate_message(match: DuplicateMatch, *, filename: str) -> str:
 
 
 async def reserve(db: AsyncSession, ents: Entitlements, document: QuotaDocument) -> bool:
-    """Reserva una unidad de la bolsa para ``document``. False si no hay hueco."""
+    """Reserva una unidad de la bolsa para ``document``. False si no hay hueco.
+
+    Un contrato reserva sus ``upload_units`` en la bolsa vigente (carga inicial o
+    mensual).
+    """
     if document.quota_period is not None:
+        return True
+    if isinstance(document, Contract):
+        contract_code = await contract_quota_service.try_reserve(db, ents, document)
+        if contract_code is None or document.quota_period is None:
+            return False
+        await _maybe_warn(db, ents, document.tenant_id, contract_code, document.quota_period)
         return True
     code = _QUOTA_CODES[quota_kind(document)]
     period = current_period_start()
@@ -191,10 +264,13 @@ async def release_reservation(db: AsyncSession, document: QuotaDocument) -> bool
     period = document.quota_period
     if period is None:
         return False
-    code = _QUOTA_CODES[quota_kind(document)]
-    await monthly_quota_service.release(db, document.tenant_id, code, period=period)
-    document.quota_period = None
-    await db.flush()
+    if isinstance(document, Contract):
+        await contract_quota_service.release(db, document)
+    else:
+        code = _QUOTA_CODES[quota_kind(document)]
+        await monthly_quota_service.release(db, document.tenant_id, code, period=period)
+        document.quota_period = None
+        await db.flush()
     logger.info(
         "documents_quota.released",
         tenant_id=str(document.tenant_id),
@@ -202,7 +278,9 @@ async def release_reservation(db: AsyncSession, document: QuotaDocument) -> bool
         document_id=str(document.id),
         period=period.isoformat(),
     )
-    if period == current_period_start():
+    # La carga inicial de contratos se cuenta en el mes del alta: su devolución
+    # también puede dejar sitio a un pendiente.
+    if period == current_period_start() or isinstance(document, Contract):
         await schedule_pending_check(db, document.tenant_id)
     return True
 
@@ -216,6 +294,11 @@ async def release_on_delete(db: AsyncSession, document: QuotaDocument) -> None:
     """
     period = document.quota_period
     if period is None:
+        return
+    if isinstance(document, Contract):
+        # Contratos: borrar uno procesado nunca devuelve sus altas (D027, bloque 5).
+        if not contract_quota_service.is_finished(document):
+            await release_reservation(db, document)
         return
     finished = document.status in (
         InvoiceStatus.ready,
@@ -240,7 +323,7 @@ async def hold(
     await release_reservation(db, document)
     _set_status(document, "quota_pending")
     document.error_code = reason.value
-    document.error_message = pending_message(reason)
+    document.error_message = await _pending_message_for(db, document, reason)
     await db.flush()
     logger.info(
         "documents_quota.held",
@@ -250,7 +333,19 @@ async def hold(
         error_code=reason.value,
     )
     if reason == DocumentErrorCode.monthly_quota:
-        await _maybe_alert(document.tenant_id, "documents_exhausted", current_period_start())
+        exhausted: QuotaAlertKind = (
+            "contracts_exhausted" if isinstance(document, Contract) else "documents_exhausted"
+        )
+        await _maybe_alert(document.tenant_id, exhausted, current_period_start())
+
+
+async def _pending_message_for(
+    db: AsyncSession, document: QuotaDocument, reason: DocumentErrorCode
+) -> str:
+    renewal = None
+    if isinstance(document, Contract) and reason == DocumentErrorCode.monthly_quota:
+        renewal = await contract_quota_service.renewal_day(db, document.tenant_id)
+    return pending_message(reason, quota_kind(document), renewal=renewal)
 
 
 async def reserve_or_hold(db: AsyncSession, ents: Entitlements, document: QuotaDocument) -> bool:
@@ -282,6 +377,7 @@ async def has_pending(db: AsyncSession, tenant_id: UUID) -> bool:
     for model, status in (
         (Invoice, InvoiceStatus.quota_pending),
         (Ticket, TicketStatus.quota_pending),
+        (Contract, ContractStatus.quota_pending),
     ):
         count = await db.scalar(
             select(func.count())
@@ -320,8 +416,8 @@ async def schedule_pending_check(db: AsyncSession, tenant_id: UUID) -> None:
 
 
 async def on_quota_extra_added(db: AsyncSession, *, tenant_id: UUID, code: str) -> None:
-    """Tras una ampliación del SADM del cupo de facturas o tickets, procesa pendientes."""
-    if code in _QUOTA_CODES.values():
+    """Tras una ampliación del SADM de un cupo de documentos o contratos, procesa pendientes."""
+    if code in _QUOTA_CODES.values() or code in contract_quota_service.CONTRACT_UPLOAD_CODES:
         await set_tenant_context(db, str(tenant_id))
         await schedule_pending_check(db, tenant_id)
 
@@ -342,7 +438,18 @@ async def _pending_documents(db: AsyncSession, tenant_id: UUID) -> list[QuotaDoc
         .limit(_PENDING_BATCH)
         .with_for_update(skip_locked=True)
     )
-    documents: list[QuotaDocument] = [*invoices.scalars().all(), *tickets.scalars().all()]
+    contracts = await db.execute(
+        select(Contract)
+        .where(Contract.tenant_id == tenant_id, Contract.status == ContractStatus.quota_pending)
+        .order_by(Contract.created_at.asc())
+        .limit(_PENDING_BATCH)
+        .with_for_update(skip_locked=True)
+    )
+    documents: list[QuotaDocument] = [
+        *invoices.scalars().all(),
+        *tickets.scalars().all(),
+        *contracts.scalars().all(),
+    ]
     documents.sort(key=lambda doc: doc.created_at)
     return documents
 
@@ -362,12 +469,21 @@ async def process_pending(db: AsyncSession, tenant_id: UUID) -> list[PendingToEn
         return []
 
     released: list[PendingToEnqueue] = []
+    # Una bolsa sin hueco se cierra para el resto de la pasada (orden de llegada
+    # dentro de cada bolsa), pero no bloquea a la otra.
+    blocked: set[str] = set()
     for document in documents:
+        kind = quota_kind(document)
+        if _bag_key(kind) in blocked:
+            continue
         if not await reserve(db, ents, document):
             if document.error_code != DocumentErrorCode.monthly_quota.value:
                 document.error_code = DocumentErrorCode.monthly_quota.value
-                document.error_message = pending_message(DocumentErrorCode.monthly_quota)
-            break
+                document.error_message = await _pending_message_for(
+                    db, document, DocumentErrorCode.monthly_quota
+                )
+            blocked.add(_bag_key(kind))
+            continue
         _set_status(document, "processing")
         document.error_code = None
         document.error_message = None
@@ -397,7 +513,12 @@ async def _maybe_warn(
         used, cap = await monthly_quota_service.bag_usage(db, ents, tenant_id, code, period=period)
         if cap is None or cap <= 0 or used * 100 < cap * _WARN_RATIO_PCT:
             return
-        await _maybe_alert(tenant_id, "documents_warning", period)
+        warning: QuotaAlertKind = (
+            "contracts_warning"
+            if code in contract_quota_service.CONTRACT_UPLOAD_CODES
+            else "documents_warning"
+        )
+        await _maybe_alert(tenant_id, warning, period)
     except Exception as exc:
         logger.warning(
             "documents_quota.warn_failed", tenant_id=str(tenant_id), error_type=type(exc).__name__
@@ -427,6 +548,8 @@ async def _maybe_alert(tenant_id: UUID, kind: QuotaAlertKind, period: date) -> N
 _ALERT_SUBJECTS: dict[QuotaAlertKind, str] = {
     "documents_warning": "Aviso: has usado el {pct} % de las facturas y tickets de este mes",
     "documents_exhausted": "Has agotado las facturas y tickets de este mes",
+    "contracts_warning": "Aviso: has usado el {pct} % de las altas de contratos",
+    "contracts_exhausted": "Has agotado las altas de contratos",
 }
 _ALERT_BODIES: dict[QuotaAlertKind, str] = {
     "documents_warning": (
@@ -443,6 +566,24 @@ _ALERT_BODIES: dict[QuotaAlertKind, str] = {
         "procesarán automáticamente el {renewal}, o en cuanto se amplíe el cupo. Si "
         "necesitas ampliarlo, contacta con soporte."
     ),
+    "contracts_warning": (
+        "Tu organización {org} ha usado {used} de las {cap} altas de contratos "
+        "disponibles ({bag}).\n\n"
+        "Al llegar al límite, los contratos que se suban se guardarán como pendientes "
+        "y se procesarán automáticamente el {renewal}. Si necesitas ampliarlo antes, "
+        "contacta con soporte."
+    ),
+    "contracts_exhausted": (
+        "Tu organización {org} ha usado las {cap} altas de contratos disponibles "
+        "({bag}).\n\n"
+        "Los contratos que se suban a partir de ahora quedan pendientes y se "
+        "procesarán automáticamente el {renewal}, o en cuanto se amplíe el cupo. Si "
+        "necesitas ampliarlo, contacta con soporte."
+    ),
+}
+_BAG_LABELS: dict[str, str] = {
+    "contract_uploads_first_period": "carga inicial",
+    "contract_uploads_per_month": "este mes",
 }
 
 
@@ -458,13 +599,20 @@ async def send_alert(db: AsyncSession, tenant_id: UUID, kind: QuotaAlertKind) ->
         return False
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
     ents = await entitlement_service.resolve_tenant(db, tenant_id)
-    used, cap = await monthly_quota_service.bag_usage(db, ents, tenant_id, LIMIT_INVOICES_PER_MONTH)
+    renewal = renewal_date()
+    if kind.startswith("contracts_"):
+        code, _period = await contract_quota_service.current_bag(db, tenant_id)
+        renewal = await contract_quota_service.renewal_day(db, tenant_id)
+    else:
+        code = LIMIT_INVOICES_PER_MONTH
+    used, cap = await monthly_quota_service.bag_usage(db, ents, tenant_id, code)
     values = {
+        "bag": _BAG_LABELS.get(code, ""),
         "org": tenant.name,
         "used": used,
         "cap": cap if cap is not None else "-",
         "pct": int(used * 100 / cap) if cap else 0,
-        "renewal": spanish_day_label(renewal_date()),
+        "renewal": spanish_day_label(renewal),
     }
     await send_email(
         to=admin.email,

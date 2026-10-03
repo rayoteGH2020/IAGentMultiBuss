@@ -57,6 +57,7 @@ async def _tenant_ctx(
             (await monthly_quota_service.get_usage(db, ents, tenant.id, period=period)).values()
         ),
         "quota_labels": MONTHLY_QUOTA_UI_LABELS,
+        "initial_load_end": await monthly_quota_service.initial_load_end(db, tenant.id),
         "period_start": period,
         "period_end": period_end(period),
         "notice": notice,

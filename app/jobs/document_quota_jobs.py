@@ -1,4 +1,4 @@
-"""Jobs ARQ del cupo de facturas y tickets (bloque 2, spec planes §4.2)."""
+"""Jobs ARQ del cupo de facturas, tickets y contratos (bloques 2 y 5, spec planes §4)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ import structlog
 from sqlalchemy import select
 
 from app.core.db import session_factory_for_worker, session_scope
-from app.jobs.queue import enqueue_invoice_processing, enqueue_ticket_processing
+from app.jobs.queue import (
+    enqueue_contract_processing,
+    enqueue_invoice_processing,
+    enqueue_ticket_processing,
+)
 from app.models import Tenant
 from app.services import document_quota_service
 
@@ -24,6 +28,8 @@ async def _process_tenant(tenant_id: uuid.UUID) -> int:
     for item in released:
         if item.kind == "invoice":
             await enqueue_invoice_processing(item.document_id, item.tenant_id)
+        elif item.kind == "contract":
+            await enqueue_contract_processing(item.document_id, item.tenant_id)
         else:
             await enqueue_ticket_processing(item.document_id, item.tenant_id)
     return len(released)
@@ -59,12 +65,10 @@ async def send_documents_quota_alert(
 ) -> dict[str, Any]:
     """Email al admin: 80 % de la bolsa o primer documento pendiente del mes."""
     _ = ctx
-    if kind not in ("documents_warning", "documents_exhausted"):
+    alert_kind = document_quota_service.QUOTA_ALERT_KINDS.get(kind)
+    if alert_kind is None:
         logger.warning("worker.documents_quota_alert.unknown_kind", tenant_id=tenant_id, kind=kind)
         return {"status": "skipped", "reason": "unknown_kind"}
-    alert_kind: document_quota_service.QuotaAlertKind = (
-        "documents_warning" if kind == "documents_warning" else "documents_exhausted"
-    )
     tenant_uuid = uuid.UUID(tenant_id)
     async with session_factory_for_worker(tenant_uuid) as db:
         sent = await document_quota_service.send_alert(db, tenant_uuid, alert_kind)

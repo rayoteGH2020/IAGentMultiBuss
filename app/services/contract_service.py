@@ -16,7 +16,7 @@ from app.core.keys import contract_key
 from app.core.storage import get_storage
 from app.core.text_normalization import ilike_pattern, normalize_search_text
 from app.core.uploads import original_upload_filename
-from app.models import Contract, ContractStatus, DocTypeCode
+from app.models import Contract, ContractLifecycle, ContractStatus, DocTypeCode
 from app.schemas.document_query import (
     AggregateGroupBy,
     AggregateMetric,
@@ -38,6 +38,13 @@ if TYPE_CHECKING:
     from app.schemas.contract import ContratoDocumento
 
 logger = structlog.get_logger(__name__)
+
+
+async def _release_quota(db: AsyncSession, contract: Contract) -> None:
+    """Un contrato que no termina bien no consume altas (bloque 5)."""
+    from app.services import document_quota_service
+
+    await document_quota_service.release_reservation(db, contract)
 
 
 async def list_contracts(
@@ -148,6 +155,7 @@ async def apply_extraction_result(
     if not contract_extraction_is_usable(data):
         contract.status = ContractStatus.failed
         contract.error_code = DocumentErrorCode.extraction_failed.value
+        await _release_quota(db, contract)
         contract.error_message = failure_message(
             UNUSABLE_EXTRACTION_TECHNICAL,
             error_code=DocumentErrorCode.extraction_failed,
@@ -221,6 +229,7 @@ async def mark_failed(
     contract.status = ContractStatus.failed
     if llm_call_id is not None:
         contract.llm_call_id = llm_call_id
+    await _release_quota(db, contract)
     logger.warning(
         "contract.processing_failed",
         contract_id=str(contract_id),
@@ -255,6 +264,7 @@ def _contract_to_read(contract: Contract) -> ContractRead:
     return ContractRead(
         id=contract.id,
         status=contract.status.value,
+        lifecycle=contract.lifecycle.value,
         titulo=contract.titulo,
         numero_contrato=contract.numero_contrato,
         parte_contraria=contract.parte_contraria,
@@ -279,6 +289,9 @@ def _contract_search_conditions(
     filters: DocumentSearchFilters,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Contract.tenant_id == tenant_id]
+    # Un contrato sustituido por su renovación no es vigente: fuera salvo que se pida.
+    if not filters.incluir_sustituidos:
+        conditions.append(Contract.lifecycle == ContractLifecycle.active)
 
     if filters.fecha_from is not None:
         conditions.append(Contract.fecha_inicio >= filters.fecha_from)

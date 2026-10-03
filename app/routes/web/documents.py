@@ -20,6 +20,7 @@ from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_featu
 from app.routes.web.audit_context import audit_request_context
 from app.schemas.document_panel import PanelListParams
 from app.services import (
+    contract_quota_service,
     contract_service,
     doc_type_service,
     document_delete_service,
@@ -213,9 +214,8 @@ async def upload_documents(
                 notices.append(
                     {
                         "filename": display_name,
-                        "message": document_quota_service.pending_message(
-                            DocumentErrorCode.monthly_quota
-                        ),
+                        "message": result.pending_message
+                        or document_quota_service.pending_message(DocumentErrorCode.monthly_quota),
                     }
                 )
 
@@ -342,6 +342,52 @@ async def document_retry(
         tenant.id,
         kind=kind,
         document_id=document_id,
+    )
+
+
+@router.post("/contract/{document_id}/replace")
+async def contract_mark_replaced(
+    request: Request,
+    document_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """«Marcar como sustituido»: libera el hueco de activo del contrato (bloque 5)."""
+    await contract_quota_service.mark_replaced(
+        db,
+        tenant_id=tenant.id,
+        contract_id=document_id,
+        user_id=user.id,
+        request_ctx=audit_request_context(request),
+    )
+    await db.commit()
+    return await _document_row_response(
+        request, db, tenant.id, kind="contract", document_id=document_id
+    )
+
+
+@router.post("/contract/{document_id}/reactivate")
+async def contract_reactivate(
+    request: Request,
+    document_id: UUID,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """«Volver a vigente»: vuelve a ocupar hueco si lo hay (bloque 5)."""
+    ents = await entitlement_service.resolve_entitlements(db, tenant)
+    await contract_quota_service.reactivate(
+        db,
+        ents,
+        tenant_id=tenant.id,
+        contract_id=document_id,
+        user_id=user.id,
+        request_ctx=audit_request_context(request),
+    )
+    await db.commit()
+    return await _document_row_response(
+        request, db, tenant.id, kind="contract", document_id=document_id
     )
 
 

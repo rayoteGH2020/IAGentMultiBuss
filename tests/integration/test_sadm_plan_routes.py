@@ -103,6 +103,9 @@ def test_tenant_page_shows_monthly_quotas(sadm: _Sadm) -> None:
     assert "Cupos del mes" in r.text
     assert "Facturas al mes" in r.text
     assert "Preguntas de chat al mes" in r.text
+    # Tenant recién creado: en carga inicial de contratos, con su fecha de fin.
+    assert "Altas de contratos en la carga inicial" in r.text
+    assert "En carga inicial de contratos hasta el" in r.text
 
 
 def test_quota_extra_then_plan_change_flow(sadm: _Sadm) -> None:

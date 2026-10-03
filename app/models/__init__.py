@@ -26,7 +26,7 @@ from app.models.channel_integration import (
 )
 from app.models.channel_response_cache import ChannelResponseCache
 from app.models.chat import ChatMessage, ChatMessageRole, ChatThread
-from app.models.contract import Contract, ContractStatus
+from app.models.contract import Contract, ContractLifecycle, ContractStatus
 from app.models.conversation import ChannelMessage, Conversation
 from app.models.doc_type import DocType, DocTypeCode
 from app.models.document_processing_attempt import (
@@ -76,6 +76,7 @@ __all__ = [
     "ChatMessageRole",
     "ChatThread",
     "Contract",
+    "ContractLifecycle",
     "ContractStatus",
     "Conversation",
     "DocType",

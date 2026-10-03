@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Literal
 
 import structlog
 
+from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import ValidationError
-from app.core.media_limits import MediaLimitExceeded, inspect_document
+from app.core.media_limits import MediaInspection, MediaLimitExceeded, inspect_document
 from app.core.uploads import UploadValidationError
 from app.jobs.queue import (
     enqueue_contract_processing,
@@ -20,6 +21,7 @@ from app.jobs.queue import (
 from app.models import Contract, DocTypeCode, Insurance, Invoice, Ticket
 from app.services import (
     audit_service,
+    contract_quota_service,
     contract_service,
     document_classification,
     document_quota_service,
@@ -61,6 +63,12 @@ class DocumentIngestResult:
     awaiting_type_confirmation: bool = False
     # True cuando no había cupo mensual: guardado en quota_pending, sin encolar.
     quota_pending: bool = False
+
+    @property
+    def pending_message(self) -> str | None:
+        """Texto para el usuario de un documento guardado en ``quota_pending``."""
+        record = self.invoice or self.ticket or self.contract
+        return record.error_message if record is not None else None
 
     @property
     def record_id(self) -> UUID:
@@ -143,10 +151,24 @@ async def _ingest_uploaded_document(
     documento no los cumple se sube igualmente a R2 y se registra en estado
     fallido, pero no llega al worker.
 
-    Facturas y tickets: antes de nada se descarta un fichero ya subido (SHA-256,
-    sin R2 ni LLM ni cupo) y, al encolar, se reserva el cupo mensual; sin hueco,
-    el documento queda en `quota_pending` (`document_quota_service`).
+    Facturas, tickets y contratos: antes de nada se descarta un fichero ya subido
+    (SHA-256, sin R2 ni LLM ni cupo) y, al encolar, se reserva el cupo; sin hueco,
+    el documento queda en `quota_pending` (`document_quota_service`). Los contratos
+    se rechazan además si superan las páginas del plan o si el archivo de activos
+    está lleno (`contract_quota_service`).
     """
+    if doc_type == DocTypeCode.contrato:
+        return await _ingest_contract(
+            db,
+            tenant_id=tenant_id,
+            filename=filename,
+            file_bytes=file_bytes,
+            mime_type=mime_type,
+            redis=redis,
+            ents=ents or await entitlement_service.resolve_tenant(db, tenant_id),
+            check_daily=redis is not None and ents is not None,
+        )
+
     sha256: str | None = None
     if doc_type in {DocTypeCode.factura, DocTypeCode.ticket}:
         sha256 = document_quota_service.file_sha256(file_bytes)
@@ -212,45 +234,6 @@ async def _ingest_uploaded_document(
             ents=quota_ents,
         )
 
-    if doc_type == DocTypeCode.contrato:
-        contract = await contract_service.create_contract_from_upload(
-            db,
-            tenant_id=tenant_id,
-            filename=filename,
-            file_bytes=file_bytes,
-            mime_type=mime_type,
-            doc_type=DocTypeCode.contrato,
-        )
-        await db.flush()
-        if rejection is not None:
-            await contract_service.mark_failed(
-                db,
-                contract_id=contract.id,
-                tenant_id=tenant_id,
-                error=rejection.message,
-                error_code=rejection.error_code,
-                detail=rejection.detail,
-            )
-            await db.flush()
-            return DocumentIngestResult(
-                kind="contract",
-                doc_type=doc_type,
-                contract=contract,
-                rejected=True,
-            )
-        await enqueue_contract_processing(contract.id, tenant_id)
-        logger.info(
-            "document_ingest.contract",
-            tenant_id=str(tenant_id),
-            contract_id=str(contract.id),
-            doc_type=doc_type.value,
-        )
-        return DocumentIngestResult(
-            kind="contract",
-            doc_type=doc_type,
-            contract=contract,
-        )
-
     if doc_type == DocTypeCode.seguro:
         insurance = await insurance_service.create_insurance_from_upload(
             db,
@@ -291,6 +274,122 @@ async def _ingest_uploaded_document(
         )
 
     raise ValidationError(f"Unsupported document type: {doc_type.value!r}")
+
+
+async def _ingest_contract(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    filename: str,
+    file_bytes: bytes,
+    mime_type: str,
+    redis: object | None,
+    ents: Entitlements,
+    check_daily: bool,
+) -> DocumentIngestResult:
+    """Contrato: hash, páginas del plan, archivo de activos y reserva de altas (bloque 5).
+
+    Duplicado, exceso de páginas y archivo lleno se rechazan sin R2 ni LLM ni altas.
+    Otros límites del fichero (imagen enorme, ilegible) se guardan como fallidos
+    para que el SADM pueda revisarlos, igual que facturas y tickets.
+    """
+    doc_type = DocTypeCode.contrato
+    sha256 = document_quota_service.file_sha256(file_bytes)
+    duplicate = await document_quota_service.find_duplicate(
+        db, tenant_id, sha256, kinds=("contract",)
+    )
+    if duplicate is not None:
+        logger.info(
+            "document_ingest.duplicate",
+            tenant_id=str(tenant_id),
+            document_kind=duplicate.kind,
+            document_id=str(duplicate.document_id),
+        )
+        raise UploadValidationError(
+            document_quota_service.duplicate_message(duplicate, filename=filename)
+        )
+
+    if check_daily and redis is not None:
+        from app.services import plan_quota_service
+
+        await plan_quota_service.ensure_documents_upload(redis, ents, tenant_id, n_files=1)
+
+    max_pages = contract_quota_service.max_pages(ents)
+    rejection: MediaLimitExceeded | None = None
+    inspection: MediaInspection | None = None
+    try:
+        inspection = await asyncio.to_thread(
+            inspect_document, file_bytes, mime_type, max_pdf_pages=max_pages
+        )
+    except MediaLimitExceeded as exc:
+        if exc.error_code == DocumentErrorCode.too_many_pages:
+            logger.info(
+                "document_ingest.contract_too_many_pages",
+                tenant_id=str(tenant_id),
+                max_pages=max_pages,
+            )
+            raise UploadValidationError(
+                contract_quota_service.too_many_pages_message(
+                    filename=filename, detail=exc.detail, cap=max_pages
+                )
+            ) from exc
+        rejection = exc
+        logger.warning(
+            "document_ingest.rejected_by_limits",
+            tenant_id=str(tenant_id),
+            mime_type=mime_type,
+            size_bytes=len(file_bytes),
+            error_code=exc.error_code.value,
+            reason=exc.message,
+        )
+
+    if rejection is None:
+        try:
+            await contract_quota_service.ensure_active_slot(db, ents, tenant_id)
+        except ValidationError as exc:
+            raise UploadValidationError(exc.message) from exc
+
+    contract = await contract_service.create_contract_from_upload(
+        db,
+        tenant_id=tenant_id,
+        filename=filename,
+        file_bytes=file_bytes,
+        mime_type=mime_type,
+        doc_type=doc_type,
+    )
+    contract.file_sha256 = sha256
+    if inspection is not None:
+        contract.page_count = inspection.pages
+        contract.upload_units = contract_quota_service.upload_units(inspection.pages)
+    await db.flush()
+    if rejection is not None:
+        await contract_service.mark_failed(
+            db,
+            contract_id=contract.id,
+            tenant_id=tenant_id,
+            error=rejection.message,
+            error_code=rejection.error_code,
+            detail=rejection.detail,
+        )
+        await db.flush()
+        return DocumentIngestResult(
+            kind="contract", doc_type=doc_type, contract=contract, rejected=True
+        )
+
+    if not await document_quota_service.reserve_or_hold(db, ents, contract):
+        return DocumentIngestResult(
+            kind="contract", doc_type=doc_type, contract=contract, quota_pending=True
+        )
+
+    await enqueue_contract_processing(contract.id, tenant_id)
+    logger.info(
+        "document_ingest.contract",
+        tenant_id=str(tenant_id),
+        contract_id=str(contract.id),
+        page_count=contract.page_count,
+        upload_units=contract.upload_units,
+    )
+    return DocumentIngestResult(kind="contract", doc_type=doc_type, contract=contract)
 
 
 async def _ingest_invoice(

@@ -265,6 +265,10 @@
       <span class="invoices-cell-inner inline-flex items-center gap-1.5 min-w-0" title="{{ document.doc_type_label }}">
         {% include "components/document_type_icon.html" %}
         <span class="truncate">{{ document.doc_type_label }}</span>
+        {% if document.is_replaced %}
+        <span class="status-pill bg-slate-100 text-slate-600 ring-1 ring-slate-200"
+              title="Sustituido por una renovación">Sustituido</span>
+        {% endif %}
       </span>
     </td>
     <td class="col-muted invoices-td--fecha">

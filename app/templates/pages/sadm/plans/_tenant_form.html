@@ -58,6 +58,10 @@
     <p class="text-xs text-slate-500">
       Periodo {{ period_start.strftime("%d/%m/%Y") }} – {{ period_end.strftime("%d/%m/%Y") }}.
       Facturas y tickets comparten tope (bolsa).
+      {% if monthly_quotas | selectattr("code", "equalto", "contract_uploads_first_period") | list %}
+      En carga inicial de contratos hasta el {{ initial_load_end.strftime("%d/%m/%Y") }}: sus altas
+      (y su ampliación) valen para toda la ventana y sustituyen a las mensuales.
+      {% endif %}
     </p>
     <table class="w-full text-sm">
       <thead>

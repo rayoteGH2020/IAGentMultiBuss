@@ -16,9 +16,12 @@ from app.core.storage import get_storage
 from app.jobs import extraction_guard
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_contract
+from app.models.document_processing_attempt import ProcessingAttemptStatus
 from app.services import (
+    contract_quota_service,
     contract_service,
     document_processing_service,
+    document_quota_service,
     entitlement_service,
     processing_charge_service,
 )
@@ -32,7 +35,12 @@ async def process_contract(
     tenant_id: str,
     max_pdf_pages: int | None = None,
 ) -> dict[str, Any]:
-    """Descarga fichero desde R2, extrae con LLM y guarda en `Contract`."""
+    """Descarga fichero desde R2, extrae con LLM y guarda en `Contract`.
+
+    Args:
+        max_pdf_pages: Tope de páginas de esta ejecución. Sin valor, el del plan
+            (``contract_max_pages``); el procesado excepcional del SADM pasa el suyo.
+    """
     contract_uuid = uuid.UUID(contract_id)
     tenant_uuid = uuid.UUID(tenant_id)
     logger.info("worker.contract.start", contract_id=contract_id, tenant_id=tenant_id)
@@ -90,6 +98,24 @@ async def process_contract(
             document_id=contract_uuid,
         ):
             return {"status": "interrupted", "contract_id": contract_id}
+
+        # Presupuesto de IA agotado: el contrato espera (quota_pending) y devuelve sus
+        # altas en vez de fallar; se procesa solo al renovarse (spec §4.7).
+        if await document_quota_service.hold_if_budget_exhausted(db, contract_row):
+            await document_processing_service.finalize_processing_attempt(
+                db,
+                tenant_id=tenant_uuid,
+                document_kind="contract",
+                document_id=contract_uuid,
+                status=ProcessingAttemptStatus.failed,
+                error_code=DocumentErrorCode.llm_budget.value,
+            )
+            await db.commit()
+            return {"status": "quota_pending", "contract_id": contract_id}
+
+        if max_pdf_pages is None:
+            ents = await entitlement_service.resolve_tenant(db, tenant_uuid)
+            max_pdf_pages = contract_quota_service.max_pages(ents)
 
         try:
             storage = get_storage()

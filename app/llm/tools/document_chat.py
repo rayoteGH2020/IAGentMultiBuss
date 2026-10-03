@@ -77,6 +77,14 @@ class SearchDocumentsArgs(BaseModel):
     forma_pago: str | None = None
     parte_contraria_query: str | None = None
     numero_contrato: str | None = None
+    incluir_sustituidos: bool = Field(
+        default=False,
+        description=(
+            "Solo contratos. Por defecto solo los vigentes; true incluye también los "
+            "sustituidos por una renovación (preguntas sobre el histórico o contratos "
+            "anteriores)."
+        ),
+    )
     aseguradora_query: str | None = None
     numero_poliza: str | None = None
     tipo_seguro: str | None = None
@@ -143,6 +151,14 @@ class AggregateDocumentsArgs(BaseModel):
     forma_pago: str | None = None
     parte_contraria_query: str | None = None
     numero_contrato: str | None = None
+    incluir_sustituidos: bool = Field(
+        default=False,
+        description=(
+            "Solo contratos. Por defecto solo los vigentes; true incluye también los "
+            "sustituidos por una renovación (preguntas sobre el histórico o contratos "
+            "anteriores)."
+        ),
+    )
     aseguradora_query: str | None = None
     numero_poliza: str | None = None
     tipo_seguro: str | None = None

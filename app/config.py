@@ -40,6 +40,28 @@ CommaSeparatedStrList = Annotated[
 ]
 
 
+def _parse_page_tiers(value: object) -> list[int]:
+    """Umbrales de páginas de los tramos de contratos: ``30,60`` o JSON ``[30, 60]``.
+
+    Estrictamente crecientes y positivos: un error de tecleo (``60,30``) haría que
+    un contrato largo consumiera menos altas que uno corto.
+    """
+    if isinstance(value, (list, tuple)):
+        raw = [str(item) for item in value]
+    else:
+        raw = _parse_comma_or_json_str_list(value)
+    tiers = [int(item) for item in raw]
+    if any(tier <= 0 for tier in tiers) or tiers != sorted(set(tiers)):
+        raise ValueError("expected strictly increasing positive page counts, e.g. 30,60")
+    # contracts.upload_units admite hasta 10 (ck_contracts_upload_units).
+    if len(tiers) > 9:
+        raise ValueError("at most 9 page thresholds (10 tiers)")
+    return tiers
+
+
+PageTierList = Annotated[list[int], NoDecode, BeforeValidator(_parse_page_tiers)]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # env_file=None: los secretos los inyecta Infisical en el entorno del
@@ -192,6 +214,10 @@ class Settings(BaseSettings):
     # Multiplicador sobre el coste de proveedor al repercutir un procesado
     # excepcional al cliente (1.0 = a coste, sin margen).
     document_override_charge_multiplier: float = 1.0
+    # Tramos de altas por contrato según sus páginas (D027, bloque 5): hasta 30
+    # páginas, 1 alta; de 31 a 60, 2; más de 60, 3. El máximo de páginas lo fija
+    # el plan (``contract_max_pages``); una imagen cuenta como 1 página.
+    contract_upload_page_tiers: PageTierList = [30, 60]
 
     # Planes / entitlements (Paso02): kill-switch global de features.
     # CSV o JSON de codigos FEATURE_* desactivados para todos los tenants.

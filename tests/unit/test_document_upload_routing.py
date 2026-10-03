@@ -21,10 +21,13 @@ def _db_session() -> AsyncMock:
 @pytest.fixture(autouse=True)
 def _quota_open(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sin duplicados y con cupo: aquí solo se prueba el enrutado (cupo en
-    tests/integration/test_document_quota.py)."""
+    tests/integration/test_document_quota.py y test_contract_quota.py)."""
     quota = document_upload_service.document_quota_service
     monkeypatch.setattr(quota, "find_duplicate", AsyncMock(return_value=None))
     monkeypatch.setattr(quota, "reserve_or_hold", AsyncMock(return_value=True))
+    contracts = document_upload_service.contract_quota_service
+    monkeypatch.setattr(contracts, "ensure_active_slot", AsyncMock(return_value=None))
+    monkeypatch.setattr(contracts, "max_pages", lambda _ents: 100)
     monkeypatch.setattr(
         document_upload_service.entitlement_service,
         "resolve_tenant",

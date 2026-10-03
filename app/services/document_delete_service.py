@@ -92,7 +92,7 @@ async def delete_document(
         request_ctx=request_ctx,
     )
 
-    if document_kind in ("invoice", "ticket"):
+    if document_kind in ("invoice", "ticket", "contract"):
         await document_quota_service.release_on_delete(db, loaded.entity)
 
     await db.execute(
