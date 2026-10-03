@@ -25,6 +25,7 @@ from app.services import (
     monthly_quota_service,
     plan_change_service,
     plan_service,
+    quota_status_service,
 )
 
 log = structlog.get_logger(__name__)
@@ -38,7 +39,14 @@ _TENANT_PARTIAL = "pages/sadm/plans/_tenant_form.html"
 async def _plans_page_ctx(db: AsyncSession) -> dict[str, object]:
     plans = await plan_service.list_plans(db, active_only=True)
     tenants = await admin_service.list_all_tenants(db)
-    return {"plans": plans, "tenants": tenants}
+    # Marca «≥ 80 %» / «100 %» por tenant: presupuesto de IA o cupos del mes (P2b-18).
+    alert_levels = {
+        tenant.id: await quota_status_service.tenant_alert_level(
+            db, await entitlement_service.resolve_entitlements(db, tenant), tenant.id
+        )
+        for tenant in tenants
+    }
+    return {"plans": plans, "tenants": tenants, "alert_levels": alert_levels}
 
 
 async def _tenant_ctx(

@@ -35,7 +35,12 @@ from app.schemas.support import (
     SUPPORT_TITLE_MAX_LENGTH,
     SupportRequestCreate,
 )
-from app.services import entitlement_service, plan_quota_service, support_service
+from app.services import (
+    entitlement_service,
+    plan_quota_service,
+    quota_status_service,
+    support_service,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -64,6 +69,8 @@ async def settings_profile(
             "tenant": tenant,
             "plan": entitlement_service.build_plan_summary(ents, usage),
             "usage": await plan_quota_service.get_usage_snapshot(db, ents, tenant.id),
+            "quota_statuses": await quota_status_service.monthly_statuses(db, ents, tenant.id),
+            "ai_usage_percent": await quota_status_service.ai_usage_percent(db, ents, tenant.id),
         },
     )
 

@@ -49,6 +49,7 @@ async def build_invoices_panel_ctx(
         document_history_service,
         insurance_service,
         invoice_service,
+        quota_status_service,
         ticket_service,
     )
 
@@ -92,6 +93,8 @@ async def build_invoices_panel_ctx(
         "upload_errors": upload_errors or [],
         "upload_notices": upload_notices or [],
         "just_uploaded_ids": just_uploaded_ids or [],
+        # Avisos de cupo al 80 % / 100 % (bloque 7); se refrescan con el fragmento.
+        "quota_alerts": await quota_status_service.documents_alerts(db, tenant_id),
     }
 
 

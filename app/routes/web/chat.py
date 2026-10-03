@@ -14,10 +14,17 @@ from sse_starlette.sse import EventSourceResponse
 from app.core.db import session_scope, set_tenant_context
 from app.core.errors import AppError, public_error_message
 from app.core.templating import render
-from app.deps import CurrentTenant, CurrentUser, RedisDep, get_db, require_any_feature
+from app.deps import (
+    CurrentTenant,
+    CurrentUser,
+    EntitlementsDep,
+    RedisDep,
+    get_db,
+    require_any_feature,
+)
 from app.routes.web.audit_context import audit_request_context
 from app.schemas.chat import ChatMessageListFilters, ChatThreadListFilters
-from app.services import chat_service
+from app.services import chat_service, quota_status_service
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -80,6 +87,7 @@ async def chat_index(
     request: Request,
     user: CurrentUser,
     tenant: CurrentTenant,
+    ents: EntitlementsDep,
     db: AsyncSession = Depends(get_db),
     thread_id: UUID | None = None,
 ) -> HTMLResponse:
@@ -90,6 +98,9 @@ async def chat_index(
         user_id=user.id,
         thread_id=thread_id,
     )
+    # Aviso solo con las preguntas del mes agotadas (sin aviso al 80 %, spec §4.4).
+    alert = await quota_status_service.chat_alert(db, ents, tenant.id)
+    ctx["quota_alerts"] = [alert] if alert is not None else []
     return render(request, full="pages/chat/index.html", ctx=ctx)
 
 

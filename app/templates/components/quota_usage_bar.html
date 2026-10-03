@@ -1,0 +1,13 @@
+{# Barra de consumo: ámbar desde el 80 % (aviso) y roja al 100 % (agotado). #}
+{% set bar_color = "bg-red-500" if percent >= 100 else ("bg-amber-500" if percent >= 80 else "bg-emerald-500") %}
+<div class="mt-2 flex items-center gap-2">
+  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"
+       role="progressbar"
+       aria-label="{{ bar_label }}"
+       aria-valuemin="0"
+       aria-valuemax="100"
+       aria-valuenow="{{ percent }}">
+    <div class="h-full rounded-full {{ bar_color }}" style="width: {{ percent }}%"></div>
+  </div>
+  <span class="w-9 text-right text-xs tabular-nums text-slate-500">{{ percent }} %</span>
+</div>

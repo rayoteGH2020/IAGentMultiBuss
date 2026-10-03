@@ -7,6 +7,7 @@
 {# hx-disinherit: el #app-frame del layout define hx-select="#app-frame" para
    la navegación boost del sidebar. Sin disinherit, ese select se hereda aquí
    y vacía el swap de #chat-main al crear/abrir hilos (solo se ve el OOB). #}
+{% if quota_alerts %}<div class="mb-3 space-y-2">{% include "components/quota_alerts.html" %}</div>{% endif %}
 <div class="chat-shell" hx-boost="false" hx-disinherit="*" id="chat-app">
   <aside id="chat-sidebar" class="chat-sidebar">
     <div id="chat-sidebar-inner" class="chat-sidebar-inner">

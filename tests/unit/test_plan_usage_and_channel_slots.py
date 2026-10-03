@@ -171,7 +171,14 @@ def _render(limits: list[PlanLimitItem]) -> str:
 
 @pytest.mark.parametrize(
     ("percent", "color"),
-    [(24, "bg-emerald-500"), (70, "bg-amber-500"), (89, "bg-amber-500"), (90, "bg-red-500")],
+    # Mismos umbrales que los avisos (bloque 7): 80 % aviso, 100 % agotado.
+    [
+        (24, "bg-emerald-500"),
+        (79, "bg-emerald-500"),
+        (80, "bg-amber-500"),
+        (99, "bg-amber-500"),
+        (100, "bg-red-500"),
+    ],
 )
 def test_limit_bar_width_and_color(percent: int, color: str) -> None:
     html = _render([PlanLimitItem(label="Docs", value="50", used=1, percent=percent)])

@@ -11,6 +11,7 @@ from app.core.entitlement_codes import PLAN_FEATURES, PLAN_LIMITS
 from app.core.templating import templates
 from app.schemas.entitlements import Entitlements, PlanLimitItem, PlanSummary
 from app.services.entitlement_service import build_plan_summary
+from app.services.quota_status_service import QuotaStatus
 
 
 def _ents(plan_code: str, **limit_overrides: Decimal | None) -> Entitlements:
@@ -88,7 +89,13 @@ def _usage(*, budget: Decimal | None = Decimal("30")) -> SimpleNamespace:
     )
 
 
-def _render_org_section(plan: PlanSummary, usage: SimpleNamespace | None = None) -> str:
+def _render_org_section(
+    plan: PlanSummary,
+    usage: SimpleNamespace | None = None,
+    *,
+    quota_statuses: list[QuotaStatus] | None = None,
+    ai_usage_percent: int | None = None,
+) -> str:
     template = templates.env.get_template("pages/settings/profile.html")
     ctx = template.new_context(
         {
@@ -96,6 +103,8 @@ def _render_org_section(plan: PlanSummary, usage: SimpleNamespace | None = None)
             "tenant": SimpleNamespace(name="Peluqueria The Moon"),
             "plan": plan,
             "usage": usage,
+            "quota_statuses": quota_statuses or [],
+            "ai_usage_percent": ai_usage_percent,
         }
     )
     return "".join(template.blocks["settings_content"](ctx))
@@ -105,22 +114,49 @@ def _compact(html: str) -> str:
     return re.sub(r"\s+", " ", html)
 
 
-def test_profile_includes_monthly_usage_formerly_in_billing() -> None:
+def test_profile_shows_ai_usage_as_percent_without_euros() -> None:
     plan = PlanSummary(code="basic", name="Básico", features=["Documentos"], limits=[])
-    html = _compact(_render_org_section(plan, _usage()))
+    html = _compact(_render_org_section(plan, _usage(), ai_usage_percent=35))
 
     assert "Consumo del mes" in html and "(09/2026)" in html
-    assert "1,50 € <span" in html and "de 30,00 €" in html
+    assert "Uso de IA del mes" in html and "35 %" in html
+    # Los euros dejarían ver el coste interno (decisión 2026-10-03).
+    assert "€" not in html
     assert "Consultas a la base de conocimiento" in html
     # Sin duplicados: el plan solo aparece en la cabecera de la tarjeta.
     assert "Plan actual" not in html
     assert html.count("Básico") == 1
 
 
-def test_profile_usage_without_budget_shows_no_cap() -> None:
+def test_profile_without_ai_budget_has_no_ai_row() -> None:
     plan = PlanSummary(code="premium", name="Premium", features=[], limits=[])
-    html = _compact(_render_org_section(plan, _usage(budget=None)))
-    assert "(sin tope)" in html
+    html = _compact(_render_org_section(plan, _usage(budget=None), ai_usage_percent=None))
+    assert "Uso de IA del mes" not in html
+    assert "€" not in html
+
+
+def test_profile_lists_monthly_quotas_with_renewal_and_breakdown() -> None:
+    plan = PlanSummary(code="basic", name="Básico", features=[], limits=[])
+    statuses = [
+        QuotaStatus(
+            key="documents",
+            label="Facturas y tickets",
+            used=34,
+            cap=40,
+            renewal=date(2026, 11, 1),
+            detail="facturas 25 · tickets 9",
+        ),
+        QuotaStatus(key="chat", label="Preguntas al chat", used=400, cap=400),
+        QuotaStatus(key="contracts_active", label="Contratos vigentes", used=3, cap=None),
+    ]
+    html = _compact(_render_org_section(plan, _usage(), quota_statuses=statuses))
+
+    assert 'data-quota="documents"' in html
+    assert "34 <span" in html and "de 40" in html
+    assert "facturas 25 · tickets 9" in html and "se renueva el 1 de noviembre" in html
+    assert 'aria-valuenow="85"' in html and "bg-amber-500" in html
+    assert 'aria-valuenow="100"' in html and "bg-red-500" in html
+    assert "de sin límite" in html
 
 
 def test_profile_shows_org_name_plan_and_list_without_members_card() -> None:
