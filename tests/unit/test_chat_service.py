@@ -46,6 +46,76 @@ def test_trim_llm_messages_keeps_system_and_recent() -> None:
     assert all(m["content"] != "old-a" * 50 for m in trimmed)
 
 
+def test_start_at_user_turn_drops_orphan_tool_messages() -> None:
+    messages = [
+        {"role": "system", "content": "SYS"},
+        {"role": "tool", "tool_call_id": "c1", "name": "search_documents", "content": {}},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c2"}]},
+        {"role": "user", "content": "pregunta"},
+        {"role": "assistant", "content": "respuesta"},
+    ]
+    assert [m["role"] for m in chat_service.start_at_user_turn(messages)] == [
+        "system",
+        "user",
+        "assistant",
+    ]
+    assert chat_service.start_at_user_turn(messages[:3]) == [messages[0]]
+
+
+def test_char_budget_trim_never_leaves_a_tool_chain_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from app.models import ChatMessage, ChatMessageRole
+
+    monkeypatch.setattr(
+        chat_service, "get_settings", lambda: SimpleNamespace(chat_max_context_chars=60)
+    )
+    history = [
+        ChatMessage(role=ChatMessageRole.user, content="primera pregunta"),
+        ChatMessage(
+            role=ChatMessageRole.assistant,
+            content="",
+            tool_call={"calls": [{"id": "c1", "name": "search_documents"}]},
+        ),
+        ChatMessage(
+            role=ChatMessageRole.tool,
+            tool_call={"id": "c1", "name": "search_documents"},
+            tool_result={"rows": "x" * 10},
+        ),
+        ChatMessage(role=ChatMessageRole.assistant, content="respuesta " * 3),
+        ChatMessage(role=ChatMessageRole.user, content="segunda"),
+    ]
+
+    messages = chat_service._history_to_llm_messages(history, system_prompt="SYS")
+
+    # El recorte por caracteres cortaba tras la respuesta de la tool; se empieza en un usuario.
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert messages[1]["content"] == "segunda"
+
+
+def test_drop_failed_turns_removes_whole_failed_turn_and_leading_fragment() -> None:
+    from app.models import ChatMessage, ChatMessageRole
+
+    def msg(role: ChatMessageRole, content: str = "") -> ChatMessage:
+        return ChatMessage(role=role, content=content)
+
+    rows = [
+        (msg(ChatMessageRole.tool), False),  # turno cortado por el límite
+        (msg(ChatMessageRole.assistant, "fin cortado"), False),
+        (msg(ChatMessageRole.user, "ok"), False),
+        (msg(ChatMessageRole.assistant, "respuesta"), False),
+        (msg(ChatMessageRole.user, "falla"), False),
+        (msg(ChatMessageRole.assistant), False),
+        (msg(ChatMessageRole.tool), False),
+        (msg(ChatMessageRole.assistant, "error"), True),
+        (msg(ChatMessageRole.user, "actual"), False),
+    ]
+
+    kept = chat_service.drop_failed_turns(rows)
+
+    assert [m.content for m in kept] == ["ok", "respuesta", "actual"]
+
+
 @pytest.mark.asyncio
 async def test_enforce_rate_limit_per_minute_uses_tenant_and_user_key() -> None:
     redis_conn = AsyncMock()

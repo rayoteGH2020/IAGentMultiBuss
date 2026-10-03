@@ -16,7 +16,7 @@ from app.core.errors import ForbiddenError, NotFoundError, ValidationError
 from app.llm.chat_prompts import build_chat_system_prompt, resolve_chat_prompt_version
 from app.llm.client import get_llm_client
 from app.llm.tools.registry import ToolContext, ToolRegistry, chat_tool_families_for_entitlements
-from app.models import ChatMessage, ChatMessageRole, ChatThread, Tenant
+from app.models import ChatMessage, ChatMessageRole, ChatThread, LLMCall, Tenant
 from app.schemas.chat import (
     ChatMessageListFilters,
     ChatMessageRead,
@@ -271,10 +271,26 @@ def _history_to_llm_messages(
                     "content": tool_content,
                 },
             )
-    return trim_llm_messages_to_char_budget(
+    trimmed = trim_llm_messages_to_char_budget(
         messages,
         max_chars=get_settings().chat_max_context_chars,
     )
+    return start_at_user_turn(trimmed)
+
+
+def start_at_user_turn(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Descarta lo anterior al primer mensaje del usuario (el system se conserva).
+
+    Un recorte (por número de mensajes o por caracteres) puede caer en mitad de
+    un turno con tools: el proveedor rechaza la petición (Gemini, 400) si una
+    respuesta de tool no va justo tras su llamada o si una llamada no sigue a un
+    mensaje del usuario. Empezar siempre en un mensaje del usuario lo evita.
+    """
+    system = messages[0] if messages and messages[0].get("role") == "system" else None
+    rest = messages[1:] if system is not None else messages
+    first_user = next((i for i, msg in enumerate(rest) if msg.get("role") == "user"), len(rest))
+    kept = rest[first_user:]
+    return [system, *kept] if system is not None else kept
 
 
 def _message_char_weight(message: dict[str, Any]) -> int:
@@ -326,7 +342,11 @@ async def _load_history(
 ) -> list[ChatMessage]:
     limit = get_settings().chat_history_message_limit
     stmt = (
-        select(ChatMessage)
+        select(ChatMessage, LLMCall.status)
+        .outerjoin(
+            LLMCall,
+            (LLMCall.id == ChatMessage.llm_call_id) & (LLMCall.tenant_id == tenant_id),
+        )
         .where(
             ChatMessage.tenant_id == tenant_id,
             ChatMessage.thread_id == thread_id,
@@ -335,9 +355,30 @@ async def _load_history(
         .limit(limit)
     )
     result = await db.execute(stmt)
-    rows = list(result.scalars().all())
+    rows = [(message, status == "error") for message, status in result.all()]
     rows.reverse()
-    return rows
+    return drop_failed_turns(rows)
+
+
+def drop_failed_turns(rows: list[tuple[ChatMessage, bool]]) -> list[ChatMessage]:
+    """Historial útil: turnos completos que no fallaron, empezando en un mensaje del usuario.
+
+    ``rows`` son los mensajes en orden con un indicador de «respuesta de un turno
+    fallido» (``llm_calls.status = 'error'``). Un turno va de un mensaje del usuario
+    al siguiente. Se descartan enteros los turnos fallidos (pregunta, tools de
+    iteraciones previas y aviso de error): el aviso no aporta nada al modelo y,
+    sin él, la pregunta quedaría sin respuesta. Lo anterior al primer mensaje del
+    usuario es un turno cortado por el límite y también se descarta.
+    """
+    turns: list[list[tuple[ChatMessage, bool]]] = []
+    for row in rows:
+        if row[0].role == ChatMessageRole.user:
+            turns.append([row])
+        elif turns:
+            turns[-1].append(row)
+    return [
+        message for turn in turns if not any(failed for _, failed in turn) for message, _ in turn
+    ]
 
 
 async def _next_message_created_at(
