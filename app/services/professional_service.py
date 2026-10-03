@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.audit_pseudonym import audit_ref
 from app.core.datetime_display import resolve_display_timezone
 from app.core.errors import NotFoundError, ValidationError
 from app.models.appointment import Appointment
@@ -332,7 +333,7 @@ async def create_professional(
         action=ACTION_PROFESSIONAL_CREATED,
         resource_type=RESOURCE_PROFESSIONAL,
         resource_id=prof.id,
-        metadata={"display_name": payload.display_name},
+        metadata={"display_name_ref": audit_ref(payload.display_name, "name")},
         request_ctx=request_ctx,
     )
     return await get_professional_read(db, tenant_id, prof.id)

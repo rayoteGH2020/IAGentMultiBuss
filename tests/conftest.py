@@ -27,6 +27,12 @@ def pytest_configure(config: pytest.Config) -> None:
     # Sin registro de actividad (D029) salvo en sus tests: el volcado en segundo
     # plano escribiría en BD desde cualquier test que arranque la app.
     os.environ["ACTIVITY_LOG_ENABLED"] = "false"
+    # Clave de seudónimos de auditoría (P2c-7): obligatoria con APP_ENV=production,
+    # que varios tests simulan. Distinta de APP_SECRET_KEY, como exige el validador.
+    os.environ.setdefault(
+        "AUDIT_PSEUDONYM_KEY",
+        "test-audit-pseudonym-key-0123456789",  # pragma: allowlist secret
+    )
     # TestClient → Host: testserver; AsyncClient base_url=http://test → Host: test.
     # Infisical puede inyectar SECURITY_ALLOWED_HOSTS sin esos hosts de test.
     allowed = os.environ.get("SECURITY_ALLOWED_HOSTS", "").strip()

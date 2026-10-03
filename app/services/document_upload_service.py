@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import structlog
 
+from app.core.audit_pseudonym import file_metadata
 from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import ValidationError
 from app.core.media_limits import MediaInspection, MediaLimitExceeded, inspect_document
@@ -119,7 +121,8 @@ async def ingest_uploaded_document(
         metadata={
             "document_kind": result.kind,
             "doc_type": result.doc_type.value,
-            "filename": filename,
+            # Sin el nombre en claro (P2c-7): extensión, seudónimo y SHA-256 del fichero.
+            **file_metadata(filename, sha256=hashlib.sha256(file_bytes).hexdigest()),
             "mime_type": mime_type,
             "size_bytes": len(file_bytes),
             "rejected": result.rejected,

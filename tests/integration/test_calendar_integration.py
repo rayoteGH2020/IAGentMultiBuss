@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from app.config import get_settings
+from app.core.audit_pseudonym import audit_ref
 from app.core.crypto import decrypt_token
 from app.core.db import set_tenant_context
 from app.models import AuditLog, Membership, Tenant, User
@@ -109,7 +110,9 @@ async def test_save_get_integration_decrypts_tokens(
     assert audit_row.resource_type == RESOURCE_CALENDAR_INTEGRATION
     assert audit_row.user_id == user.id
     assert audit_row.metadata_ is not None
-    assert audit_row.metadata_["google_email"] == "user@gmail.com"
+    # Sin el email en claro (P2c-7): seudónimo.
+    assert audit_row.metadata_["google_email_ref"] == audit_ref("user@gmail.com", "email")
+    assert "google_email" not in audit_row.metadata_
     assert audit_row.metadata_["provider"] == "google"
     assert "access_token" not in audit_row.metadata_
     assert "refresh_token" not in audit_row.metadata_
@@ -216,4 +219,4 @@ async def test_revoke_integration_marks_revoked_and_clears_tokens(
     assert audit_row.resource_type == RESOURCE_CALENDAR_INTEGRATION
     assert audit_row.user_id == user.id
     assert audit_row.metadata_ is not None
-    assert audit_row.metadata_["google_email"] == "revoke@gmail.com"
+    assert audit_row.metadata_["google_email_ref"] == audit_ref("revoke@gmail.com", "email")

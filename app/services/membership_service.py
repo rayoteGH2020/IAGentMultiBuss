@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import clerk_client
+from app.core.audit_pseudonym import audit_ref
 from app.core.datetime_display import display_today
 from app.core.db import set_tenant_context
 from app.core.email import send_email
@@ -209,7 +210,7 @@ async def create_tenant_member(
             action=ACTION_MEMBER_CREATED,
             resource_type=RESOURCE_MEMBERSHIP,
             resource_id=membership.id,
-            metadata={"email": payload.email, "role": payload.role},
+            metadata={"email_ref": audit_ref(payload.email, "email"), "role": payload.role},
         )
     except Exception:
         log.error(
@@ -593,7 +594,7 @@ async def request_member_removal(
         resource_type=RESOURCE_MEMBERSHIP,
         resource_id=membership_id,
         metadata={
-            "email": member.email,
+            "email_ref": audit_ref(member.email, "email"),
             "actor_role": actor_membership.role,
             "effective_date": effective_date.isoformat(),
         },
@@ -835,7 +836,7 @@ async def request_member_creation(
         resource_type=RESOURCE_MEMBERSHIP,
         resource_id=None,
         metadata={
-            "email": payload.email,
+            "email_ref": audit_ref(payload.email, "email"),
             "role": payload.role,
             "start_date": payload.start_date.isoformat(),
             "actor_role": actor_membership.role,

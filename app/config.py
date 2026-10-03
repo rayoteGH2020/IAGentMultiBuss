@@ -9,6 +9,11 @@ from app.core.clerk_frontend import DEFAULT_CLERK_JS_VERSION
 # Mínimo de días de ``activity_log`` (D029). La función de purga en BD aplica el
 # mismo mínimo: un proceso comprometido no puede borrar la actividad reciente.
 MIN_ACTIVITY_LOG_RETENTION_DAYS = 7
+# Mínimo de días de ``audit_log`` (P2c-7). La función de purga en BD aplica el
+# mismo mínimo: nadie puede borrar el último año de auditoría desde la app.
+MIN_AUDIT_LOG_RETENTION_DAYS = 365
+# Longitud mínima de AUDIT_PSEUDONYM_KEY en producción.
+MIN_AUDIT_PSEUDONYM_KEY_CHARS = 32
 
 
 def _parse_comma_or_json_str_list(value: object) -> list[str]:
@@ -165,6 +170,15 @@ class Settings(BaseSettings):
     # de purga en BD).
     activity_log_enabled: bool = True
     activity_log_retention_days: int = 90
+    # Auditoría (P2c-7). Retención de ``audit_log`` en días: 730 (2 años) por
+    # defecto, mínimo 365 (lo exige también la función de purga en BD); 0 = no
+    # purgar, prohibido en producción.
+    audit_log_retention_days: int = 730
+    # Clave de los seudónimos HMAC de la metadata de auditoría (emails, nombres de
+    # fichero y de profesionales). Aparte de APP_SECRET_KEY y sin rotar: si cambia,
+    # los seudónimos antiguos ya no se pueden recalcular y se pierde el rastro.
+    # Obligatoria en producción; fuera, se deriva de APP_SECRET_KEY.
+    audit_pseudonym_key: SecretStr | None = None
 
     # Overrides opcionales del router de modelos (arquitectura.md §8).
     # Si son None, LLMClient usa los DEFAULT_MODELS definidos en llm/client.py.
@@ -489,6 +503,41 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"ACTIVITY_LOG_RETENTION_DAYS={days} no es válido: usa 0 (no purgar, solo "
                 f"fuera de producción) o un valor de {MIN_ACTIVITY_LOG_RETENTION_DAYS} o más."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_audit_log_retention(self) -> Self:
+        days = self.audit_log_retention_days
+        if days == 0 and self.app_env == "production":
+            raise ValueError(
+                "AUDIT_LOG_RETENTION_DAYS=0 (no purgar nunca) no está permitido con "
+                "APP_ENV=production: audit_log guarda user_id, IP y seudónimos, y el RGPD "
+                "exige un plazo de conservación. Pon en Infisical prod un valor de "
+                f"{MIN_AUDIT_LOG_RETENTION_DAYS} o más (recomendado: 730)."
+            )
+        if days != 0 and days < MIN_AUDIT_LOG_RETENTION_DAYS:
+            raise ValueError(
+                f"AUDIT_LOG_RETENTION_DAYS={days} no es válido: usa 0 (no purgar, solo "
+                f"fuera de producción) o un valor de {MIN_AUDIT_LOG_RETENTION_DAYS} o más."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_audit_pseudonym_key_in_production(self) -> Self:
+        if self.app_env != "production":
+            return self
+        key = self.audit_pseudonym_key.get_secret_value() if self.audit_pseudonym_key else ""
+        if len(key) < MIN_AUDIT_PSEUDONYM_KEY_CHARS:
+            raise ValueError(
+                "AUDIT_PSEUDONYM_KEY es obligatoria con APP_ENV=production (mínimo "
+                f"{MIN_AUDIT_PSEUDONYM_KEY_CHARS} caracteres): sin ella no se pueden "
+                "seudonimizar los datos personales de audit_log (P2c-7)."
+            )
+        if key == self.app_secret_key.get_secret_value():
+            raise ValueError(
+                "AUDIT_PSEUDONYM_KEY debe ser distinta de APP_SECRET_KEY: APP_SECRET_KEY "
+                "se puede rotar y AUDIT_PSEUDONYM_KEY no (se perdería el rastro de auditoría)."
             )
         return self
 

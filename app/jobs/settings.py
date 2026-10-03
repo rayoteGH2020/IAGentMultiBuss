@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.core.activity.context import set_process_source
 from app.core.activity.jobs import tracked_job
 from app.core.logging import configure_worker_logging
-from app.jobs.activity_jobs import purge_activity_log
+from app.jobs.activity_jobs import purge_activity_log, purge_audit_log
 from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
 from app.jobs.contract_jobs import process_contract
@@ -102,6 +102,13 @@ class WorkerSettings:
             tracked_job(purge_activity_log),
             hour={3},
             minute={30},
+            unique=True,
+        ),
+        # Purga diaria de audit_log por retención (P2c-7, 2 años por defecto).
+        cron(
+            tracked_job(purge_audit_log),
+            hour={3},
+            minute={45},
             unique=True,
         ),
     ]

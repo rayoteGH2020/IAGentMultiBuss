@@ -10,6 +10,7 @@ import structlog
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_pseudonym import file_metadata
 from app.core.errors import ValidationError
 from app.core.storage import get_storage
 from app.models import LLMCall
@@ -85,7 +86,10 @@ async def delete_document(
         resource_id=document_id,
         metadata={
             "document_kind": document_kind,
-            "filename": loaded.source_filename,
+            **file_metadata(
+                loaded.source_filename,
+                sha256=getattr(loaded.entity, "file_sha256", None),
+            ),
             "had_r2_object": bool(loaded.source_file_key),
             "llm_calls_deleted": len(llm_call_ids),
         },

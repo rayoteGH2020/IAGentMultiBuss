@@ -7,6 +7,7 @@ de indexación (eso es knowledge_index_service.py).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.audit_pseudonym import file_metadata
 from app.core.errors import NotFoundError, ValidationError
 from app.core.faq_serializer import FaqPair, deserialize_faq, serialize_faq
 from app.core.keys import document_key, knowledge_faq_key
@@ -148,7 +150,7 @@ async def create_from_upload(
         resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
         resource_id=doc.id,
         metadata={
-            "filename": doc.original_filename,
+            **file_metadata(doc.original_filename, sha256=hashlib.sha256(file_bytes).hexdigest()),
             "kind": kind.value,
             "size": len(file_bytes),
         },
@@ -516,7 +518,7 @@ async def delete_document(
         action=ACTION_KNOWLEDGE_DELETE,
         resource_type=RESOURCE_KNOWLEDGE_DOCUMENT,
         resource_id=document_id,
-        metadata={"filename": doc.original_filename},
+        metadata=file_metadata(doc.original_filename),
         request_ctx=request_ctx,
     )
 

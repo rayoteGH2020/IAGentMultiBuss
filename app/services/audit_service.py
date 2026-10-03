@@ -9,6 +9,7 @@ from uuid import UUID
 
 import structlog
 
+from app.core.audit_pseudonym import audit_ref
 from app.models import AuditLog
 
 if TYPE_CHECKING:
@@ -178,9 +179,10 @@ async def log_calendar_integration_linked(
     request_ctx: AuditRequestContext | None = None,
 ) -> AuditLog:
     """Audita vinculación de calendario externo (OAuth completado)."""
+    # Sin el email de la cuenta de Google en claro (P2c-7): seudónimo.
     meta: dict[str, Any] = {"provider": provider}
     if google_email:
-        meta["google_email"] = google_email
+        meta["google_email_ref"] = audit_ref(google_email, "email")
     return await log_action(
         db,
         tenant_id=tenant_id,
@@ -204,9 +206,10 @@ async def log_calendar_integration_unlinked(
     request_ctx: AuditRequestContext | None = None,
 ) -> AuditLog:
     """Audita desvinculación de calendario externo."""
+    # Sin el email de la cuenta de Google en claro (P2c-7): seudónimo.
     meta: dict[str, Any] = {"provider": provider}
     if google_email:
-        meta["google_email"] = google_email
+        meta["google_email_ref"] = audit_ref(google_email, "email")
     return await log_action(
         db,
         tenant_id=tenant_id,

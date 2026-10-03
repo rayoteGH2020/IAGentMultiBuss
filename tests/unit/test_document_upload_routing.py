@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -258,5 +259,9 @@ async def test_ingest_writes_upload_audit_without_file_bytes() -> None:
     assert kwargs["resource_id"] == contract.id
     assert kwargs["user_id"] == user_id
     assert kwargs["metadata"]["size_bytes"] == len(file_bytes)
-    assert kwargs["metadata"]["filename"] == "contrato.pdf"
+    # Sin el nombre en claro (P2c-7): extensión, seudónimo y SHA-256 del fichero.
+    assert "filename" not in kwargs["metadata"]
+    assert kwargs["metadata"]["file_ext"] == ".pdf"
+    assert len(kwargs["metadata"]["filename_ref"]) == 32
+    assert kwargs["metadata"]["file_sha256"] == hashlib.sha256(file_bytes).hexdigest()
     assert file_bytes not in kwargs["metadata"].values()
