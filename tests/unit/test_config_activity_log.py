@@ -44,6 +44,18 @@ def test_retention_below_minimum_is_rejected(days: int) -> None:
         _settings(activity_log_retention_days=days)
 
 
+def test_validation_errors_never_print_secret_values() -> None:
+    """Un fallo de configuración al arrancar acaba en los logs: sin valores de entrada."""
+    secret = "super-secret-app-key-value-1234567890"  # pragma: allowlist secret
+    with pytest.raises(ValidationError) as excinfo:
+        _settings(app_secret_key=secret, app_env="production", activity_log_retention_days=0)
+
+    message = str(excinfo.value)
+    assert "ACTIVITY_LOG_RETENTION_DAYS=0" in message  # el motivo sigue visible
+    assert "input_value" not in message
+    assert secret[:5] not in message
+
+
 def test_default_and_minimum_retention_are_valid_in_production() -> None:
     assert _settings(app_env="production").activity_log_retention_days == 90
     minimum = _settings(app_env="production", activity_log_retention_days=7)

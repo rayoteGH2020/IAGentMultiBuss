@@ -53,6 +53,10 @@ class Settings(BaseSettings):
         # este modelo (secretos de otros servicios del mismo proyecto). Sin este
         # flag, Pydantic lanzaría ValidationError al arrancar.
         extra="ignore",
+        # Sin esto, un ValidationError al arrancar imprime los valores recibidos
+        # (incluidos fragmentos de secretos como APP_SECRET_KEY) y acaban en los
+        # logs del contenedor. El mensaje del validador sigue saliendo completo.
+        hide_input_in_errors=True,
     )
 
     # App
