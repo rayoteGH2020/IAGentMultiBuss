@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import structlog
-from sqlalchemy import func, select, text
+from sqlalchemy import ColumnElement, func, literal, select, text
 
 from app.core.activity.context import job_parent_kwargs
 from app.core.billing_period import (
@@ -47,13 +47,14 @@ from app.core.errors import RateLimitError
 from app.models import Contract, ContractStatus, Invoice, InvoiceStatus, Ticket, TicketStatus
 from app.services import (
     contract_quota_service,
+    document_history_service,
     entitlement_service,
     monthly_quota_service,
     plan_quota_service,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import date, datetime
     from uuid import UUID
 
@@ -100,6 +101,8 @@ class DuplicateMatch:
     document_id: UUID
     status: str
     created_at: datetime
+    # Fuera del histórico visible del plan (history_months, D017): no lo ve.
+    hidden_by_history: bool = False
 
     @property
     def kind_label(self) -> str:
@@ -176,12 +179,20 @@ _DUPLICATE_MODELS: dict[QuotaKind, type[Invoice] | type[Ticket] | type[Contract]
 }
 
 
+_HISTORY_CONDITIONS: dict[QuotaKind, Callable[[date], ColumnElement[bool]]] = {
+    "invoice": document_history_service.invoice_visible,
+    "ticket": document_history_service.ticket_visible,
+    "contract": lambda since: document_history_service.contract_visible(since),
+}
+
+
 async def find_duplicate(
     db: AsyncSession,
     tenant_id: UUID,
     sha256: str,
     *,
     kinds: Sequence[QuotaKind] = ("invoice", "ticket"),
+    visible_from: date | None = None,
 ) -> DuplicateMatch | None:
     """Documento no oculto del tenant, de los tipos ``kinds``, con el mismo fichero.
 
@@ -189,7 +200,9 @@ async def find_duplicate(
     cosas); los contratos, entre sí (vigentes o sustituidos).
 
     Toma un bloqueo transaccional por (tenant, hash): dos subidas simultáneas del
-    mismo fichero (doble clic) se serializan y la segunda ve la primera.
+    mismo fichero (doble clic) se serializan y la segunda ve la primera. Un
+    documento oculto por el histórico del plan también bloquea (``visible_from``
+    solo sirve para avisar de por qué no se ve).
     """
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
@@ -197,9 +210,10 @@ async def find_duplicate(
     )
     for kind in kinds:
         model = _DUPLICATE_MODELS[kind]
+        visible = literal(True) if visible_from is None else _HISTORY_CONDITIONS[kind](visible_from)
         row = (
             await db.execute(
-                select(model.id, model.status, model.created_at)
+                select(model.id, model.status, model.created_at, visible.label("visible"))
                 .where(
                     model.tenant_id == tenant_id,
                     model.file_sha256 == sha256,
@@ -215,16 +229,21 @@ async def find_duplicate(
                 document_id=row.id,
                 status=str(row.status.value),
                 created_at=row.created_at,
+                hidden_by_history=not row.visible,
             )
     return None
 
 
-def duplicate_message(match: DuplicateMatch, *, filename: str) -> str:
+def duplicate_message(
+    match: DuplicateMatch, *, filename: str, history_months: int | None = None
+) -> str:
     uploaded = match.created_at.strftime("%d/%m/%Y")
     base = (
         f'"{filename}" ya está subido como {match.kind_label} (subido el {uploaded}). '
         "No se ha vuelto a procesar ni consume cupo."
     )
+    if match.hidden_by_history:
+        return f"{base} {document_history_service.hidden_message(history_months)}"
     if match.status == "failed":
         return f"{base} Ese documento falló al procesarse: usa «Reintentar» en él."
     return base

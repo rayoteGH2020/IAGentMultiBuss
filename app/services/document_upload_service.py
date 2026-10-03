@@ -24,6 +24,7 @@ from app.services import (
     contract_quota_service,
     contract_service,
     document_classification,
+    document_history_service,
     document_quota_service,
     document_type_confirm_service,
     entitlement_service,
@@ -172,7 +173,13 @@ async def _ingest_uploaded_document(
     sha256: str | None = None
     if doc_type in {DocTypeCode.factura, DocTypeCode.ticket}:
         sha256 = document_quota_service.file_sha256(file_bytes)
-        duplicate = await document_quota_service.find_duplicate(db, tenant_id, sha256)
+        history_ents = ents or await entitlement_service.resolve_tenant(db, tenant_id)
+        duplicate = await document_quota_service.find_duplicate(
+            db,
+            tenant_id,
+            sha256,
+            visible_from=document_history_service.visible_from_for(history_ents),
+        )
         if duplicate is not None:
             logger.info(
                 "document_ingest.duplicate",
@@ -181,7 +188,11 @@ async def _ingest_uploaded_document(
                 document_id=str(duplicate.document_id),
             )
             raise UploadValidationError(
-                document_quota_service.duplicate_message(duplicate, filename=filename)
+                document_quota_service.duplicate_message(
+                    duplicate,
+                    filename=filename,
+                    history_months=document_history_service.history_months(history_ents),
+                )
             )
 
     if redis is not None and ents is not None:
@@ -296,7 +307,11 @@ async def _ingest_contract(
     doc_type = DocTypeCode.contrato
     sha256 = document_quota_service.file_sha256(file_bytes)
     duplicate = await document_quota_service.find_duplicate(
-        db, tenant_id, sha256, kinds=("contract",)
+        db,
+        tenant_id,
+        sha256,
+        kinds=("contract",),
+        visible_from=document_history_service.visible_from_for(ents),
     )
     if duplicate is not None:
         logger.info(
@@ -306,7 +321,11 @@ async def _ingest_contract(
             document_id=str(duplicate.document_id),
         )
         raise UploadValidationError(
-            document_quota_service.duplicate_message(duplicate, filename=filename)
+            document_quota_service.duplicate_message(
+                duplicate,
+                filename=filename,
+                history_months=document_history_service.history_months(ents),
+            )
         )
 
     if check_daily and redis is not None:

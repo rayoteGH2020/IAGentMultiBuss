@@ -20,7 +20,7 @@ llama aquí para lo propio de los contratos.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
@@ -264,6 +264,7 @@ async def mark_replaced(
     if not is_finished(contract):
         raise ValidationError(MSG_ONLY_READY_CAN_BE_REPLACED)
     contract.lifecycle = ContractLifecycle.replaced
+    contract.replaced_at = datetime.now(UTC)
     await db.flush()
     await audit_service.log_action(
         db,
@@ -301,6 +302,7 @@ async def reactivate(
         except ValidationError:
             contract.lifecycle = ContractLifecycle.replaced
             raise
+    contract.replaced_at = None
     await db.flush()
     await audit_service.log_action(
         db,

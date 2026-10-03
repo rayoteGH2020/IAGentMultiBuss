@@ -36,7 +36,7 @@ from app.schemas.invoice import (
     vat_breakdown_to_json,
 )
 from app.schemas.pagination import Page
-from app.services import doc_type_service
+from app.services import doc_type_service, document_history_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -122,6 +122,7 @@ async def list_invoices(
     status: InvoiceStatus | None = None,
     limit: int = 50,
     offset: int = 0,
+    visible_from: date | None = None,
 ) -> Sequence[Invoice]:
     stmt = (
         select(Invoice)
@@ -140,6 +141,8 @@ async def list_invoices(
         # función sirva tanto para "todas las facturas" (UI principal) como
         # para subconjuntos específicos (p. ej. solo pending en el worker).
         stmt = stmt.where(Invoice.status == status)
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.invoice_visible(visible_from))
     stmt = stmt.options(
         selectinload(Invoice.lines),
         selectinload(Invoice.llm_call),
@@ -492,8 +495,12 @@ def _invoice_to_read(invoice: Invoice, *, include_lines: bool) -> InvoiceRead:
 def _invoice_search_conditions(
     tenant_id: UUID,
     filters: DocumentSearchFilters,
+    *,
+    visible_from: date | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Invoice.tenant_id == tenant_id]
+    if visible_from is not None:
+        conditions.append(document_history_service.invoice_visible(visible_from))
 
     if filters.fecha_from is not None:
         conditions.append(Invoice.fecha >= filters.fecha_from)
@@ -546,9 +553,10 @@ async def search_invoices(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[InvoiceRead]:
     """Búsqueda de facturas con filtros tipados y paginación."""
-    conditions = _invoice_search_conditions(tenant_id, filters)
+    conditions = _invoice_search_conditions(tenant_id, filters, visible_from=visible_from)
     count_stmt = select(func.count()).select_from(Invoice).where(*conditions)
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -573,8 +581,17 @@ async def get_invoice_detail(
     db: AsyncSession,
     tenant_id: UUID,
     invoice_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> InvoiceRead:
     """Detalle de factura con líneas (sin raw_extraction)."""
+    if visible_from is not None:
+        await document_history_service.ensure_visible(
+            db,
+            Invoice.id == invoice_id,
+            document_history_service.invoice_visible(visible_from),
+            document_id=invoice_id,
+        )
     invoice = await get_invoice(db, tenant_id, invoice_id)
     return _invoice_to_read(invoice, include_lines=True)
 
@@ -586,11 +603,12 @@ async def aggregate_invoices(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     """Agregaciones COUNT o SUM(total) con agrupación opcional."""
     from sqlalchemy import String, cast
 
-    conditions = _invoice_search_conditions(tenant_id, filters)
+    conditions = _invoice_search_conditions(tenant_id, filters, visible_from=visible_from)
     metric_expr = (
         func.count()
         if metric == AggregateMetric.metric_count
@@ -653,6 +671,7 @@ async def list_providers(
     *,
     query: str | None = None,
     limit: int = 50,
+    visible_from: date | None = None,
 ) -> list[str]:
     """Proveedores distintos del tenant, opcionalmente filtrados."""
     stmt = (
@@ -670,5 +689,7 @@ async def list_providers(
         pattern = ilike_pattern(query)
         proveedor_col = func.unaccent(Invoice.proveedor)
         stmt = stmt.where(func.lower(proveedor_col).like(pattern, escape="\\"))
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.invoice_visible(visible_from))
     result = await db.execute(stmt)
     return [str(row[0]) for row in result.all() if row[0]]

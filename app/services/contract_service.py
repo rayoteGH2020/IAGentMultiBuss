@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -26,7 +26,7 @@ from app.schemas.document_query import (
     DocumentSearchFilters,
 )
 from app.schemas.pagination import Page
-from app.services import doc_type_service
+from app.services import doc_type_service, document_history_service
 from app.services.document_expiry_grouping import expiry_group_key
 
 if TYPE_CHECKING:
@@ -54,6 +54,7 @@ async def list_contracts(
     status: ContractStatus | None = None,
     limit: int = 50,
     offset: int = 0,
+    visible_from: date | None = None,
 ) -> Sequence[Contract]:
     stmt = (
         select(Contract)
@@ -64,6 +65,8 @@ async def list_contracts(
     )
     if status is not None:
         stmt = stmt.where(Contract.status == status)
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.contract_visible(visible_from))
     stmt = stmt.options(selectinload(Contract.llm_call), selectinload(Contract.doc_type))
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -287,8 +290,12 @@ def _contract_to_read(contract: Contract) -> ContractRead:
 def _contract_search_conditions(
     tenant_id: UUID,
     filters: DocumentSearchFilters,
+    *,
+    visible_from: date | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Contract.tenant_id == tenant_id]
+    if visible_from is not None:
+        conditions.append(document_history_service.contract_visible(visible_from))
     # Un contrato sustituido por su renovación no es vigente: fuera salvo que se pida.
     if not filters.incluir_sustituidos:
         conditions.append(Contract.lifecycle == ContractLifecycle.active)
@@ -357,8 +364,9 @@ async def search_contracts(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[ContractRead]:
-    conditions = _contract_search_conditions(tenant_id, filters)
+    conditions = _contract_search_conditions(tenant_id, filters, visible_from=visible_from)
     count_stmt = select(func.count()).select_from(Contract).where(*conditions)
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -383,7 +391,16 @@ async def get_contract_detail(
     db: AsyncSession,
     tenant_id: UUID,
     contract_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> ContractRead:
+    if visible_from is not None:
+        await document_history_service.ensure_visible(
+            db,
+            Contract.id == contract_id,
+            document_history_service.contract_visible(visible_from),
+            document_id=contract_id,
+        )
     contract = await get_contract(db, tenant_id, contract_id)
     return _contract_to_read(contract)
 
@@ -395,8 +412,9 @@ async def aggregate_contracts(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
-    conditions = _contract_search_conditions(tenant_id, filters)
+    conditions = _contract_search_conditions(tenant_id, filters, visible_from=visible_from)
     metric_expr = (
         func.count()
         if metric == AggregateMetric.metric_count
@@ -462,6 +480,7 @@ async def list_partes_contrarias(
     *,
     query: str | None = None,
     limit: int = 50,
+    visible_from: date | None = None,
 ) -> list[str]:
     stmt = (
         select(Contract.parte_contraria)
@@ -478,5 +497,7 @@ async def list_partes_contrarias(
         pattern = ilike_pattern(query)
         parte_col = func.unaccent(Contract.parte_contraria)
         stmt = stmt.where(func.lower(parte_col).like(pattern, escape="\\"))
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.contract_visible(visible_from))
     result = await db.execute(stmt)
     return [str(row[0]) for row in result.all() if row[0]]

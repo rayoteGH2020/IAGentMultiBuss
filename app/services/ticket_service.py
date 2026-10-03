@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -26,7 +26,7 @@ from app.schemas.document_query import (
     TicketRead,
 )
 from app.schemas.pagination import Page
-from app.services import doc_type_service
+from app.services import doc_type_service, document_history_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,6 +52,7 @@ async def list_tickets(
     status: TicketStatus | None = None,
     limit: int = 50,
     offset: int = 0,
+    visible_from: date | None = None,
 ) -> Sequence[Ticket]:
     stmt = (
         select(Ticket)
@@ -62,6 +63,8 @@ async def list_tickets(
     )
     if status is not None:
         stmt = stmt.where(Ticket.status == status)
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.ticket_visible(visible_from))
     stmt = stmt.options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -300,8 +303,12 @@ def _ticket_to_read(ticket: Ticket) -> TicketRead:
 def _ticket_search_conditions(
     tenant_id: UUID,
     filters: DocumentSearchFilters,
+    *,
+    visible_from: date | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Ticket.tenant_id == tenant_id]
+    if visible_from is not None:
+        conditions.append(document_history_service.ticket_visible(visible_from))
 
     if filters.fecha_from is not None:
         conditions.append(Ticket.fecha >= filters.fecha_from)
@@ -362,9 +369,10 @@ async def search_tickets(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[TicketRead]:
     """Búsqueda de tickets con filtros tipados y paginación."""
-    conditions = _ticket_search_conditions(tenant_id, filters)
+    conditions = _ticket_search_conditions(tenant_id, filters, visible_from=visible_from)
     count_stmt = select(func.count()).select_from(Ticket).where(*conditions)
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -389,8 +397,17 @@ async def get_ticket_detail(
     db: AsyncSession,
     tenant_id: UUID,
     ticket_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> TicketRead:
     """Detalle de ticket (sin raw_extraction)."""
+    if visible_from is not None:
+        await document_history_service.ensure_visible(
+            db,
+            Ticket.id == ticket_id,
+            document_history_service.ticket_visible(visible_from),
+            document_id=ticket_id,
+        )
     ticket = await get_ticket(db, tenant_id, ticket_id)
     return _ticket_to_read(ticket)
 
@@ -402,9 +419,10 @@ async def aggregate_tickets(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     """Agregaciones COUNT o SUM(total) sobre tickets."""
-    conditions = _ticket_search_conditions(tenant_id, filters)
+    conditions = _ticket_search_conditions(tenant_id, filters, visible_from=visible_from)
     metric_expr = (
         func.count()
         if metric == AggregateMetric.metric_count
@@ -467,6 +485,7 @@ async def list_comercios(
     *,
     query: str | None = None,
     limit: int = 50,
+    visible_from: date | None = None,
 ) -> list[str]:
     """Comercios distintos del tenant, opcionalmente filtrados."""
     stmt = (
@@ -484,5 +503,7 @@ async def list_comercios(
         pattern = ilike_pattern(query)
         comercio_col = func.unaccent(Ticket.comercio)
         stmt = stmt.where(func.lower(comercio_col).like(pattern, escape="\\"))
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.ticket_visible(visible_from))
     result = await db.execute(stmt)
     return [str(row[0]) for row in result.all() if row[0]]

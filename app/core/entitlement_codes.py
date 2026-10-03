@@ -109,6 +109,8 @@ LIMIT_CONTRACT_UPLOADS_PER_MONTH: Final = "contract_uploads_per_month"
 LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Final = "contract_uploads_first_period"
 LIMIT_CONTRACTS_ACTIVE_MAX: Final = "contracts_active_max"
 LIMIT_CONTRACT_MAX_PAGES: Final = "contract_max_pages"
+# Meses de histórico visibles (D017, bloque 6). Sin límite = null en el catálogo.
+LIMIT_HISTORY_MONTHS: Final = "history_months"
 
 LIMIT_CODES: Final[frozenset[str]] = frozenset(
     {
@@ -130,6 +132,7 @@ LIMIT_CODES: Final[frozenset[str]] = frozenset(
         LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD,
         LIMIT_CONTRACTS_ACTIVE_MAX,
         LIMIT_CONTRACT_MAX_PAGES,
+        LIMIT_HISTORY_MONTHS,
     }
 )
 
@@ -188,6 +191,7 @@ def feature_ui_label(code: str) -> str:
 # Fuera a propósito: voice_notes_per_hour (no se ofrece, D012) y
 # llm_budget_eur_month (tope interno de coste, no es una prestación).
 LIMIT_UI_LABELS: Final[dict[str, str]] = {
+    LIMIT_HISTORY_MONTHS: "Meses de histórico de facturas y tickets",
     LIMIT_KNOWLEDGE_DOCS_MAX: "Documentos en la base de conocimiento",
     LIMIT_KNOWLEDGE_UPLOADS_PER_DAY: "Subidas a la base de conocimiento al día",
     LIMIT_CHANNEL_EXTERNAL_SLOTS: "Canales de mensajería conectados",
@@ -231,7 +235,8 @@ PLAN_FEATURES: Final[dict[str, frozenset[str]]] = {
     PLAN_CODE_PREMIUM: _ADVANCED_PRODUCT,
 }
 
-# Limites duros (no null). Superar Avanzado → Premium; superar Premium → SADM/custom.
+# Limites duros (null solo en history_months de Premium = sin limite). Superar
+# Avanzado → Premium; superar Premium → SADM/custom.
 PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
     PLAN_CODE_BASIC: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("50"),
@@ -250,6 +255,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("15"),
         LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("15"),
         LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
+        LIMIT_HISTORY_MONTHS: Decimal("12"),
     },
     PLAN_CODE_ADVANCED: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("200"),
@@ -268,6 +274,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("40"),
         LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("40"),
         LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
+        LIMIT_HISTORY_MONTHS: Decimal("36"),
     },
     PLAN_CODE_PREMIUM: {
         LIMIT_DOCUMENTS_PER_DAY: Decimal("800"),
@@ -286,6 +293,7 @@ PLAN_LIMITS: Final[dict[str, dict[str, Decimal | None]]] = {
         LIMIT_CONTRACT_UPLOADS_FIRST_PERIOD: Decimal("100"),
         LIMIT_CONTRACTS_ACTIVE_MAX: Decimal("100"),
         LIMIT_CONTRACT_MAX_PAGES: Decimal("100"),
+        LIMIT_HISTORY_MONTHS: None,
     },
 }
 

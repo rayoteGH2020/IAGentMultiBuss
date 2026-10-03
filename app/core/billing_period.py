@@ -81,3 +81,18 @@ def initial_load_window_end(tenant_created_at: datetime) -> date:
     if created == start:
         return period_end(start)
     return period_end(next_period_start(start))
+
+
+def months_before(start: date, months: int) -> date:
+    """Primer día del mes que está ``months`` meses antes del que empieza en ``start``."""
+    index = start.year * 12 + (start.month - 1) - months
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def history_visible_from(months: int, today: date | None = None) -> date:
+    """Primer día visible con ``history_months`` = ``months`` (D017, bloque 6).
+
+    Meses completos: el mes en curso y los ``months`` anteriores (12 el 3/10/2026
+    → desde el 1/10/2025).
+    """
+    return months_before(period_start(today or local_date()), months)

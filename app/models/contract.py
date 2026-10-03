@@ -114,6 +114,9 @@ class Contract(Base):
         default=ContractLifecycle.active,
         server_default=text("'active'::contract_lifecycle"),
     )
+    # Cuándo se marcó como sustituido: sin fecha de fin, el histórico visible
+    # (history_months, D017) se cuenta desde aquí.
+    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Cupo de altas (bloque 5): SHA-256 contra resubidas; la reserva guarda mes,
     # bolsa (mensual o carga inicial) y unidades para devolver exactamente lo mismo.
     file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)

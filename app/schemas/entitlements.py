@@ -8,7 +8,13 @@ from uuid import UUID  # noqa: TC003 — Pydantic requiere UUID en runtime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.entitlement_codes import FEATURE_CODES, LIMIT_CODES, is_known_feature, is_known_limit
+from app.core.entitlement_codes import (
+    FEATURE_CODES,
+    LIMIT_CODES,
+    LIMIT_HISTORY_MONTHS,
+    is_known_feature,
+    is_known_limit,
+)
 
 
 class Entitlements(BaseModel):
@@ -101,6 +107,10 @@ class EntitlementsOverride(BaseModel):
         unknown = sorted(code for code in value if code not in LIMIT_CODES)
         if unknown:
             raise ValueError(f"unknown limit codes in override: {', '.join(unknown)}")
+        # 0 o negativo ocultaría todas las facturas y tickets; sin límite = null.
+        history = value.get(LIMIT_HISTORY_MONTHS)
+        if LIMIT_HISTORY_MONTHS in value and history is not None and history < 1:
+            raise ValueError("history_months must be at least 1 (null = no limit)")
         return value
 
 

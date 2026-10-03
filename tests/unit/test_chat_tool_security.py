@@ -67,7 +67,8 @@ async def test_get_document_tool_omits_sensitive_fields(
     db_session,
     tenant_factory,
 ) -> None:
-    tenant: Tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fechas fijas del pasado, D017).
+    tenant: Tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
 
     inv = await invoice_service.create_invoice_stub(

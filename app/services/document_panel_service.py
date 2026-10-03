@@ -46,14 +46,17 @@ async def build_invoices_panel_ctx(
     from app.services import (
         contract_service,
         doc_type_service,
+        document_history_service,
         insurance_service,
         invoice_service,
         ticket_service,
     )
 
-    invoices = await invoice_service.list_invoices(db, tenant_id, limit=50)
-    tickets = await ticket_service.list_tickets(db, tenant_id, limit=50)
-    contracts = await contract_service.list_contracts(db, tenant_id, limit=50)
+    # Histórico visible del plan (history_months, D017); las pólizas no lo aplican.
+    since = await document_history_service.visible_from(db, tenant_id)
+    invoices = await invoice_service.list_invoices(db, tenant_id, limit=50, visible_from=since)
+    tickets = await ticket_service.list_tickets(db, tenant_id, limit=50, visible_from=since)
+    contracts = await contract_service.list_contracts(db, tenant_id, limit=50, visible_from=since)
     insurances = await insurance_service.list_insurances(db, tenant_id, limit=50)
     doc_types = await doc_type_service.list_active_doc_types(db)
 

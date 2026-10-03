@@ -1,9 +1,14 @@
-"""Enrutado de consultas documentales por doc_type_code (módulo 1.5)."""
+"""Enrutado de consultas documentales por doc_type_code (módulo 1.5).
+
+Aplica el histórico visible del plan (``history_months``, D017) a facturas,
+tickets y contratos; un documento fuera de él no existe para el chat.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +26,7 @@ from app.schemas.pagination import Page
 from app.services import (
     contract_service,
     doc_type_service,
+    document_history_service,
     insurance_service,
     invoice_service,
     ticket_service,
@@ -42,8 +48,11 @@ async def _search_invoices(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[DocumentRead]:
-    page = await invoice_service.search_invoices(db, tenant_id, filters=filters)
+    page = await invoice_service.search_invoices(
+        db, tenant_id, filters=filters, visible_from=visible_from
+    )
     return Page(
         items=list(page.items),
         total=page.total,
@@ -56,8 +65,12 @@ async def _get_invoice(
     db: AsyncSession,
     tenant_id: UUID,
     document_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> DocumentRead:
-    return await invoice_service.get_invoice_detail(db, tenant_id, document_id)
+    return await invoice_service.get_invoice_detail(
+        db, tenant_id, document_id, visible_from=visible_from
+    )
 
 
 async def _aggregate_invoices(
@@ -67,6 +80,7 @@ async def _aggregate_invoices(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     return await invoice_service.aggregate_invoices(
         db,
@@ -74,6 +88,7 @@ async def _aggregate_invoices(
         filters=filters,
         metric=metric,
         group_by=group_by,
+        visible_from=visible_from,
     )
 
 
@@ -82,8 +97,11 @@ async def _list_invoice_parties(
     tenant_id: UUID,
     *,
     query: str | None = None,
+    visible_from: date | None = None,
 ) -> list[str]:
-    return await invoice_service.list_providers(db, tenant_id, query=query)
+    return await invoice_service.list_providers(
+        db, tenant_id, query=query, visible_from=visible_from
+    )
 
 
 async def _search_tickets(
@@ -91,8 +109,11 @@ async def _search_tickets(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[DocumentRead]:
-    page = await ticket_service.search_tickets(db, tenant_id, filters=filters)
+    page = await ticket_service.search_tickets(
+        db, tenant_id, filters=filters, visible_from=visible_from
+    )
     return Page(
         items=list(page.items),
         total=page.total,
@@ -105,8 +126,12 @@ async def _get_ticket(
     db: AsyncSession,
     tenant_id: UUID,
     document_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> DocumentRead:
-    return await ticket_service.get_ticket_detail(db, tenant_id, document_id)
+    return await ticket_service.get_ticket_detail(
+        db, tenant_id, document_id, visible_from=visible_from
+    )
 
 
 async def _aggregate_tickets(
@@ -116,6 +141,7 @@ async def _aggregate_tickets(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     return await ticket_service.aggregate_tickets(
         db,
@@ -123,6 +149,7 @@ async def _aggregate_tickets(
         filters=filters,
         metric=metric,
         group_by=group_by,
+        visible_from=visible_from,
     )
 
 
@@ -131,8 +158,11 @@ async def _list_ticket_parties(
     tenant_id: UUID,
     *,
     query: str | None = None,
+    visible_from: date | None = None,
 ) -> list[str]:
-    return await ticket_service.list_comercios(db, tenant_id, query=query)
+    return await ticket_service.list_comercios(
+        db, tenant_id, query=query, visible_from=visible_from
+    )
 
 
 async def _search_contracts(
@@ -140,8 +170,11 @@ async def _search_contracts(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[DocumentRead]:
-    page = await contract_service.search_contracts(db, tenant_id, filters=filters)
+    page = await contract_service.search_contracts(
+        db, tenant_id, filters=filters, visible_from=visible_from
+    )
     return Page(
         items=list(page.items),
         total=page.total,
@@ -154,8 +187,12 @@ async def _get_contract(
     db: AsyncSession,
     tenant_id: UUID,
     document_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> DocumentRead:
-    return await contract_service.get_contract_detail(db, tenant_id, document_id)
+    return await contract_service.get_contract_detail(
+        db, tenant_id, document_id, visible_from=visible_from
+    )
 
 
 async def _aggregate_contracts(
@@ -165,6 +202,7 @@ async def _aggregate_contracts(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     return await contract_service.aggregate_contracts(
         db,
@@ -172,6 +210,7 @@ async def _aggregate_contracts(
         filters=filters,
         metric=metric,
         group_by=group_by,
+        visible_from=visible_from,
     )
 
 
@@ -180,8 +219,11 @@ async def _list_contract_parties(
     tenant_id: UUID,
     *,
     query: str | None = None,
+    visible_from: date | None = None,
 ) -> list[str]:
-    return await contract_service.list_partes_contrarias(db, tenant_id, query=query)
+    return await contract_service.list_partes_contrarias(
+        db, tenant_id, query=query, visible_from=visible_from
+    )
 
 
 async def _search_insurances(
@@ -189,7 +231,9 @@ async def _search_insurances(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[DocumentRead]:
+    _ = visible_from  # pólizas: sin histórico (aparcadas, D017)
     page = await insurance_service.search_insurances(db, tenant_id, filters=filters)
     return Page(
         items=list(page.items),
@@ -203,7 +247,10 @@ async def _get_insurance(
     db: AsyncSession,
     tenant_id: UUID,
     document_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> DocumentRead:
+    _ = visible_from  # pólizas: sin histórico (aparcadas, D017)
     return await insurance_service.get_insurance_detail(db, tenant_id, document_id)
 
 
@@ -214,7 +261,9 @@ async def _aggregate_insurances(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
+    _ = visible_from  # pólizas: sin histórico (aparcadas, D017)
     return await insurance_service.aggregate_insurances(
         db,
         tenant_id,
@@ -229,7 +278,9 @@ async def _list_insurance_parties(
     tenant_id: UUID,
     *,
     query: str | None = None,
+    visible_from: date | None = None,
 ) -> list[str]:
+    _ = visible_from  # pólizas: sin histórico (aparcadas, D017)
     return await insurance_service.list_aseguradoras(db, tenant_id, query=query)
 
 
@@ -284,7 +335,8 @@ async def search_documents(
 ) -> Page[DocumentRead]:
     doc_type = await doc_type_service.resolve_active_doc_type(db, doc_type_code)
     handler = _require_handler(doc_type.code)
-    return await handler.search(db, tenant_id, filters=filters)
+    since = await document_history_service.visible_from(db, tenant_id)
+    return await handler.search(db, tenant_id, filters=filters, visible_from=since)
 
 
 async def get_document(
@@ -296,7 +348,8 @@ async def get_document(
 ) -> DocumentRead:
     doc_type = await doc_type_service.resolve_active_doc_type(db, doc_type_code)
     handler = _require_handler(doc_type.code)
-    return await handler.get(db, tenant_id, document_id)
+    since = await document_history_service.visible_from(db, tenant_id)
+    return await handler.get(db, tenant_id, document_id, visible_from=since)
 
 
 async def aggregate_documents(
@@ -310,12 +363,14 @@ async def aggregate_documents(
 ) -> AggregateResult:
     doc_type = await doc_type_service.resolve_active_doc_type(db, doc_type_code)
     handler = _require_handler(doc_type.code)
+    since = await document_history_service.visible_from(db, tenant_id)
     return await handler.aggregate(
         db,
         tenant_id,
         filters=filters,
         metric=metric,
         group_by=group_by,
+        visible_from=since,
     )
 
 
@@ -328,4 +383,5 @@ async def list_document_parties(
 ) -> list[str]:
     doc_type = await doc_type_service.resolve_active_doc_type(db, doc_type_code)
     handler = _require_handler(doc_type.code)
-    return await handler.list_parties(db, tenant_id, query=query)
+    since = await document_history_service.visible_from(db, tenant_id)
+    return await handler.list_parties(db, tenant_id, query=query, visible_from=since)

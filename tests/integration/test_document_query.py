@@ -100,7 +100,8 @@ async def test_search_documents_factura_by_proveedor(
     db_session: AsyncSession,
     tenant_factory,
 ) -> None:
-    tenant: Tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fechas fijas del pasado, D017).
+    tenant: Tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
     await _seed_invoice(
         db_session,
@@ -137,7 +138,8 @@ async def test_aggregate_documents_ticket_count(
     db_session: AsyncSession,
     tenant_factory,
 ) -> None:
-    tenant: Tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fechas fijas del pasado, D017).
+    tenant: Tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
     await _seed_ticket(
         db_session,
