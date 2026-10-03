@@ -341,10 +341,10 @@ ORDER BY created_at DESC;
 **[auto]**
 
 ```powershell
-infisical run -- uv run pytest tests/integration/test_document_history.py tests/unit/test_document_history_units.py tests/integration/test_document_query.py tests/unit/test_document_chat_tools.py tests/unit/test_chat_tool_security.py -q
+infisical run -- uv run pytest tests/integration/test_document_history.py tests/unit/test_document_history_units.py tests/integration/test_outside_history.py tests/unit/test_outside_history_units.py tests/integration/test_document_query.py tests/unit/test_document_chat_tools.py tests/unit/test_chat_tool_security.py -q
 ```
 
-Cubre: corte por meses completos (cambios de año incluidos); valores del catálogo (12 / 36 / sin límite) y override de 0 rechazado; sin el límite en el catálogo se aplican 12 meses; facturas y tickets antiguos ocultos en el panel, búsqueda, agregación y contrapartes del chat, y `get_document` responde «no encontrado»; sin fecha de emisión cuenta la de subida; subir de plan vuelve a mostrar lo oculto; contratos vigentes siempre visibles, vencidos y sustituidos por fecha de fin o `replaced_at`; `replaced_at` se rellena al sustituir y se borra al reactivar; el duplicado de un documento oculto se rechaza explicando el histórico.
+Cubre: corte por meses completos (cambios de año incluidos); valores del catálogo (12 / 36 / sin límite) y override de 0 rechazado; sin el límite en el catálogo se aplican 12 meses; facturas y tickets antiguos ocultos en el panel, búsqueda, agregación y contrapartes del chat, y `get_document` responde «no encontrado»; sin fecha de emisión cuenta la de subida; subir de plan vuelve a mostrar lo oculto; contratos vigentes siempre visibles, vencidos y sustituidos por fecha de fin o `replaced_at`; `replaced_at` se rellena al sustituir y se borra al reactivar; el duplicado de un documento oculto se rechaza explicando el histórico; documentos que nacen fuera del histórico: fecha leída sin extraer (regla del texto del PDF o la misma clasificación con confianza alta), rechazo en la subida sin R2, cupo ni extracción, y red de seguridad tras extraer (error definitivo, sin reintento ni procesado del SADM, cupo devuelto).
 
 **[dev]** — tenant Básico con una factura y un ticket procesados. Para envejecer la factura:
 
@@ -364,7 +364,16 @@ UPDATE contracts SET fecha_fin = now() - interval '14 months' WHERE id = '<contr
 ```
 
 - [ ] «Mi cuenta» muestra «Meses de histórico de facturas y tickets: 12» (Premium: «Ilimitado»).
-- [ ] Pendiente de decisión (D017, punto 9): una factura de hace más de 12 meses subida hoy se procesa, consume cupo y queda oculta sin aviso. Revisar cuando se decida.
+- [ ] Documentos que nacen fuera del histórico (D017, punto 9, `aa8b812`):
+  - PDF de factura con texto y «Fecha de factura» de hace más de 12 meses → rechazo en la subida «es una factura del …: tu plan procesa documentos de los últimos 12 meses … No se ha subido ni consume cupo». Sin fila nueva.
+  - Foto de un ticket antiguo con la fecha legible → mismo rechazo (la fecha sale de la clasificación con Haiku, sin llamada extra en `llm_calls` aparte de `classify`).
+  - Factura antigua con la fecha poco legible → se procesa y queda en error «anterior al histórico que incluye tu plan», sin «Reintentar»; el consumo del mes no sube y en `/sadm` no aparece entre los rechazados para procesado excepcional.
+
+```sql
+SELECT task, prompt_version, count(*) FROM llm_calls
+WHERE tenant_id = '<tenant>' AND created_at > now() - interval '1 hour'
+GROUP BY task, prompt_version;
+```
 
 **[prod]**
 

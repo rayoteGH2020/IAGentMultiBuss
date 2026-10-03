@@ -311,7 +311,11 @@ Consecuencia:
 6. Se aplica al panel `/documents` y a las tools del chat (buscar, agregar, contrapartes y `get_document`, que responde "no encontrado" para un documento oculto).
 7. No se aplica al export RGPD, SADM, cupos, job de pendientes ni a acciones por id sin boton visible.
 8. Un documento oculto sigue bloqueando el mismo fichero (hash); el aviso explica que queda fuera de los N meses de historico del plan.
-9. **Pendiente de decidir:** documentos que ya nacen fuera del historico (p. ej. una factura de hace 2 anos subida en Basico). La fecha solo se conoce tras extraer: hoy se procesan, consumen cupo y quedan ocultos sin aviso. Rechazada la propuesta de avisarlo en la fila y mantenerlo asi (2026-10-03).
+9. **Documentos que ya nacen fuera del historico** (decidido e implementado 2026-10-03, `aa8b812`; p. ej. una factura de hace 2 anos subida en Basico): solo se procesa lo que entra en el historico **del plan** (12 / 36 / sin limite). Facturas y tickets; los contratos siguen la regla de vigencia.
+   - **En la subida, sin llamada nueva al LLM:** la fecha de emision sale del texto del PDF (regla que solo acepta fechas etiquetadas como emision: "Fecha", "Fecha de factura", "Fecha de emision", "Fecha de expedicion"; ambigua = no decide) o, en fotos y escaneados, de la misma llamada de clasificacion con Haiku que ya se hacia (prompt `classification_v2`, campos `fecha_emision` y `fecha_confianza`; solo cuenta con confianza >= 0,8). Si es anterior al historico, se rechaza como un duplicado: sin R2, cupo ni extraccion.
+   - **Red de seguridad:** si la fecha no se pudo leer al subir y la extraccion da una anterior, el documento queda en error definitivo `outside_history` (visible, sin "Reintentar" ni procesado excepcional del SADM), sin guardar sus datos, y se devuelve el cupo. Ese caso si gasta la extraccion.
+   - Descartado: una llamada aparte a un modelo barato solo para la fecha. Seria una llamada mas en cada documento, tambien en los recientes, y solo ahorra con los antiguos.
+   - Rechazada antes la propuesta de procesarlos, ocultarlos y avisarlo en la fila.
 
 ## D018 - Analista de datos en Premium: aplazado hasta despues del producto minimo
 

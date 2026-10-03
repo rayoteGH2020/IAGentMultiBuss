@@ -652,6 +652,8 @@ ORDER BY created_at DESC;
   - Volver a subir el mismo fichero → "ya esta subido... Queda fuera de los 12 meses de historico de tu plan".
   - Pasar el tenant a Avanzado (o override `history_months` = 36) → vuelve a verse.
   - Un contrato vigente con fecha de inicio antigua se ve siempre; uno vencido hace mas de 12 meses, no.
+  - Subir un PDF de factura con texto y "Fecha de factura" de hace mas de 12 meses → "es una factura del ...: tu plan procesa documentos de los ultimos 12 meses ... No se ha subido ni consume cupo". Lo mismo con una foto de ticket antiguo con la fecha legible.
+  - Una factura antigua cuya fecha no se lee al subir → tras procesarse queda en error "anterior al historico que incluye tu plan", sin "Reintentar", y el cupo del mes no sube.
 - [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de facturas y tickets (con desglose), reintentos, preguntas, altas de contratos y contratos vigentes, con la fecha de renovacion, y el uso de IA en % sin euros. Con un override bajo (p. ej. `invoices_per_month` = 5 y 4 subidas), `/documents` muestra el aviso ambar del 80 % y, al llegar a 5, el rojo; `/chat` avisa solo con las preguntas agotadas; la lista de `/sadm/plans` marca ese tenant con "≥ 80 %" o "100 %".
 - [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).
 
