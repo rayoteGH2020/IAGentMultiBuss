@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 
 from app.core.db import session_factory_for_worker, set_tenant_context
+from app.evals.eval_db import use_eval_database
 from app.models import Tenant
 from app.models.knowledge import (
     KnowledgeChunk,
@@ -218,6 +219,7 @@ async def seed(tenant_id: UUID, *, replace: bool = True) -> None:
 
 
 def main() -> None:
+    use_eval_database()
     argv = [a for a in sys.argv[1:] if a]
     flags = {a for a in argv if a.startswith("--")}
     args = [a for a in argv if not a.startswith("--")]

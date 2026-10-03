@@ -1,0 +1,71 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Miembros{% endblock %}
+{% block page_title %}Miembros{% endblock %}
+
+{% block settings_content %}
+<div class="space-y-6">
+  <div>
+    <p class="text-sm text-slate-500">
+      Las altas y bajas se solicitan aquí y las ejecuta el superadmin (SADM) en Clerk.
+      Los permisos de citas se ajustan directamente.
+    </p>
+    {% if member_usage and member_usage.cap is not none %}
+      <p id="member-usage" class="mt-1 text-sm text-slate-600">
+        Miembros: {{ member_usage.used }} de {{ member_usage.cap }} que admite tu plan.
+      </p>
+      {% if member_usage.used > member_usage.cap %}
+        <p id="member-usage-over" class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          Tienes más miembros de los que admite tu plan. Los actuales siguen activos,
+          pero no puedes añadir más hasta tener menos de {{ member_usage.cap }} o cambiar de plan.
+        </p>
+      {% elif member_usage.used == member_usage.cap %}
+        <p id="member-usage-full" class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          Has alcanzado el máximo de miembros de tu plan. Para añadir otro, da de baja a alguien o cambia de plan.
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card p-0 overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Nombre</th>
+          <th>Rol</th>
+          <th>Permisos citas</th>
+          {# Cubre las columnas Editar y Baja: el botón queda en la esquina superior derecha de la tabla. #}
+          <th colspan="2" class="py-2 text-right">
+            <button type="button"
+                    hx-get="/settings/members/requests/new"
+                    hx-target="#member-modal-panel"
+                    hx-swap="innerHTML"
+                    hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-member-modal'))"
+                    class="btn-primary cursor-pointer whitespace-nowrap px-3 py-1.5 text-xs">Nuevo miembro</button>
+          </th>
+        </tr>
+      </thead>
+      <tbody id="members-list">
+        {% for member in members %}
+          {% include "components/scheduling/member_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Alpine open state MUST NOT be on the hx-target: afterSettle destroyTree+initTree
+   would reset open=false and close the modal right after opening. #}
+<div x-data="{ open: false }"
+     @open-member-modal.window="open = true"
+     @close-member-modal.window="open = false; $refs.panel.innerHTML = ''">
+  <div x-show="open"
+       x-cloak
+       @keydown.escape.window="if (open) open = false"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @click.self="open = false">
+    <div id="member-modal-panel" x-ref="panel"></div>
+  </div>
+</div>
+{% endblock %}

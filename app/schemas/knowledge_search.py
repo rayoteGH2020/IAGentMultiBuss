@@ -17,7 +17,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.knowledge import KnowledgeDocumentKind
+from app.schemas.knowledge import KnowledgeDocumentKind
 
 
 class KnowledgeChunkRef(BaseModel):

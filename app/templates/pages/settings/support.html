@@ -1,0 +1,18 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Soporte técnico{% endblock %}
+{% block page_title %}Ajustes{% endblock %}
+
+{% block settings_content %}
+<div class="card space-y-4">
+  <div>
+    <h3 class="font-semibold">Soporte técnico</h3>
+    <p class="text-sm text-slate-500">
+      Escribe al equipo de soporte de la plataforma. Te responderemos por email.
+    </p>
+  </div>
+  <div id="support-form-panel">
+    {% include "components/support/support_form.html" %}
+  </div>
+</div>
+{% endblock %}

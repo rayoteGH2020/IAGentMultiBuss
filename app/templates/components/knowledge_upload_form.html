@@ -1,7 +1,7 @@
-{# Formulario de subida de documentos de conocimiento RAG (Paso 18).
-   Reutiliza el mismo patrón Alpine.js + dropzone que upload_modal.html.
-   Acepta: PDF, TXT, MD. Máx. 15 MB por fichero.
-   El selector de categoría (kind) es obligatorio antes de poder enviar. #}
+{# Modal de subida a la base de conocimiento RAG: 10 zonas fijas (LTR, arriba→abajo),
+   categoría por zona, igual que /documents (upload_modal.html).
+   Alpine.data('knowledgeUploadForm') = createSlotUploadForm({typeField: "kinds"}).
+   Cierre del modal solo con HX-Trigger knowledge-upload-result ok=true. #}
 
 {% set kind_labels = {
   "contract": "Contrato",
@@ -15,25 +15,26 @@
 } %}
 
 <div
-  x-data="{ open: false, files: [], dragging: false, kind: '', uploadInputKey: 0, isMobile: window.matchMedia('(hover: none) and (pointer: coarse)').matches }"
-  @keydown.escape.window="open = false"
+  x-data="knowledgeUploadForm"
+  @keydown.escape.window="if (open) closeModal()"
+  @knowledge-upload-result.window="onUploadResult($event.detail)"
   hx-boost="false"
   class="inline-block">
 
   <button
     type="button"
-    @click="open = true; files = []; kind = ''; uploadInputKey++"
+    @click="openModal()"
     class="btn-primary shrink-0">
-    Subir documento
+    Subir documentos
   </button>
 
-  {# Botón cámara: solo en dispositivos táctiles. Al pulsar abre la cámara trasera.
-     La foto se procesa con OCR vía LLM antes de ser chunkificada e indexada. #}
+  {# Botón cámara: solo en dispositivos táctiles. La foto se procesa con OCR
+     vía LLM antes de ser chunkificada e indexada. #}
   <button
     type="button"
     x-show="isMobile"
     x-cloak
-    @click="$refs.kCameraCapture.click()"
+    @click="$refs.cameraCapture.click()"
     class="btn-secondary shrink-0 flex items-center gap-1.5"
     aria-label="Tomar foto">
     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
@@ -45,156 +46,111 @@
     Foto
   </button>
 
-  {# Input oculto con capture="environment": abre cámara trasera en móvil. #}
   <input
     type="file"
-    x-ref="kCameraCapture"
+    x-ref="cameraCapture"
     class="sr-only"
     accept="image/*"
     capture="environment"
-    @change="
-      const captured = Array.from($event.target.files || []);
-      if (captured.length > 0) {
-        files = captured;
-        kind = '';
-        uploadInputKey++;
-        open = true;
-      }
-      $event.target.value = '';">
+    @change="onCameraCapture($event)">
+
+  <input
+    type="file"
+    x-ref="slotPicker"
+    class="sr-only"
+    multiple
+    accept=".pdf,.txt,.md,.markdown,.jpg,.jpeg,.png,.webp"
+    @change="onSlotPick($event)">
 
   <div
     x-show="open"
     x-cloak
-    class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center"
-    @click.self="open = false">
+    class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-3 sm:p-6"
+    @click.self="closeModal()">
 
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+    <div
+      class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[min(92vh,52rem)] flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="knowledge-upload-title">
 
-      <div class="flex items-center justify-between mb-5">
-        <h2 class="text-lg font-semibold text-slate-900">Añadir a la base de conocimiento</h2>
+      <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
+        <div>
+          <h2 id="knowledge-upload-title" class="text-lg font-semibold text-slate-900">
+            Añadir a la base de conocimiento
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Arrastra hasta 10 ficheros (PDF, TXT, Markdown o imagen). Se colocan siempre en las primeras zonas libres.
+          </p>
+        </div>
         <button
           type="button"
-          @click="open = false"
-          class="text-slate-400 hover:text-slate-600 text-xl leading-none"
+          @click="closeModal()"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer"
           aria-label="Cerrar">✕</button>
       </div>
 
       <form
+        id="knowledge-upload-form"
+        class="flex flex-col min-h-0 flex-1"
         hx-post="/knowledge/upload"
         hx-encoding="multipart/form-data"
         hx-target="#knowledge-table-container"
         hx-swap="outerHTML"
         hx-indicator="#k-upload-spinner"
         hx-boost="false"
-        hx-on::config-request="
-          if (files.length === 0 || !kind) {
-            event.preventDefault();
-            return;
-          }
-          const fd = event.detail.formData;
-          if (!fd) return;
-          fd.delete('files');
-          files.forEach(function (f) { fd.append('files', f, f.name); });"
-        @submit="
-          const dt = new DataTransfer();
-          files.forEach(function (f) { dt.items.add(f); });
-          if ($refs.kinput) $refs.kinput.files = dt.files;"
-        @htmx:after-request="
-          if ($event.detail.successful) {
-            open = false;
-            files = [];
-            kind = '';
-            uploadInputKey++;
-          }">
+        hx-push-url="false"
+        hx-history="false"
+        @htmx:config-request="prepareRequest($event)">
 
-        {# Dropzone #}
-        <label
-          class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors"
-          :class="dragging ? 'border-primary-400 bg-primary-50' : 'border-slate-300 hover:border-slate-400'"
-          @dragover.prevent="dragging = true"
-          @dragleave.prevent="dragging = false"
-          @drop.prevent="
-            dragging = false;
-            files = Array.from($event.dataTransfer.files);
-            const dt = new DataTransfer();
-            files.forEach(function (f) { dt.items.add(f); });
-            $refs.kinput.files = dt.files;">
-
-          <input
-            type="file"
-            name="files"
-            x-ref="kinput"
-            :key="'k-upload-' + uploadInputKey"
-            class="hidden"
-            multiple
-            accept=".pdf,.txt,.md,.markdown,.jpg,.jpeg,.png,.webp"
-            @change="files = Array.from($event.target.files || [])">
-
-          <svg class="mx-auto h-8 w-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          <p class="text-sm text-slate-600">
-            Arrastra aquí tus documentos o haz clic para seleccionar
-          </p>
-          <p class="text-xs text-slate-400 mt-1">
-            PDF, TXT, Markdown o imagen (JPG, PNG, WebP) · Máx. 15 MB por fichero
-          </p>
-        </label>
-
-        {# Lista de ficheros seleccionados #}
-        <ul x-show="files.length" class="mt-3 space-y-1 max-h-32 overflow-y-auto">
-          <template x-for="(f, idx) in files" :key="uploadInputKey + '-' + idx + '-' + f.name">
-            <li class="flex items-center justify-between text-sm text-slate-700">
-              <span x-text="f.name" class="truncate"></span>
-              <span class="text-xs text-slate-400 shrink-0 ml-2"
-                    x-text="(f.size / 1024).toFixed(0) + ' KB'"></span>
-            </li>
-          </template>
-        </ul>
-
-        {# Selector de categoría (aparece al seleccionar ficheros) #}
-        <div x-show="files.length" x-cloak class="mt-4">
-          <label for="k-kind-select" class="block text-sm font-medium text-slate-700 mb-1.5">
-            Categoría <span class="text-red-500" aria-hidden="true">*</span>
-          </label>
-          <select
-            id="k-kind-select"
-            name="kind"
-            x-model="kind"
-            required
-            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 cursor-pointer">
-            <option value="" disabled>Selecciona una categoría…</option>
-            {% for k, label in kind_labels.items() %}
-            <option value="{{ k }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-          <p class="mt-1 text-xs text-slate-500">
-            Si subes varios ficheros, todos se clasificarán con la misma categoría.
-          </p>
+        <div class="px-5 pt-3 shrink-0">
+          <div
+            x-show="formError"
+            x-cloak
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+            x-text="formError"></div>
         </div>
 
-        {# Footer del formulario #}
-        <div class="mt-6 flex items-center justify-end gap-3">
-          <span id="k-upload-spinner" class="htmx-indicator text-sm text-slate-500 flex items-center gap-1.5">
-            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
-              <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
-            </svg>
-            Subiendo…
-          </span>
-          <button
-            type="button"
-            @click="open = false"
-            class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 transition-colors">
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            :disabled="files.length === 0 || !kind"
-            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
-            Subir <span x-show="files.length" x-text="'(' + files.length + ')'"></span>
-          </button>
+        {% set slot_type_field = "kinds" %}
+        {% set slot_type_label = "Categoría" %}
+        {% set slot_type_placeholder = "Categoría…" %}
+        {% set slot_type_options = kind_labels.items() | list %}
+        {% include "components/upload_slots_grid.html" %}
+
+        <div class="flex items-center justify-between gap-3 px-5 py-4 border-t border-slate-100 shrink-0 bg-white rounded-b-lg">
+          <p class="text-xs text-slate-500">
+            <template x-if="!optimizing">
+              <span><span x-text="filledCount"></span> / 10 colocados · 15 MB máx. por fichero</span>
+            </template>
+            <template x-if="optimizing">
+              <span class="text-slate-600">Optimizando fotos…</span>
+            </template>
+          </p>
+          <div class="flex items-center gap-2">
+            <span id="k-upload-spinner" class="htmx-indicator text-sm text-slate-500">
+              Subiendo…
+            </span>
+            <button
+              type="button"
+              @click="clearAllFiles()"
+              :disabled="filledCount === 0"
+              class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+              Quitar todos los ficheros
+            </button>
+            <button
+              type="button"
+              @click="closeModal()"
+              class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 cursor-pointer">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              :disabled="!canSubmit"
+              class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-600">
+              Subir <span x-show="filledCount" x-text="'(' + filledCount + ')'"></span>
+            </button>
+          </div>
         </div>
 
       </form>

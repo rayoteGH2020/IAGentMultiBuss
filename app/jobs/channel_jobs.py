@@ -25,11 +25,24 @@ from app.core import telegram_client, whatsapp_client
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker
 from app.core.email import send_email
+from app.core.log_redaction import pseudonymize
 from app.models.channel_integration import ChannelIntegrationStatus
 from app.models.membership import Membership
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.services import audit_service, channel_chat_service, channel_integration_service
+from app.services import (
+    audit_service,
+    channel_chat_service,
+    channel_integration_service,
+    entitlement_service,
+    plan_quota_service,
+)
+from app.services.audit_service import (
+    ACTION_CHANNEL_ESCALATED,
+    ACTION_CHANNEL_MESSAGE_RECEIVED,
+    ACTION_CHANNEL_MESSAGE_SENT,
+    RESOURCE_CHANNEL_CONVERSATION,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -89,7 +102,11 @@ async def _safe_send(
             phone_number_id=phone_number_id,
         )
     except Exception:
-        logger.exception("channel.send_failed", channel=channel, customer=customer_identifier)
+        logger.exception(
+            "channel.send_failed",
+            channel=channel,
+            customer_ref=pseudonymize(customer_identifier),
+        )
 
 
 async def _check_rate_limit(
@@ -116,7 +133,11 @@ async def _get_admin_email(db: Any, tenant_id: uuid.UUID) -> str | None:
     stmt = (
         select(User.email)
         .join(Membership, Membership.user_id == User.id)
-        .where(Membership.tenant_id == tenant_id, Membership.role == "admin")
+        .where(
+            Membership.tenant_id == tenant_id,
+            Membership.role == "admin",
+            Membership.is_active.is_(True),
+        )
         .limit(1)
     )
     result = await db.execute(stmt)
@@ -172,6 +193,15 @@ async def process_channel_message(
                     channel=channel,
                 )
                 return
+            feature = "channel_whatsapp" if channel == "whatsapp" else "channel_telegram"
+            if not await entitlement_service.ensure_feature(db, tenant_uuid, feature):
+                logger.info(
+                    "channel.job.feature_disabled",
+                    tenant_id=tenant_id,
+                    channel=channel,
+                    feature=feature,
+                )
+                return
             confidence_threshold = integration.confidence_threshold
             api_token = channel_integration_service.decrypt_api_token(integration)
             phone_number_id = integration.phone_number_id
@@ -184,8 +214,8 @@ async def process_channel_message(
                 db,
                 tenant_id=tenant_uuid,
                 user_id=None,
-                action="channel.message_received",
-                resource_type="channel_conversation",
+                action=ACTION_CHANNEL_MESSAGE_RECEIVED,
+                resource_type=RESOURCE_CHANNEL_CONVERSATION,
                 resource_id=None,
                 metadata={
                     "channel": channel,
@@ -194,9 +224,13 @@ async def process_channel_message(
                 },
             )
 
-            # Rate-limit: máx. N mensajes/hora por customer_identifier
-            if not await _check_rate_limit(
-                redis_conn, tenant_id=tenant_id, customer_identifier=customer_identifier
+            # Rate-limit: max. N mensajes/hora por customer (plan comercial)
+            ents = await entitlement_service.resolve_tenant(db, tenant_uuid)
+            if not await plan_quota_service.ensure_channel_message_allowed(
+                redis_conn,
+                ents,
+                tenant_uuid,
+                customer_identifier,
             ):
                 limit_msg = (
                     "Hemos recibido demasiados mensajes. "
@@ -214,7 +248,7 @@ async def process_channel_message(
                     "channel.rate_limited",
                     tenant_id=tenant_id,
                     channel=channel,
-                    customer_identifier=customer_identifier,
+                    customer_ref=pseudonymize(customer_identifier),
                     limit=get_settings().channel_rate_limit_msg_per_hour,
                 )
                 return
@@ -229,6 +263,36 @@ async def process_channel_message(
             )
             response_text = response.text
             response_confidence = response.confidence
+
+            if response_confidence >= confidence_threshold:
+                await audit_service.log_action(
+                    db,
+                    tenant_id=tenant_uuid,
+                    user_id=None,
+                    action=ACTION_CHANNEL_MESSAGE_SENT,
+                    resource_type=RESOURCE_CHANNEL_CONVERSATION,
+                    metadata={
+                        "channel": channel,
+                        "customer_identifier": customer_identifier,
+                        "confidence": response_confidence,
+                        "citations_count": response.citations_count,
+                    },
+                )
+            else:
+                await audit_service.log_action(
+                    db,
+                    tenant_id=tenant_uuid,
+                    user_id=None,
+                    action=ACTION_CHANNEL_ESCALATED,
+                    resource_type=RESOURCE_CHANNEL_CONVERSATION,
+                    metadata={
+                        "channel": channel,
+                        "customer_identifier": customer_identifier,
+                        "confidence": response_confidence,
+                        "threshold": confidence_threshold,
+                        "question_preview": message_text[:200],
+                    },
+                )
 
             # Commit: persiste Conversation + ChannelMessages del turno
             await db.commit()
@@ -307,7 +371,9 @@ async def process_channel_message(
                     ),
                 )
             except Exception:
-                logger.exception("channel.escalation_email_failed", to=admin_email)
+                logger.exception(
+                    "channel.escalation_email_failed", to_ref=pseudonymize(admin_email)
+                )
         logger.info(
             "channel.escalated",
             tenant_id=tenant_id,

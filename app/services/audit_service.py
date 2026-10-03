@@ -9,6 +9,7 @@ from uuid import UUID
 
 import structlog
 
+from app.core.audit_pseudonym import audit_ref
 from app.models import AuditLog
 
 if TYPE_CHECKING:
@@ -23,6 +24,9 @@ ACTION_CALENDAR_INTEGRATION_LINKED = "calendar.integration_linked"
 ACTION_CALENDAR_INTEGRATION_UNLINKED = "calendar.integration_unlinked"
 ACTION_CALENDAR_VOICE_TRANSCRIBED = "calendar.voice_transcribed"
 ACTION_CALENDAR_EVENT_CREATED_FROM_VOICE = "calendar.event_created_from_voice"
+ACTION_CHANNEL_MESSAGE_RECEIVED = "channel.message_received"
+ACTION_CHANNEL_MESSAGE_SENT = "channel.message_sent"
+ACTION_CHANNEL_ESCALATED = "channel.escalated"
 
 RESOURCE_CHAT_MESSAGE = "chat_message"
 RESOURCE_CHAT_THREAD = "chat_thread"
@@ -30,6 +34,7 @@ RESOURCE_KNOWLEDGE = "knowledge"
 RESOURCE_CALENDAR_INTEGRATION = "calendar_integration"
 RESOURCE_VOICE_TRANSCRIPTION = "voice_transcription"
 RESOURCE_CALENDAR_EVENT = "calendar_event"
+RESOURCE_CHANNEL_CONVERSATION = "channel_conversation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,9 +179,10 @@ async def log_calendar_integration_linked(
     request_ctx: AuditRequestContext | None = None,
 ) -> AuditLog:
     """Audita vinculación de calendario externo (OAuth completado)."""
+    # Sin el email de la cuenta de Google en claro (P2c-7): seudónimo.
     meta: dict[str, Any] = {"provider": provider}
     if google_email:
-        meta["google_email"] = google_email
+        meta["google_email_ref"] = audit_ref(google_email, "email")
     return await log_action(
         db,
         tenant_id=tenant_id,
@@ -200,9 +206,10 @@ async def log_calendar_integration_unlinked(
     request_ctx: AuditRequestContext | None = None,
 ) -> AuditLog:
     """Audita desvinculación de calendario externo."""
+    # Sin el email de la cuenta de Google en claro (P2c-7): seudónimo.
     meta: dict[str, Any] = {"provider": provider}
     if google_email:
-        meta["google_email"] = google_email
+        meta["google_email_ref"] = audit_ref(google_email, "email")
     return await log_action(
         db,
         tenant_id=tenant_id,

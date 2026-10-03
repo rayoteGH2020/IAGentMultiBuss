@@ -1,0 +1,5 @@
+{# Tras crear: form de edición (con horario) en el modal + fila OOB en el listado. #}
+{% include "components/scheduling/professional_form.html" %}
+{% with professional=list_row, oob_swap="beforeend:#professionals-list" %}
+{% include "components/scheduling/professional_row.html" %}
+{% endwith %}

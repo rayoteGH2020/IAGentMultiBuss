@@ -41,7 +41,7 @@ async def _seed_invoice(
     factura = Factura(
         fecha=date(2025, 4, 10),
         proveedor=proveedor,
-        cif_nif="B-TEST-001",  # pragma: allowlist secret
+        cif_nif="B12345678",  # pragma: allowlist secret
         base_imponible=total,
         iva_percent=Decimal("21"),
         iva_amount=Decimal("0"),
@@ -88,7 +88,8 @@ async def test_execute_search_documents_respects_tenant_rls(
     db_session,
     tenant_factory,
 ) -> None:
-    tenant: Tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fechas fijas del pasado, D017).
+    tenant: Tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
     await _seed_invoice(
         db_session,

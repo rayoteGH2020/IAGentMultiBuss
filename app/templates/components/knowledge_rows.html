@@ -65,14 +65,10 @@
         hx-include="[name='kind']"
         hx-trigger="change">
         <option value="">Todos</option>
-        {% set status_labels = {
-          "pending": "Pendiente", "indexing": "Indexando",
-          "ready": "Listo", "failed": "Error"
-        } %}
         {% for s in statuses %}
         <option value="{{ s }}"
           {% if filters and filters.status | string == s | string %}selected{% endif %}>
-          {{ status_labels.get(s | string, s | string) }}
+          {{ s | status_label }}
         </option>
         {% endfor %}
       </select>

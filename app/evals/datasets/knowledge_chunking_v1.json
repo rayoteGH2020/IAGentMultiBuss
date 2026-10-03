@@ -1,41 +1,32 @@
 {
-  "version": "1",
-  "description": "Eval set para medir la calidad del chunking de documentos de conocimiento RAG. Objetivo: avg_chunk_size entre 1500-3000 chars, chunks >= 1 por documento.",
-  "metrics": {
-    "avg_chunk_size_chars_min": 1500,
-    "avg_chunk_size_chars_max": 3000,
-    "min_chunks_per_doc": 1
-  },
-  "cases": [
-    {
-      "id": "caso_01_contrato_corto",
-      "description": "Contrato corto en texto plano — debe producir 1 chunk",
-      "mime": "text/plain",
-      "text": "CONTRATO DE SERVICIOS\n\nEntre la empresa XYZ S.L. y el cliente ABC, se acuerdan las siguientes condiciones de prestación de servicios de soporte técnico y mantenimiento de sistemas informáticos.\n\nCláusula 1: Vigencia. El contrato tendrá vigencia de 12 meses a partir de la firma.\n\nCláusula 2: Precio. El precio mensual acordado es de 500 EUR más IVA.\n\nCláusula 3: Rescisión. Cualquiera de las partes podrá rescindir el contrato con 30 días de preaviso.",
-      "expected": {
-        "min_chunks": 1,
-        "max_chunks": 3
-      }
+    "version": "1",
+    "description": "Eval set para medir la calidad del chunking de documentos de conocimiento RAG. Objetivo: avg_chunk_size entre 1500-3000 chars, chunks >= 1 por documento.",
+    "metrics": {
+        "avg_chunk_size_chars_min": 1500,
+        "avg_chunk_size_chars_max": 3000,
+        "min_chunks_per_doc": 1
     },
-    {
-      "id": "caso_02_faq_multiple_secciones",
-      "description": "FAQ con múltiples preguntas — debe producir varios chunks con solape",
-      "mime": "text/plain",
-      "text": "PREGUNTAS FRECUENTES\n\n¿Cuál es el horario de atención al cliente?\nNuestro horario es de lunes a viernes de 9h a 18h y sábados de 10h a 14h. En días festivos permanecemos cerrados.\n\n¿Cómo puedo realizar una devolución?\nPara realizar una devolución debe contactar con nuestro servicio de atención al cliente en el plazo de 14 días desde la recepción del pedido. Es necesario adjuntar el albarán de entrega y el artículo en su estado original.\n\n¿Disponen de envío a Canarias?\nSí, realizamos envíos a todas las islas. El plazo de entrega estándar es de 5-7 días laborables y el coste adicional es de 15 EUR por pedido.\n\n¿Puedo cambiar mi pedido una vez confirmado?\nUna vez confirmado el pedido no es posible realizar modificaciones. Si necesita cambiar algún artículo deberá esperar a recibirlo y tramitar una devolución.\n\n¿Aceptan pagos a plazos?\nSí, disponemos de financiación sin intereses para compras superiores a 300 EUR. Puede fraccionar el pago en 3, 6 o 12 cuotas mensuales.",
-      "expected": {
-        "min_chunks": 1,
-        "max_chunks": 5
-      }
-    },
-    {
-      "id": "caso_03_markdown_con_titulos",
-      "description": "Documento Markdown con estructura de títulos y listas",
-      "mime": "text/markdown",
-      "text": "# Manual de incorporación\n\n## Bienvenida\n\nBienvenido a nuestro equipo. Este documento describe los pasos necesarios para completar tu proceso de incorporación durante las primeras semanas.\n\n## Primer día\n\n- Recogida de credenciales y equipo en recepción (9h)\n- Reunión de bienvenida con RRHH (10h)\n- Configuración de herramientas: correo corporativo, Slack, Jira\n- Almuerzo de equipo (14h)\n\n## Primera semana\n\nDurante la primera semana deberás completar los siguientes módulos de formación obligatoria:\n\n1. Políticas de seguridad informática (2h)\n2. Protección de datos y RGPD (1h)\n3. Prevención de riesgos laborales (1h)\n4. Herramientas corporativas (3h)\n\n## Contactos útiles\n\n- RRHH: rrhh@empresa.com\n- Soporte IT: it@empresa.com\n- Recepción: ext. 100",
-      "expected": {
-        "min_chunks": 1,
-        "max_chunks": 6
-      }
-    }
-  ]
+    "cases": [
+        {
+            "id": "caso_01_contrato_corto",
+            "description": "Contrato corto en texto plano — debe producir 1 chunk",
+            "mime": "text/plain",
+            "text": "CONTRATO DE SERVICIOS\n\nEntre la empresa XYZ S.L. y el cliente ABC, se acuerdan las siguientes condiciones de prestación de servicios de soporte técnico y mantenimiento de sistemas informáticos.\n\nCláusula 1: Vigencia. El contrato tendrá vigencia de 12 meses a partir de la firma.\n\nCláusula 2: Precio. El precio mensual acordado es de 500 EUR más IVA.\n\nCláusula 3: Rescisión. Cualquiera de las partes podrá rescindir el contrato con 30 días de preaviso.",
+            "expected": {"min_chunks": 1, "max_chunks": 3}
+        },
+        {
+            "id": "caso_02_faq_multiple_secciones",
+            "description": "FAQ con múltiples preguntas — debe producir varios chunks con solape",
+            "mime": "text/plain",
+            "text": "PREGUNTAS FRECUENTES\n\n¿Cuál es el horario de atención al cliente?\nNuestro horario es de lunes a viernes de 9h a 18h y sábados de 10h a 14h. En días festivos permanecemos cerrados.\n\n¿Cómo puedo realizar una devolución?\nPara realizar una devolución debe contactar con nuestro servicio de atención al cliente en el plazo de 14 días desde la recepción del pedido. Es necesario adjuntar el albarán de entrega y el artículo en su estado original.\n\n¿Disponen de envío a Canarias?\nSí, realizamos envíos a todas las islas. El plazo de entrega estándar es de 5-7 días laborables y el coste adicional es de 15 EUR por pedido.\n\n¿Puedo cambiar mi pedido una vez confirmado?\nUna vez confirmado el pedido no es posible realizar modificaciones. Si necesita cambiar algún artículo deberá esperar a recibirlo y tramitar una devolución.\n\n¿Aceptan pagos a plazos?\nSí, disponemos de financiación sin intereses para compras superiores a 300 EUR. Puede fraccionar el pago en 3, 6 o 12 cuotas mensuales.",
+            "expected": {"min_chunks": 1, "max_chunks": 5}
+        },
+        {
+            "id": "caso_03_markdown_con_titulos",
+            "description": "Documento Markdown con estructura de títulos y listas",
+            "mime": "text/markdown",
+            "text": "# Manual de incorporación\n\n## Bienvenida\n\nBienvenido a nuestro equipo. Este documento describe los pasos necesarios para completar tu proceso de incorporación durante las primeras semanas.\n\n## Primer día\n\n- Recogida de credenciales y equipo en recepción (9h)\n- Reunión de bienvenida con RRHH (10h)\n- Configuración de herramientas: correo corporativo, Slack, Jira\n- Almuerzo de equipo (14h)\n\n## Primera semana\n\nDurante la primera semana deberás completar los siguientes módulos de formación obligatoria:\n\n1. Políticas de seguridad informática (2h)\n2. Protección de datos y RGPD (1h)\n3. Prevención de riesgos laborales (1h)\n4. Herramientas corporativas (3h)\n\n## Contactos útiles\n\n- RRHH: rrhh@empresa.com\n- Soporte IT: it@empresa.com\n- Recepción: ext. 100",
+            "expected": {"min_chunks": 1, "max_chunks": 6}
+        }
+    ]
 }

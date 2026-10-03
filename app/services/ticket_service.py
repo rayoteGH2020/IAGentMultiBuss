@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy import ColumnElement, String, cast, func, literal, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.core.document_processing_errors import format_user_processing_error
+from app.core.document_processing_errors import DocumentErrorCode, failure_message
 from app.core.errors import NotFoundError, ValidationError
 from app.core.keys import ticket_key
 from app.core.storage import get_storage
@@ -26,7 +26,7 @@ from app.schemas.document_query import (
     TicketRead,
 )
 from app.schemas.pagination import Page
-from app.services import doc_type_service
+from app.services import doc_type_service, document_history_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,6 +39,12 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+async def _release_quota(db: AsyncSession, document: Ticket) -> None:
+    from app.services import document_quota_service
+
+    await document_quota_service.release_reservation(db, document)
+
+
 async def list_tickets(
     db: AsyncSession,
     tenant_id: UUID,
@@ -46,16 +52,19 @@ async def list_tickets(
     status: TicketStatus | None = None,
     limit: int = 50,
     offset: int = 0,
+    visible_from: date | None = None,
 ) -> Sequence[Ticket]:
     stmt = (
         select(Ticket)
-        .where(Ticket.tenant_id == tenant_id)
+        .where(Ticket.tenant_id == tenant_id, Ticket.dismissed_at.is_(None))
         .order_by(Ticket.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
     if status is not None:
         stmt = stmt.where(Ticket.status == status)
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.ticket_visible(visible_from))
     stmt = stmt.options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -69,7 +78,7 @@ async def get_ticket(
     stmt = (
         select(Ticket)
         .where(Ticket.tenant_id == tenant_id, Ticket.id == ticket_id)
-        .options(selectinload(Ticket.llm_call))
+        .options(selectinload(Ticket.llm_call), selectinload(Ticket.doc_type))
     )
     result = await db.execute(stmt)
     ticket = result.scalar_one_or_none()
@@ -127,6 +136,29 @@ async def create_ticket_from_upload(
     return ticket
 
 
+async def create_ticket_from_existing_storage(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    source_file_key: str,
+    source_filename: str,
+    source_mime: str,
+    doc_type: DocTypeCode = DocTypeCode.ticket,
+) -> Ticket:
+    """Crea stub de ticket reutilizando un fichero ya subido a R2."""
+    ticket = await create_ticket_stub(
+        db,
+        tenant_id,
+        source_file_key=source_file_key,
+        source_filename=original_upload_filename(source_filename),
+        source_mime=source_mime,
+        doc_type=doc_type,
+    )
+    ticket.status = TicketStatus.processing
+    await db.flush()
+    return ticket
+
+
 async def apply_extraction_result(
     db: AsyncSession,
     *,
@@ -134,7 +166,55 @@ async def apply_extraction_result(
     recibo: TicketRecibo,
     llm_call_id: UUID,
 ) -> Ticket:
+    from app.services.extraction_quality import (
+        UNUSABLE_EXTRACTION_TECHNICAL,
+        ticket_extraction_is_usable,
+    )
+
     ticket.llm_call_id = llm_call_id
+    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
+    ticket.raw_extraction = recibo.model_dump(mode="json")
+    ticket.updated_at = datetime.now(tz=UTC)
+
+    if not ticket_extraction_is_usable(recibo):
+        ticket.status = TicketStatus.failed
+        ticket.error_code = DocumentErrorCode.extraction_failed.value
+        # Extracción inservible: no consume cupo (bloque 2).
+        await _release_quota(db, ticket)
+        ticket.error_message = failure_message(
+            UNUSABLE_EXTRACTION_TECHNICAL,
+            error_code=DocumentErrorCode.extraction_failed,
+            filename=ticket.source_filename,
+        )
+        logger.warning(
+            "ticket.extraction_unusable",
+            ticket_id=str(ticket.id),
+            tenant_id=str(ticket.tenant_id),
+            confidence=float(ticket.confidence),
+        )
+        from app.models.document_processing_attempt import ProcessingAttemptStatus
+        from app.services import document_processing_service
+
+        await document_processing_service.finalize_processing_attempt(
+            db,
+            tenant_id=ticket.tenant_id,
+            document_kind="ticket",
+            document_id=ticket.id,
+            status=ProcessingAttemptStatus.failed,
+            llm_call_id=llm_call_id,
+            error_message=ticket.error_message,
+            error_code=ticket.error_code,
+        )
+        await db.flush()
+        return ticket
+
+    # Fecha anterior al histórico del plan sin detectar en la subida (D017).
+    if await document_history_service.reject_if_outside_history(
+        db, ticket, issue_date=recibo.fecha, llm_call_id=llm_call_id
+    ):
+        await db.flush()
+        return ticket
+
     ticket.fecha = recibo.fecha
     ticket.comercio = recibo.comercio[:300]
     ticket.numero_ticket = recibo.numero_ticket[:100] if recibo.numero_ticket else None
@@ -144,12 +224,21 @@ async def apply_extraction_result(
     ticket.iva_amount = recibo.iva_amount
     ticket.total = recibo.total
     ticket.currency = recibo.currency[:3]
-    ticket.confidence = Decimal(str(recibo.confidence)).quantize(Decimal("0.01"))
-    ticket.raw_extraction = recibo.model_dump(mode="json")
     ticket.status = TicketStatus.ready
-    ticket.updated_at = datetime.now(tz=UTC)
     ticket.error_message = None
+    ticket.error_code = None
     await db.flush()
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=ticket.tenant_id,
+        document_kind="ticket",
+        document_id=ticket.id,
+        status=ProcessingAttemptStatus.ok,
+        llm_call_id=llm_call_id,
+    )
     return ticket
 
 
@@ -160,23 +249,44 @@ async def mark_failed(
     tenant_id: UUID,
     error: str,
     llm_call_id: UUID | None = None,
+    error_code: DocumentErrorCode = DocumentErrorCode.extraction_failed,
+    detail: str | None = None,
 ) -> None:
+    """Marca un ticket como fallido con motivo estructurado (ver invoice_service)."""
     ticket = await get_ticket(db, tenant_id, ticket_id)
     ticket.status = TicketStatus.failed
     if llm_call_id is not None:
         ticket.llm_call_id = llm_call_id
+    # Un documento que no termina bien no consume cupo (bloque 2).
+    await _release_quota(db, ticket)
     logger.warning(
         "ticket.processing_failed",
         ticket_id=str(ticket_id),
         tenant_id=str(tenant_id),
-        source_filename=ticket.source_filename,
-        technical_error=error[:2000],
+        error_code=error_code.value,
     )
-    ticket.error_message = format_user_processing_error(
+    ticket.error_code = error_code.value
+    ticket.error_message = failure_message(
         error,
+        error_code=error_code,
         filename=ticket.source_filename,
-    )[:2000]
+        detail=detail,
+    )
     ticket.updated_at = datetime.now(tz=UTC)
+
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service
+
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=tenant_id,
+        document_kind="ticket",
+        document_id=ticket_id,
+        status=ProcessingAttemptStatus.failed,
+        llm_call_id=llm_call_id,
+        error_message=ticket.error_message,
+        error_code=error_code.value,
+    )
 
 
 def _ticket_to_read(ticket: Ticket) -> TicketRead:
@@ -200,8 +310,12 @@ def _ticket_to_read(ticket: Ticket) -> TicketRead:
 def _ticket_search_conditions(
     tenant_id: UUID,
     filters: DocumentSearchFilters,
+    *,
+    visible_from: date | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Ticket.tenant_id == tenant_id]
+    if visible_from is not None:
+        conditions.append(document_history_service.ticket_visible(visible_from))
 
     if filters.fecha_from is not None:
         conditions.append(Ticket.fecha >= filters.fecha_from)
@@ -262,9 +376,10 @@ async def search_tickets(
     tenant_id: UUID,
     *,
     filters: DocumentSearchFilters,
+    visible_from: date | None = None,
 ) -> Page[TicketRead]:
     """Búsqueda de tickets con filtros tipados y paginación."""
-    conditions = _ticket_search_conditions(tenant_id, filters)
+    conditions = _ticket_search_conditions(tenant_id, filters, visible_from=visible_from)
     count_stmt = select(func.count()).select_from(Ticket).where(*conditions)
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -289,8 +404,17 @@ async def get_ticket_detail(
     db: AsyncSession,
     tenant_id: UUID,
     ticket_id: UUID,
+    *,
+    visible_from: date | None = None,
 ) -> TicketRead:
     """Detalle de ticket (sin raw_extraction)."""
+    if visible_from is not None:
+        await document_history_service.ensure_visible(
+            db,
+            Ticket.id == ticket_id,
+            document_history_service.ticket_visible(visible_from),
+            document_id=ticket_id,
+        )
     ticket = await get_ticket(db, tenant_id, ticket_id)
     return _ticket_to_read(ticket)
 
@@ -302,9 +426,10 @@ async def aggregate_tickets(
     filters: DocumentSearchFilters,
     metric: AggregateMetric,
     group_by: AggregateGroupBy,
+    visible_from: date | None = None,
 ) -> AggregateResult:
     """Agregaciones COUNT o SUM(total) sobre tickets."""
-    conditions = _ticket_search_conditions(tenant_id, filters)
+    conditions = _ticket_search_conditions(tenant_id, filters, visible_from=visible_from)
     metric_expr = (
         func.count()
         if metric == AggregateMetric.metric_count
@@ -367,6 +492,7 @@ async def list_comercios(
     *,
     query: str | None = None,
     limit: int = 50,
+    visible_from: date | None = None,
 ) -> list[str]:
     """Comercios distintos del tenant, opcionalmente filtrados."""
     stmt = (
@@ -384,5 +510,7 @@ async def list_comercios(
         pattern = ilike_pattern(query)
         comercio_col = func.unaccent(Ticket.comercio)
         stmt = stmt.where(func.lower(comercio_col).like(pattern, escape="\\"))
+    if visible_from is not None:
+        stmt = stmt.where(document_history_service.ticket_visible(visible_from))
     result = await db.execute(stmt)
     return [str(row[0]) for row in result.all() if row[0]]

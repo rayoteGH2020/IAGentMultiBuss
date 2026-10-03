@@ -1,0 +1,50 @@
+{# Icono distintivo por tipo de documento (sin columna propia en la tabla).
+   Espera `document.doc_type_code` (factura|ticket|contrato|seguro) o
+   `document.kind` (invoice|ticket|contract|insurance) como respaldo. #}
+{% set code = (document.doc_type_code or "")|lower %}
+{% if not code %}
+  {% set kind = (document.kind or "")|lower %}
+  {% if kind == "invoice" %}{% set code = "factura" %}
+  {% elif kind == "ticket" %}{% set code = "ticket" %}
+  {% elif kind == "contract" %}{% set code = "contrato" %}
+  {% elif kind == "insurance" %}{% set code = "seguro" %}
+  {% endif %}
+{% endif %}
+{% set icon_class = "doc-type-icon h-4 w-4 shrink-0" %}
+<span class="doc-type-icon-wrap inline-flex shrink-0" aria-hidden="true" title="{{ document.doc_type_label }}">
+{% if code == "ticket" %}
+  {# Ticket / recibo: rollo perforado #}
+  <svg class="{{ icon_class }} text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M9 3h6a1 1 0 011 1v1.2a1.2 1.2 0 001.2 1.2H18a1 1 0 011 1V19a2 2 0 01-2 2H7a2 2 0 01-2-2V7.4a1 1 0 011-1h.8A1.2 1.2 0 008 5.2V4a1 1 0 011-1z"/>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M9 11h6M9 14h4"/>
+  </svg>
+{% elif code == "contrato" %}
+  {# Contrato: documento con firma #}
+  <svg class="{{ icon_class }} text-indigo-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M8 3h7l4 4v12a2 2 0 01-2 2H8a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M15 3v4h4M9 13h5M9 16h3"/>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M14.5 17.5c.8-.9 2.2-.9 2.8.1.4.6.1 1.4-.5 1.7-.7.3-1.5.1-1.9-.4"/>
+  </svg>
+{% elif code == "seguro" %}
+  {# Seguro: escudo #}
+  <svg class="{{ icon_class }} text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M12 3l7 3v5c0 4.5-2.8 7.8-7 9-4.2-1.2-7-4.5-7-9V6l7-3z"/>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M9.5 12.2l1.7 1.7 3.5-3.8"/>
+  </svg>
+{% else %}
+  {# Factura (default): documento con líneas #}
+  <svg class="{{ icon_class }} text-sky-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M9 3.5h5.5L18.5 8v11a1.5 1.5 0 01-1.5 1.5H9A1.5 1.5 0 017.5 19V5A1.5 1.5 0 019 3.5z"/>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M14.5 3.5V8H18.5M9.5 12h5M9.5 15h5M9.5 18h3"/>
+  </svg>
+{% endif %}
+</span>

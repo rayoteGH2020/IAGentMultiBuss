@@ -9,6 +9,7 @@ import httpx
 import structlog
 
 from app.config import get_settings
+from app.core.log_redaction import pseudonymize
 
 logger = structlog.get_logger(__name__)
 
@@ -44,11 +45,11 @@ async def send_text_message(
             logger.warning(
                 "whatsapp.send_failed",
                 status=resp.status_code,
-                to=to,
+                to_ref=pseudonymize(to),
                 phone_number_id=phone_number_id,
             )
         resp.raise_for_status()
-    logger.info("whatsapp.message_sent", to=to, chars=len(truncated))
+    logger.info("whatsapp.message_sent", to_ref=pseudonymize(to), chars=len(truncated))
 
 
 def verify_webhook_signature(body: bytes, signature_header: str, app_secret: str) -> bool:

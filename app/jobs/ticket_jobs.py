@@ -9,16 +9,31 @@ import structlog
 
 from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
+from app.core.document_processing_errors import DocumentErrorCode
 from app.core.errors import LLMCompleteError
+from app.core.media_limits import MediaLimitExceeded
 from app.core.storage import get_storage
+from app.jobs import extraction_guard
 from app.jobs.invoice_slots import tenant_invoice_extraction_slot
 from app.llm.extraction import extract_ticket
-from app.services import ticket_service
+from app.models.document_processing_attempt import ProcessingAttemptStatus
+from app.services import (
+    document_processing_service,
+    document_quota_service,
+    entitlement_service,
+    processing_charge_service,
+    ticket_service,
+)
 
 logger = structlog.get_logger(__name__)
 
 
-async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) -> dict[str, Any]:
+async def process_ticket(
+    ctx: dict[str, Any],
+    ticket_id: str,
+    tenant_id: str,
+    max_pdf_pages: int | None = None,
+) -> dict[str, Any]:
     """Descarga fichero desde R2, extrae con LLM y guarda en `Ticket`."""
     ticket_uuid = uuid.UUID(ticket_id)
     tenant_uuid = uuid.UUID(tenant_id)
@@ -34,6 +49,29 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
     ):
         ticket_row = await ticket_service.get_ticket(db, tenant_uuid, ticket_uuid)
 
+        await document_processing_service.begin_processing_attempt(
+            db,
+            tenant_id=tenant_uuid,
+            document_kind="ticket",
+            document_id=ticket_uuid,
+        )
+
+        if not await entitlement_service.ensure_feature(db, tenant_uuid, "documents"):
+            logger.info(
+                "worker.ticket.feature_disabled",
+                ticket_id=ticket_id,
+                tenant_id=tenant_id,
+            )
+            await ticket_service.mark_failed(
+                db,
+                ticket_id=ticket_uuid,
+                tenant_id=tenant_uuid,
+                error="plan_feature_disabled:documents",
+                error_code=DocumentErrorCode.plan_feature_disabled,
+            )
+            await db.commit()
+            return {"status": "skipped", "reason": "plan_required"}
+
         if not ticket_row.source_file_key:
             await ticket_service.mark_failed(
                 db,
@@ -44,10 +82,37 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
             await db.commit()
             return {"status": "failed", "ticket_id": ticket_id}
 
+        # Máximo 2 reintentos automáticos (ver app/jobs/extraction_guard.py).
+        if await extraction_guard.close_if_interrupted_after_llm(
+            ctx,
+            redis_conn,
+            db,
+            tenant_id=tenant_uuid,
+            document_kind="ticket",
+            document_id=ticket_uuid,
+        ):
+            return {"status": "interrupted", "ticket_id": ticket_id}
+
+        # Presupuesto de IA agotado: el documento espera (quota_pending) y devuelve su
+        # reserva de cupo en vez de fallar; se procesa solo al renovarse (spec §4.7).
+        if await document_quota_service.hold_if_budget_exhausted(db, ticket_row):
+            await document_processing_service.finalize_processing_attempt(
+                db,
+                tenant_id=tenant_uuid,
+                document_kind="ticket",
+                document_id=ticket_uuid,
+                status=ProcessingAttemptStatus.failed,
+                error_code=DocumentErrorCode.llm_budget.value,
+            )
+            await db.commit()
+            return {"status": "quota_pending", "ticket_id": ticket_id}
+
         try:
             storage = get_storage()
             file_bytes = await storage.download_bytes(ticket_row.source_file_key)
             mime = ticket_row.source_mime or "application/pdf"
+
+            await extraction_guard.mark_llm_started(ctx, redis_conn)
 
             extraction = await extract_ticket(
                 file_bytes=file_bytes,
@@ -55,6 +120,7 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
                 tenant_id=tenant_uuid,
                 db=db,
                 source_filename=ticket_row.source_filename,
+                max_pdf_pages=max_pdf_pages,
             )
 
             await ticket_service.apply_extraction_result(
@@ -63,15 +129,40 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
                 recibo=extraction.ticket,
                 llm_call_id=extraction.llm_call_id,
             )
+            await processing_charge_service.settle_charge(
+                db,
+                tenant_id=tenant_uuid,
+                document_kind="ticket",
+                document_id=ticket_uuid,
+                llm_call_id=extraction.llm_call_id,
+            )
             await db.commit()
             logger.info(
                 "worker.ticket.done",
                 ticket_id=ticket_id,
-                comercio=extraction.ticket.comercio,
-                total=str(extraction.ticket.total),
                 llm_call_id=str(extraction.llm_call_id),
             )
             return {"status": "ok", "ticket_id": ticket_id}
+
+        except MediaLimitExceeded as exc:
+            await db.rollback()
+            await set_tenant_context(db, str(tenant_uuid))
+            await ticket_service.mark_failed(
+                db,
+                ticket_id=ticket_uuid,
+                tenant_id=tenant_uuid,
+                error=exc.message,
+                error_code=exc.error_code,
+                detail=exc.detail,
+            )
+            await db.commit()
+            logger.warning(
+                "worker.ticket.rejected_by_limits",
+                ticket_id=ticket_id,
+                tenant_id=tenant_id,
+                error_code=exc.error_code.value,
+            )
+            return {"status": "rejected", "ticket_id": ticket_id}
 
         except LLMCompleteError as exc:
             await db.commit()
@@ -80,8 +171,9 @@ async def process_ticket(ctx: dict[str, Any], ticket_id: str, tenant_id: str) ->
                 db,
                 ticket_id=ticket_uuid,
                 tenant_id=tenant_uuid,
-                error=str(exc.message)[:500],
+                error=exc.persisted_error[:500],
                 llm_call_id=exc.llm_call_id,
+                error_code=exc.document_error_code or DocumentErrorCode.extraction_failed,
             )
             await db.commit()
             logger.exception(

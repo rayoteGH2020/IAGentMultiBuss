@@ -10,14 +10,29 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.invoice import DesgloseIVA
 from app.schemas.pagination import Page
 
 
 class DocumentSearchFilters(BaseModel):
     """Filtros comunes y específicos por tipo; el handler ignora campos no aplicables."""
 
-    fecha_from: date | None = None
-    fecha_to: date | None = None
+    fecha_from: date | None = Field(
+        default=None,
+        description="Fecha del documento desde (contratos y seguros: fecha de inicio)",
+    )
+    fecha_to: date | None = Field(
+        default=None,
+        description="Fecha del documento hasta (contratos y seguros: fecha de inicio)",
+    )
+    fecha_fin_from: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) desde",
+    )
+    fecha_fin_to: date | None = Field(
+        default=None,
+        description="Solo contratos y seguros: vencimiento (fecha_fin) hasta",
+    )
     total_min: Decimal | None = Field(default=None, ge=0)
     total_max: Decimal | None = Field(default=None, ge=0)
     status: list[str] | None = None
@@ -29,13 +44,34 @@ class DocumentSearchFilters(BaseModel):
         default=None,
         description="Solo facturas: nombre de proveedor (tolerante a tildes)",
     )
-    cif_nif: str | None = Field(default=None, description="Solo facturas: CIF/NIF parcial")
+    cif_nif: str | None = Field(
+        default=None,
+        description="CIF/NIF parcial (facturas, contratos, seguros)",
+    )
     comercio_query: str | None = Field(
         default=None,
         description="Solo tickets: nombre de comercio",
     )
     numero_ticket: str | None = Field(default=None, description="Solo tickets")
     forma_pago: str | None = Field(default=None, description="Solo tickets")
+    parte_contraria_query: str | None = Field(
+        default=None,
+        description="Solo contratos: nombre de la parte contraria",
+    )
+    numero_contrato: str | None = Field(default=None, description="Solo contratos")
+    incluir_sustituidos: bool = Field(
+        default=False,
+        description=(
+            "Solo contratos: incluir los sustituidos por una renovación (histórico). "
+            "Por defecto solo los vigentes."
+        ),
+    )
+    aseguradora_query: str | None = Field(
+        default=None,
+        description="Solo seguros: nombre de la aseguradora",
+    )
+    numero_poliza: str | None = Field(default=None, description="Solo seguros")
+    tipo_seguro: str | None = Field(default=None, description="Solo seguros")
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 
@@ -67,6 +103,7 @@ class InvoiceRead(BaseModel):
     base_imponible: Decimal | None = None
     iva_percent: Decimal | None = None
     iva_amount: Decimal | None = None
+    desgloses_iva: list[DesgloseIVA] = Field(default_factory=list)
     total: Decimal | None = None
     currency: str = "EUR"
     confidence: Decimal | None = None
@@ -95,8 +132,64 @@ class TicketRead(BaseModel):
     source_filename: str | None = None
 
 
+class ContractRead(BaseModel):
+    """Proyección de contrato para tools y chat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    doc_type_code: Literal["contrato"] = "contrato"
+    id: UUID
+    status: str
+    lifecycle: str = Field(
+        default="active",
+        description="active (vigente) o replaced (sustituido por una renovación)",
+    )
+    titulo: str | None = None
+    numero_contrato: str | None = None
+    parte_contraria: str | None = None
+    cif_nif: str | None = None
+    fecha_firma: date | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    importe_periodico: Decimal | None = Field(default=None, description="Cuota sin IVA")
+    periodicidad: str | None = Field(
+        default=None, description="mensual, trimestral, semestral, anual o unico"
+    )
+    importe_total: Decimal | None = Field(default=None, description="Valor total sin IVA")
+    importe_anual: Decimal | None = Field(
+        default=None, description="Coste anual equivalente de la cuota (sin IVA)"
+    )
+    iva_incluido: bool | None = None
+    currency: str = "EUR"
+    objeto: str | None = None
+    confidence: Decimal | None = None
+    source_filename: str | None = None
+
+
+class InsuranceRead(BaseModel):
+    """Proyección de póliza de seguro para tools y chat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    doc_type_code: Literal["seguro"] = "seguro"
+    id: UUID
+    status: str
+    aseguradora: str | None = None
+    numero_poliza: str | None = None
+    tomador: str | None = None
+    cif_nif: str | None = None
+    tipo_seguro: str | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    prima: Decimal | None = None
+    currency: str = "EUR"
+    cobertura: str | None = None
+    confidence: Decimal | None = None
+    source_filename: str | None = None
+
+
 DocumentRead = Annotated[
-    InvoiceRead | TicketRead,
+    InvoiceRead | TicketRead | ContractRead | InsuranceRead,
     Field(discriminator="doc_type_code"),
 ]
 
@@ -114,8 +207,13 @@ class AggregateGroupBy(enum.StrEnum):
     none = "none"
     proveedor = "proveedor"
     comercio = "comercio"
+    parte_contraria = "parte_contraria"
+    aseguradora = "aseguradora"
     month = "month"
     year = "year"
+    # Solo contratos y seguros: agrupan por vencimiento (fecha_fin).
+    expiry_month = "expiry_month"
+    expiry_year = "expiry_year"
     status = "status"
 
 

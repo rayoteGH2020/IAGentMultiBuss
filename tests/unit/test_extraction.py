@@ -13,11 +13,25 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from app.core.document_processing_errors import DocumentErrorCode
+from app.core.media_limits import MediaLimitExceeded
 from app.llm.client import LLMCompleteResult
 from app.llm.extraction import PROMPT_VERSION, extract_invoice
 from app.models import Tenant
 from app.schemas.invoice import Factura
+from pypdf import PdfWriter
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _single_page_pdf() -> bytes:
+    """PDF real: la inspección previa rechaza cualquier PDF que no pueda leer."""
+    import io
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 @pytest.mark.asyncio
@@ -54,7 +68,7 @@ async def test_extract_invoice_calls_llm_with_correct_args(
     # Parchear el módulo original no afectaría a la copia ya importada.
     with patch("app.llm.extraction.get_llm_client", return_value=mock_client):
         result = await extract_invoice(
-            file_bytes=b"%PDF-1.4 test",
+            file_bytes=_single_page_pdf(),
             mime_type="application/pdf",
             tenant_id=tenant.id,
             db=db_session,
@@ -101,13 +115,14 @@ async def test_extract_invoice_rejects_huge_files(
     # El test verifica que extract_invoice rechaza antes de llamar al LLM,
     # evitando el coste de red de subir un fichero que se rechazaría igualmente.
     huge = b"x" * (21 * 1024 * 1024)
-    with pytest.raises(ValueError, match="too large"):
+    with pytest.raises(MediaLimitExceeded) as exc_info:
         await extract_invoice(
             file_bytes=huge,
             mime_type="application/pdf",
             tenant_id=tenant.id,
             db=db_session,
         )
+    assert exc_info.value.error_code is DocumentErrorCode.file_too_large
 
 
 @pytest.mark.asyncio
@@ -120,10 +135,28 @@ async def test_extract_invoice_rejects_bad_mime(
     # El test verifica que el error se lanza en la capa llm (no en uploads.py),
     # ya que extract_invoice recibe el MIME del llamador (el worker) sin
     # pasar de nuevo por validate_invoice_upload.
-    with pytest.raises(ValueError, match="Unsupported mime type"):
+    with pytest.raises(MediaLimitExceeded) as exc_info:
         await extract_invoice(
             file_bytes=b"hello",
             mime_type="application/zip",
             tenant_id=tenant.id,
             db=db_session,
         )
+    assert exc_info.value.error_code is DocumentErrorCode.unsupported_type
+
+
+@pytest.mark.asyncio
+async def test_extract_invoice_rejects_unreadable_pdf(
+    db_session: AsyncSession,
+    tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
+) -> None:
+    """Fail-closed: si no se puede medir el PDF, no se envía al LLM a ciegas."""
+    tenant = await tenant_factory()
+    with pytest.raises(MediaLimitExceeded) as exc_info:
+        await extract_invoice(
+            file_bytes=b"%PDF-1.4 esto no es un PDF valido",
+            mime_type="application/pdf",
+            tenant_id=tenant.id,
+            db=db_session,
+        )
+    assert exc_info.value.error_code is DocumentErrorCode.unreadable_file

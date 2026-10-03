@@ -13,9 +13,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -34,6 +36,7 @@ class TicketStatus(enum.StrEnum):
     ready = "ready"
     failed = "failed"
     reviewed = "reviewed"
+    quota_pending = "quota_pending"
 
 
 class Ticket(Base):
@@ -56,6 +59,7 @@ class Ticket(Base):
         Enum(TicketStatus, name="ticket_status", native_enum=True),
         nullable=False,
         default=TicketStatus.pending,
+        server_default=text("'pending'::ticket_status"),
     )
 
     source_file_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -70,11 +74,23 @@ class Ticket(Base):
     iva_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     iva_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="EUR",
+        server_default=text("'EUR'"),
+    )
 
     raw_extraction: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quota_period: Mapped[date | None] = mapped_column(Date, nullable=True)
+    manual_retry_count: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
     llm_call_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     llm_call: Mapped[LLMCall | None] = relationship(
         "LLMCall",
@@ -105,4 +121,16 @@ class Ticket(Base):
     __table_args__ = (
         Index("ix_tickets_tenant_status", "tenant_id", "status"),
         Index("ix_tickets_tenant_fecha", "tenant_id", "fecha"),
+        Index("ix_tickets_tenant_dismissed", "tenant_id", "dismissed_at"),
+        Index(
+            "ix_tickets_tenant_sha256",
+            "tenant_id",
+            "file_sha256",
+            postgresql_where=text("file_sha256 IS NOT NULL"),
+        ),
+        Index(
+            "ix_tickets_error_code",
+            "error_code",
+            postgresql_where=text("error_code IS NOT NULL"),
+        ),
     )

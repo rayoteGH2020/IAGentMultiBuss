@@ -1,0 +1,7 @@
+{# Avisos de cupo de la página (bloque 7): ámbar al 80 %, rojo al 100 %. #}
+{% for alert in quota_alerts | default([], true) %}
+<div class="rounded-md border px-4 py-3 text-sm {% if alert.level == 'exhausted' %}border-red-200 bg-red-50 text-red-900{% else %}border-amber-200 bg-amber-50 text-amber-900{% endif %}"
+     role="status" data-quota-alert="{{ alert.level }}">
+  {{ alert.message }}
+</div>
+{% endfor %}

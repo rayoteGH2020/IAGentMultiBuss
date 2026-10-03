@@ -1,0 +1,10 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Plan · {{ tenant.name }} · Admin{% endblock %}
+{% block page_title %}Plan · {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <a href="/sadm/plans" class="text-sm text-primary-600 hover:underline">← Planes</a>
+  {% include "pages/sadm/plans/_tenant_form.html" %}
+</div>
+{% endblock %}

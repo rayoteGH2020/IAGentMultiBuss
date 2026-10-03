@@ -7,24 +7,61 @@
 
   <title>{% block title %}Mi SaaS{% endblock %}</title>
 
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="{{ static_asset('/static/css/app.css') }}">
+  {# Crítico antes de Alpine: evita FOUC de menús/modales con x-cloak. #}
+  <style>[x-cloak]{display:none!important}</style>
 
-  <script src="/static/js/htmx.min.js" defer></script>
-  <script src="/static/js/htmx-sse.js" defer></script>
+  <script src="{{ static_asset('/static/js/htmx.min.js') }}" defer></script>
+  <script src="{{ static_asset('/static/js/htmx-sse.js') }}" defer></script>
   {# alpine-components DEBE cargarse antes que alpine.min.js (registra Alpine.data en alpine:init). #}
-  <script src="/static/js/alpine-components.js" defer></script>
-  <script src="/static/js/alpine.min.js" defer></script>
+  <script src="{{ static_asset('/static/js/alpine-components.js') }}" defer></script>
+  <script src="{{ static_asset('/static/js/alpine.min.js') }}" defer></script>
 
   <script>
-    document.addEventListener("htmx:configRequest", () => {
-      // Espacio para inyectar CSRF cuando llegue
+    window.getCsrfToken = () => {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      return meta?.getAttribute("content") || "";
+    };
+    document.addEventListener("htmx:configRequest", (event) => {
+      const method = event.detail?.verb?.toUpperCase?.() || "GET";
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return;
+      const token = window.getCsrfToken();
+      if (token) event.detail.headers["X-CSRF-Token"] = token;
+    });
+    {# Defensa: un poll de /jobs/.../status no debe navegar ni sustituir #app-frame. #}
+    function isJobStatusPath(path) {
+      return typeof path === "string" && /\/jobs\/[^/]+\/[^/]+\/status/.test(path);
+    }
+    document.addEventListener("htmx:beforeOnLoad", (event) => {
+      const path = event.detail?.pathInfo?.requestPath || "";
+      if (!isJobStatusPath(path)) return;
+      const xhr = event.detail?.xhr;
+      const redirect = xhr?.getResponseHeader?.("HX-Redirect");
+      const locationHdr = xhr?.getResponseHeader?.("HX-Location");
+      if (redirect || locationHdr) {
+        console.warn("[htmx] blocked navigation header on job poll", {
+          path,
+          redirect,
+          locationHdr,
+        });
+        event.preventDefault();
+      }
+    });
+    document.addEventListener("htmx:beforeSwap", (event) => {
+      const path = event.detail?.pathInfo?.requestPath || "";
+      const target = event.detail?.target;
+      if (!isJobStatusPath(path)) return;
+      if (target instanceof Element && (target.id === "app-frame" || target === document.body)) {
+        event.detail.shouldSwap = false;
+        console.warn("[htmx] blocked job status swap into shell", path);
+      }
     });
     document.addEventListener("appError", (e) => {
       console.error("[middleware error]", e.detail.value ?? e.detail);
     });
   </script>
 </head>
-<body hx-boost="true" hx-ext="sse">
+<body hx-ext="sse">
   {% block body %}
     {% block content %}{% endblock %}
   {% endblock %}

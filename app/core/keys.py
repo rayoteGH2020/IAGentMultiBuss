@@ -67,6 +67,22 @@ def ticket_key(tenant_id: uuid.UUID, original_filename: str) -> str:
     return f"tickets/{tenant_id}/{now:%Y/%m}/{uuid.uuid4()}-{safe}"
 
 
+def contract_key(tenant_id: uuid.UUID, original_filename: str) -> str:
+    """Genera una key estable para un contrato subido."""
+    now = datetime.now(UTC)
+    name = PurePosixPath(original_filename).name.replace("/", "_").replace("\\", "_")
+    safe = "".join(c for c in name if c.isalnum() or c in "._-")[:120] or "file"
+    return f"contracts/{tenant_id}/{now:%Y/%m}/{uuid.uuid4()}-{safe}"
+
+
+def insurance_key(tenant_id: uuid.UUID, original_filename: str) -> str:
+    """Genera una key estable para una póliza de seguro subida."""
+    now = datetime.now(UTC)
+    name = PurePosixPath(original_filename).name.replace("/", "_").replace("\\", "_")
+    safe = "".join(c for c in name if c.isalnum() or c in "._-")[:120] or "file"
+    return f"insurances/{tenant_id}/{now:%Y/%m}/{uuid.uuid4()}-{safe}"
+
+
 def knowledge_faq_key(tenant_id: uuid.UUID, document_id: uuid.UUID) -> str:
     """Genera una key R2 determinista para el contenido serializado de un FAQ (Paso 21 B).
 

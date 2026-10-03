@@ -1,6 +1,7 @@
 """Webhook WhatsApp Business API (Paso 21 E).
 
 Responsabilidades únicas de este módulo (SRP):
+  - Limitar body y dedupe anti-replay (Paso01 §4).
   - Verificar la firma HMAC-SHA256 de Meta en cada POST.
   - Responder HTTP 200 inmediato a Meta (siempre, incluso en error interno).
   - Extraer phone_number_id + texto del mensaje y encolar el job ARQ.
@@ -15,16 +16,22 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.webhook_ingress import (
+    PROVIDER_WHATSAPP,
+    WebhookBodyTooLarge,
+    claim_webhook_event,
+    read_request_body_limited,
+)
 from app.deps import get_db_no_tenant
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+from app.jobs.queue import enqueue_channel_message
+from app.services import channel_integration_service, entitlement_service
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +75,12 @@ def _verify_signature(body: bytes, signature_header: str, app_secret: str) -> bo
     return hmac.compare_digest(received, expected)
 
 
-def _extract_message(payload: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
-    """Extrae (phone_number_id, from_number, text) del payload de Meta.
+def _extract_message(
+    payload: dict[str, Any],
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Extrae (phone_number_id, from_number, text, message_id) del payload de Meta.
 
-    Devuelve (None, None, None) si no contiene un mensaje de texto.
+    Devuelve Nones si no contiene un mensaje de texto.
     Meta puede enviar status updates u otros eventos que se ignoran silenciosamente.
     """
     try:
@@ -79,18 +88,20 @@ def _extract_message(payload: dict[str, Any]) -> tuple[str | None, str | None, s
         change = entry.get("changes", [{}])[0].get("value", {})
         messages = change.get("messages", [])
         if not messages:
-            return None, None, None
+            return None, None, None, None
         msg = messages[0]
         if msg.get("type") != "text":
-            return None, None, None
+            return None, None, None, None
         phone_number_id = change.get("metadata", {}).get("phone_number_id")
         from_number = msg.get("from")
         text = msg.get("text", {}).get("body", "").strip()
+        raw_id = msg.get("id")
+        message_id = raw_id if isinstance(raw_id, str) and raw_id else None
         if not text:
-            return None, None, None
-        return phone_number_id, from_number, text
+            return None, None, None, None
+        return phone_number_id, from_number, text, message_id
     except (KeyError, IndexError, TypeError):
-        return None, None, None
+        return None, None, None, None
 
 
 @router.post("")
@@ -99,15 +110,30 @@ async def whatsapp_webhook(
     db: AsyncSession = Depends(get_db_no_tenant),
     x_hub_signature_256: Annotated[str, Header(alias="X-Hub-Signature-256")] = "",
 ) -> Response:
-    """Recibe eventos de mensajería de Meta. Siempre responde HTTP 200."""
-    body = await request.body()
+    """Recibe eventos de mensajería de Meta. Siempre responde HTTP 200 salvo misconfig prod."""
     settings = get_settings()
-    app_secret = settings.whatsapp_app_secret.get_secret_value()
+    try:
+        body = await read_request_body_limited(request, settings.webhook_max_body_bytes)
+    except WebhookBodyTooLarge:
+        return Response(status_code=200)
 
-    # Verificar firma solo si el secreto está configurado (dev sin secreto → skip).
-    if app_secret and not _verify_signature(body, x_hub_signature_256, app_secret):
-        logger.warning("whatsapp.webhook.invalid_signature")
-        return Response(status_code=200)  # No exponer el fallo a Meta
+    app_secret = settings.whatsapp_app_secret.get_secret_value().strip()
+
+    if app_secret:
+        if not _verify_signature(body, x_hub_signature_256, app_secret):
+            logger.warning("whatsapp.webhook.invalid_signature")
+            return Response(status_code=200)  # No exponer el fallo a Meta
+    elif settings.allows_unsigned_webhooks:
+        logger.warning(
+            "whatsapp.webhook.unsigned_allowed",
+            extra={"app_env": settings.app_env},
+        )
+    else:
+        logger.critical(
+            "whatsapp.webhook.no_app_secret",
+            extra={"app_env": settings.app_env},
+        )
+        return Response(status_code=503)
 
     try:
         payload: dict[str, Any] = json.loads(body)
@@ -115,15 +141,16 @@ async def whatsapp_webhook(
         logger.warning("whatsapp.webhook.invalid_json")
         return Response(status_code=200)
 
-    phone_number_id, from_number, text = _extract_message(payload)
+    phone_number_id, from_number, text, message_id = _extract_message(payload)
     if not phone_number_id or not from_number or not text:
         return Response(status_code=200)  # Status update u otro evento — ignorar
 
-    # Lookup del tenant por phone_number_id. Importación diferida: channel_integration_service
-    # se implementa en Paso 21 C; el ImportError permite que la app arranque antes de eso.
-    try:
-        from app.services import channel_integration_service
+    if message_id is not None:
+        claimed = await claim_webhook_event(provider=PROVIDER_WHATSAPP, event_id=message_id)
+        if not claimed:
+            return Response(status_code=200)
 
+    try:
         integration = await channel_integration_service.get_integration_by_phone_number_id(
             db, phone_number_id
         )
@@ -136,26 +163,31 @@ async def whatsapp_webhook(
 
         tenant_id = str(integration.tenant_id)
         integration_id = str(integration.id)
-    except ImportError:
-        logger.warning("whatsapp.webhook.channel_service_not_available")
-        return Response(status_code=200)
     except Exception:
         logger.exception("whatsapp.webhook.lookup_failed")
         return Response(status_code=200)
 
-    # Encolar job ARQ. Importación diferida: enqueue_channel_message se añade en Paso 21 E.5.
     try:
-        from app.jobs.queue import enqueue_channel_message
+        ents = await entitlement_service.resolve_tenant(db, integration.tenant_id)
+        if not ents.has("channel_whatsapp"):
+            logger.info(
+                "whatsapp.webhook.feature_disabled",
+                extra={"tenant_id": tenant_id, "integration_id": integration_id},
+            )
+            return Response(status_code=200)
+    except Exception:
+        logger.exception("whatsapp.webhook.entitlements_failed")
+        return Response(status_code=200)
 
+    try:
         await enqueue_channel_message(
             tenant_id=tenant_id,
             channel="whatsapp",
             customer_identifier=from_number,
             message_text=text,
             integration_id=integration_id,
+            provider_event_id=message_id,
         )
-    except ImportError:
-        logger.warning("whatsapp.webhook.queue_not_available")
     except Exception:
         logger.exception("whatsapp.webhook.enqueue_failed")
 

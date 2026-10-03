@@ -10,8 +10,16 @@ from decimal import Decimal
 PRICING: dict[str, dict[str, Decimal]] = {
     "claude-haiku-4-5-20251001": {"input": Decimal("0.90"), "output": Decimal("4.50")},
     "claude-sonnet-4-6": {"input": Decimal("2.80"), "output": Decimal("14.00")},
+    "gemini-2.0-flash-lite": {"input": Decimal("0.075"), "output": Decimal("0.30")},
+    "gemini-2.0-flash": {"input": Decimal("0.10"), "output": Decimal("0.40")},
     "gemini-2.5-flash": {"input": Decimal("0.28"), "output": Decimal("2.30")},
     "gemini-2.5-pro": {"input": Decimal("1.10"), "output": Decimal("4.40")},
+    # Tarifa estándar desde 2027-01-01 ($1.50 / $7.50). Hasta 2026-12-31 Google
+    # cobra la introductoria ($0.75 / $3.75): se sobreestima a propósito para
+    # que el budget LLM del plan no se quede corto al cambiar la tarifa.
+    "gemini-3.8-flash": {"input": Decimal("1.38"), "output": Decimal("6.90")},
+    # $0.30 / $2.50, misma tarifa que gemini-2.5-flash.
+    "gemini-3.5-flash-lite": {"input": Decimal("0.28"), "output": Decimal("2.30")},
     # voyage-3-lite: modelo de embeddings; no tiene tokens de output.
     "voyage-3-lite": {"input": Decimal("0.018"), "output": Decimal("0")},
 }

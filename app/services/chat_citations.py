@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.config import Settings, get_settings
+from app.models.knowledge import KnowledgeChunk
 from app.schemas.chat import ChatCitation
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # Longitud máxima del snippet persistido en ``chat_messages.citations`` (Paso 20 D).
 CITATION_SNIPPET_MAX_CHARS = 200
@@ -90,6 +96,26 @@ def finalize_citations(
     sorted_cites = sorted(citations, key=lambda c: c.score, reverse=True)
     capped = sorted_cites[: s.knowledge_chat_max_citations]
     return [cite.model_copy(update={"ref": i + 1}) for i, cite in enumerate(capped)]
+
+
+async def filter_citations_existing_for_tenant(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    citations: list[ChatCitation],
+    settings: Settings | None = None,
+) -> list[ChatCitation]:
+    """Descarta citas cuyo chunk no existe en el tenant (anti hallucinación / fuga)."""
+    if not citations:
+        return []
+    chunk_ids = [c.chunk_id for c in citations]
+    stmt = select(KnowledgeChunk.id).where(
+        KnowledgeChunk.tenant_id == tenant_id,
+        KnowledgeChunk.id.in_(chunk_ids),
+    )
+    existing = set((await db.execute(stmt)).scalars().all())
+    valid = [c for c in citations if c.chunk_id in existing]
+    return finalize_citations(valid, settings=settings)
 
 
 def citations_to_json(citations: list[ChatCitation]) -> list[dict[str, Any]]:

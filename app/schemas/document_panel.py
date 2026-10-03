@@ -8,8 +8,15 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from app.core.document_processing_errors import is_retryable
+from app.services.document_processing_service import (
+    is_processing_stale,
+    processing_stale_after,
+    retries_exhausted,
+)
+
 if TYPE_CHECKING:
-    from app.models import Invoice, LLMCall, Ticket
+    from app.models import Contract, Insurance, Invoice, LLMCall, Ticket
 
 PANEL_SORT_COLUMNS: frozenset[str] = frozenset(
     {
@@ -25,6 +32,8 @@ PANEL_SORT_COLUMNS: frozenset[str] = frozenset(
 )
 PANEL_DEFAULT_SORT = "created_at"
 PANEL_DEFAULT_DIR = "desc"
+
+PanelKind = Literal["invoice", "ticket", "contract", "insurance"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +67,7 @@ class PanelListParams:
 class PanelDocumentRow:
     """Fila normalizada para la tabla de documentos (mismas columnas que factura)."""
 
-    kind: Literal["invoice", "ticket"]
+    kind: PanelKind
     id: UUID
     fecha: date | None
     proveedor: str | None
@@ -74,8 +83,78 @@ class PanelDocumentRow:
     error_message: str | None
     doc_type_code: str
     doc_type_label: str
+    error_code: str | None = None
+    vat_tranche_count: int = 0
+    # Contratos: periodicidad de la cuota mostrada en total ("/ mes").
+    total_suffix: str | None = None
+    suggested_doc_type: str | None = None
+    manual_retry_count: int = 0
     invoice: Invoice | None = None
     ticket: Ticket | None = None
+    contract: Contract | None = None
+    insurance: Insurance | None = None
+
+    @property
+    def awaits_type_confirmation(self) -> bool:
+        return self.error_code == "type_confirmation_required"
+
+    @property
+    def suggested_doc_type_label(self) -> str:
+        labels = {
+            "factura": "Factura",
+            "ticket": "Ticket",
+            "contrato": "Contrato",
+            "seguro": "Seguro",
+        }
+        if self.suggested_doc_type is None:
+            return "tipo sugerido"
+        return labels.get(self.suggested_doc_type, self.suggested_doc_type)
+
+    @property
+    def iva_percent_label(self) -> str:
+        """Etiqueta de IVA en listado: porcentaje único o 'Múltiple'."""
+        if self.vat_tranche_count > 1:
+            return "Múltiple"
+        if self.iva_percent is not None:
+            return f"{self.iva_percent:.2f} %"
+        return "—"
+
+    @property
+    def is_quota_pending(self) -> bool:
+        """Guardado sin procesar por falta de cupo o de presupuesto de IA (bloque 2)."""
+        return self.status == "quota_pending"
+
+    @property
+    def needs_manual_review(self) -> bool:
+        """«Revisión manual»: fallido con los 3 reintentos manuales agotados (D027)."""
+        return (
+            self.status == "failed"
+            and is_retryable(self.error_code)
+            and retries_exhausted(self.manual_retry_count, self.error_code)
+        )
+
+    @property
+    def can_retry(self) -> bool:
+        """Reintento en failed (si el código lo permite) o processing/pending stale."""
+        if self.awaits_type_confirmation:
+            return False
+        if self.status == "failed":
+            return is_retryable(self.error_code) and not self.needs_manual_review
+        if self.status in ("pending", "processing"):
+            return is_processing_stale(
+                self.updated_at, stale_after_seconds=processing_stale_after(self.kind)
+            )
+        return False
+
+    @property
+    def is_replaced(self) -> bool:
+        """Contrato marcado como sustituido por una renovación (bloque 5)."""
+        return self.contract is not None and self.contract.lifecycle.value == "replaced"
+
+    @property
+    def can_change_lifecycle(self) -> bool:
+        """«Marcar como sustituido» / «Volver a vigente»: solo contratos procesados."""
+        return self.kind == "contract" and self.status in ("ready", "reviewed")
 
     @property
     def llm_call(self) -> LLMCall | None:
@@ -83,20 +162,25 @@ class PanelDocumentRow:
             return self.invoice.llm_call
         if self.ticket is not None:
             return self.ticket.llm_call
+        if self.contract is not None:
+            return self.contract.llm_call
+        if self.insurance is not None:
+            return self.insurance.llm_call
         return None
 
     @property
     def status_poll_url(self) -> str:
-        if self.kind == "invoice":
-            return f"/jobs/invoice/{self.id}/status"
-        return f"/jobs/ticket/{self.id}/status"
+        return f"/jobs/{self.kind}/{self.id}/status"
 
     @property
     def dialog_title(self) -> str:
-        return f"Extracción de {self.doc_type_label.lower()}"
+        return f"Extracción de: {self.doc_type_label.lower()}"
 
     @property
     def has_expandable_detail(self) -> bool:
-        return (self.kind == "invoice" and self.invoice is not None) or (
-            self.kind == "ticket" and self.ticket is not None
+        return (
+            (self.kind == "invoice" and self.invoice is not None)
+            or (self.kind == "ticket" and self.ticket is not None)
+            or (self.kind == "contract" and self.contract is not None)
+            or (self.kind == "insurance" and self.insurance is not None)
         )

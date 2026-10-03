@@ -70,6 +70,10 @@ Documentacion/**
 PendienteImplementar.md
 FicherosTtoDocs.md
 keepCoding.md
+Leeme.txt
+TemasPendientes.txt
+docker-compose.yml
+environment-variables.md
 
 # Claude Code memoria local (contiene contexto personal entre sesiones)
 .claude/

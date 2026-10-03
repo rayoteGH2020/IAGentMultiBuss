@@ -1,21 +1,57 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from email.message import EmailMessage
+from typing import TYPE_CHECKING
 
 import aiosmtplib
 import structlog
 
-from app.config import get_settings
+from app.config import Settings, get_settings
+from app.core.log_redaction import pseudonymize
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = structlog.get_logger(__name__)
 
 
-async def send_email(*, to: str, subject: str, body: str) -> None:
-    """Send a plain-text email via SMTP.
+def smtp_tls_flags(settings: Settings) -> tuple[bool, bool]:
+    """Devuelve ``(use_tls, start_tls)`` mutuamente excluyentes.
+
+    - Puerto 465 / ``SMTP_SSL=true``: TLS desde el handshake (``use_tls``).
+    - Puerto 587 / ``SMTP_STARTTLS=true``: upgrade tras conectar (``start_tls``).
+    Si ambos flags vienen a true, gana SSL implícito (465).
+    """
+    use_tls = bool(settings.smtp_ssl)
+    start_tls = bool(settings.smtp_starttls) and not use_tls
+    return use_tls, start_tls
+
+
+@dataclass(frozen=True, slots=True)
+class EmailAttachment:
+    """Fichero adjunto ya validado; se envía desde memoria, nunca se escribe a disco."""
+
+    filename: str
+    content_type: str
+    data: bytes
+
+
+async def send_email(
+    *,
+    to: str,
+    subject: str,
+    body: str,
+    html: str | None = None,
+    attachments: Sequence[EmailAttachment] = (),
+) -> None:
+    """Send an email via SMTP: plain text, optional HTML alternative and attachments.
 
     Skips silently if smtp_host is not configured (development without email).
     """
     settings = get_settings()
     if not settings.smtp_host:
-        logger.debug("email.skipped", reason="smtp_host not configured", to=to, subject=subject)
+        logger.debug("email.skipped", reason="smtp_host not configured", to_ref=pseudonymize(to))
         return
 
     msg = EmailMessage()
@@ -23,13 +59,28 @@ async def send_email(*, to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if html is not None:
+        msg.add_alternative(html, subtype="html")
+    for attachment in attachments:
+        maintype, _, subtype = attachment.content_type.partition("/")
+        msg.add_attachment(
+            attachment.data, maintype=maintype, subtype=subtype, filename=attachment.filename
+        )
 
+    use_tls, start_tls = smtp_tls_flags(settings)
     await aiosmtplib.send(
         msg,
         hostname=settings.smtp_host,
         port=settings.smtp_port,
-        username=settings.smtp_user,
-        password=settings.smtp_password.get_secret_value(),
-        start_tls=settings.smtp_starttls,
+        username=settings.smtp_user or None,
+        password=settings.smtp_password.get_secret_value() or None,
+        use_tls=use_tls,
+        start_tls=start_tls,
     )
-    logger.info("email.sent", to=to, subject=subject)
+    logger.info(
+        "email.sent",
+        to_ref=pseudonymize(to),
+        port=settings.smtp_port,
+        use_tls=use_tls,
+        start_tls=start_tls,
+    )

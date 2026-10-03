@@ -1,4 +1,4 @@
-"""Registro de tools LLM por familia (document | knowledge)."""
+"""Registro de tools LLM por familia (document | knowledge | calendar)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 from uuid import UUID
 
+import structlog
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,10 +18,13 @@ from app.config import Settings, get_settings
 from app.core.db import set_tenant_context
 from app.core.errors import ValidationError
 
+logger = structlog.get_logger(__name__)
+
 
 class ToolFamily(enum.StrEnum):
     document = "document"
     knowledge = "knowledge"
+    calendar = "calendar"
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,9 +118,11 @@ class ToolRegistry:
     def list_for_llm(self, *, families: set[ToolFamily] | None = None) -> list[ToolDefinition]:
         settings = get_settings()
         selected = self.list_definitions(families=families)
-        if settings.knowledge_tools_enabled:
-            return selected
-        return [t for t in selected if t.family != ToolFamily.knowledge]
+        if self.allowed_families is not None:
+            selected = [t for t in selected if t.family in self.allowed_families]
+        if not settings.knowledge_tools_enabled:
+            selected = [t for t in selected if t.family != ToolFamily.knowledge]
+        return selected
 
     def to_anthropic_tools(
         self, *, families: set[ToolFamily] | None = None
@@ -214,11 +220,14 @@ class ToolRegistry:
                 error=exc.message,
             )
         except Exception as exc:
+            # Solo el tipo: el error viaja al modelo y a la metadata de audit_log, y
+            # el texto de una excepción de terceros puede llevar datos del tenant.
+            logger.exception("llm.tool_failed", tool=name)
             return ToolResult(
                 ok=False,
                 data={},
                 citations=[],
-                error=str(exc)[:500],
+                error=type(exc).__name__,
             )
 
 
@@ -250,24 +259,50 @@ def _strip_gemini_unsupported_schema_keys(node: Any) -> Any:
     return node
 
 
+def chat_tool_families_for_entitlements(ents: object) -> frozenset[ToolFamily]:
+    """Familias de tools del chat permitidas por entitlements del tenant.
+
+    Fail-closed: sin ``has`` callable o sin features de chat → ninguna familia.
+    """
+    has = getattr(ents, "has", None)
+    if not callable(has):
+        return frozenset()
+    families: set[ToolFamily] = set()
+    if has("documents_chat"):
+        families.add(ToolFamily.document)
+    if has("knowledge_chat"):
+        families.add(ToolFamily.knowledge)
+    if has("calendar_google"):
+        families.add(ToolFamily.calendar)
+    return frozenset(families)
+
+
 def get_tools_for_chat(
     *,
     settings: Settings | None = None,
     registry: ToolRegistry | None = None,
     tenant_id: UUID | None = None,
     db: AsyncSession | None = None,
+    allowed_families: frozenset[ToolFamily] | None = None,
 ) -> list[ToolDefinition]:
-    """Tools expuestas al LLM en ``/chat`` según ``knowledge_tools_enabled`` (Paso 20).
+    """Tools expuestas al LLM en ``/chat``.
 
-    Siempre incluye tools documentales; añade familia ``knowledge`` si el flag está activo.
-    ``tenant_id`` y ``db`` se reservan para overrides por tenant en ``tenants.settings``.
+    Filtra por ``knowledge_tools_enabled`` y, si se pasa, por ``allowed_families``
+    derivadas de entitlements (Paso03).
     """
     _ = tenant_id, db
     from app.llm.tools.document_chat import build_document_chat_registry
 
     reg = registry or build_document_chat_registry()
+    if allowed_families is not None:
+        reg = ToolRegistry(
+            _tools=dict(reg._tools),
+            allowed_families=allowed_families,
+        )
     s = settings or get_settings()
     tools = reg.list_definitions()
+    if allowed_families is not None:
+        tools = [t for t in tools if t.family in allowed_families]
     if not s.knowledge_tools_enabled:
         tools = [t for t in tools if t.family != ToolFamily.knowledge]
     return [t for t in tools if t.enabled]

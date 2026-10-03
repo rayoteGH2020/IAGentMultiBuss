@@ -1,0 +1,59 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block title %}Profesionales{% endblock %}
+{% block page_title %}Profesionales{% endblock %}
+
+{% block settings_content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <p class="text-sm text-slate-500">Gestiona el equipo agendable y sus especialidades.</p>
+    <button type="button"
+            hx-get="/settings/professionals/new"
+            hx-target="#professional-modal-panel"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-professional-modal'))"
+            class="btn-primary cursor-pointer">
+      Nuevo profesional
+    </button>
+  </div>
+
+  <div class="card p-0 overflow-hidden">
+    <table class="data-table table-fixed w-full">
+      <colgroup>
+        <col class="w-[26%]">
+        <col>
+        <col class="w-24">
+        <col class="w-16">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Especialidades</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="professionals-list">
+        {% for professional in professionals %}
+          {% include "components/scheduling/professional_row.html" %}
+        {% else %}
+        <tr><td colspan="4" class="text-slate-500 text-sm py-6 text-center">Sin profesionales todavía.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Alpine open state MUST NOT be on the hx-target (same race as members modal). #}
+<div x-data="{ open: false }"
+     @open-professional-modal.window="open = true"
+     @close-professional-modal.window="open = false; $refs.panel.innerHTML = ''">
+  <div x-show="open"
+       x-cloak
+       @keydown.escape.window="if (open) open = false"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @click.self="open = false">
+    <div id="professional-modal-panel" x-ref="panel"></div>
+  </div>
+</div>
+{% endblock %}

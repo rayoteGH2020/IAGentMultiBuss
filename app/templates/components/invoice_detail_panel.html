@@ -1,0 +1,83 @@
+{# Detalle factura: una sola tabla para alinear líneas e IVA en las mismas columnas. #}
+{% set desgloses = invoice.vat_breakdown or [] %}
+{% if not desgloses and invoice.iva_percent is not none and invoice.iva_amount is not none %}
+  {% set desgloses = [{"base": invoice.base_imponible, "percent": invoice.iva_percent, "amount": invoice.iva_amount}] %}
+{% endif %}
+{% set sm = invoice.currency | currency_symbol %}
+
+{% if invoice.source_filename %}
+<p class="document-detail__meta">
+  <span class="document-detail__meta-label">Fichero:</span>
+  <span class="break-all" title="{{ invoice.source_filename }}">{{ invoice.source_filename }}</span>
+</p>
+{% endif %}
+
+<section class="document-detail__section" aria-label="Detalle de factura">
+  <div class="document-detail__section-body">
+    <table class="document-detail__table document-detail__table--invoice">
+      <colgroup>
+        <col class="col-desc">
+        <col class="col-money">
+        <col class="col-qty">
+        <col class="col-money">
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="4" scope="colgroup" class="document-detail__section-title">Líneas de factura</th>
+        </tr>
+        <tr>
+          <th scope="col">Descripción</th>
+          <th class="is-num" scope="col">Precio Unit.</th>
+          <th class="is-num" scope="col">Cantidad</th>
+          <th class="is-num" scope="col">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if invoice.lines %}
+          {% for line in invoice.lines %}
+          <tr>
+            <td class="document-detail__desc">{{ line.descripcion }}</td>
+            <td class="is-num">{{ line.precio_unitario }} {{ sm }}</td>
+            <td class="is-num">{{ line.cantidad }}</td>
+            <td class="is-num">{{ "%.2f"|format(line.total) }} {{ sm }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="document-detail__empty">No hay líneas de detalle para esta factura.</td>
+          </tr>
+        {% endif %}
+
+        <tr>
+          <th colspan="4" scope="colgroup" class="document-detail__section-title">Desglose IVA</th>
+        </tr>
+        <tr class="document-detail__vat-head">
+          <th scope="col"><span class="sr-only">—</span></th>
+          <th class="is-num" scope="col">Base</th>
+          <th class="is-num" scope="col">Tipo %</th>
+          <th class="is-num" scope="col">Cuota</th>
+        </tr>
+        {% if desgloses %}
+          {% for row in desgloses %}
+          <tr>
+            <td></td>
+            <td class="is-num">
+              {% if row.base is not none %}{{ "%.2f"|format(row.base|float) }} {{ sm }}{% else %}—{% endif %}
+            </td>
+            <td class="is-num">
+              {% if row.percent is not none %}{{ "%.2f"|format(row.percent|float) }} %{% else %}—{% endif %}
+            </td>
+            <td class="is-num">
+              {% if row.amount is not none %}{{ "%.2f"|format(row.amount|float) }} {{ sm }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="document-detail__empty">Sin desglose de IVA.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>

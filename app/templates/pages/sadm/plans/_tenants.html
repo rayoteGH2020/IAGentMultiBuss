@@ -1,0 +1,40 @@
+<div id="plan-tenants" class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  <div class="px-4 py-3 border-b border-slate-200">
+    <h2 class="text-sm font-semibold text-slate-900">Tenants</h2>
+  </div>
+  {% if tenants %}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Organización</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">Plan</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500"
+            title="Presupuesto de IA o algún cupo del mes">Consumo</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Acción</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for tenant in tenants %}
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-3 font-medium text-slate-900">{{ tenant.name }}</td>
+        <td class="px-4 py-3 text-slate-500">{{ (tenant.plan_code or tenant.plan) | plan_label }}</td>
+        <td class="px-4 py-3">
+          {% set level = (alert_levels | default({}, true)).get(tenant.id) %}
+          {% if level == "exhausted" %}
+          <span class="status-pill bg-red-50 text-red-800 ring-1 ring-red-100" data-quota-level="exhausted">100 %</span>
+          {% elif level == "warning" %}
+          <span class="status-pill bg-amber-50 text-amber-800 ring-1 ring-amber-100" data-quota-level="warning">≥ 80 %</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">
+          <a href="/sadm/plans/tenants/{{ tenant.id }}"
+             class="text-xs text-primary-600 hover:underline">Asignar / override</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-8 text-center text-sm text-slate-400">Sin tenants.</div>
+  {% endif %}
+</div>

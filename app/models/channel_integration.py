@@ -15,21 +15,18 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.schemas.channel import ChannelIntegrationStatus
 
 
 class ChannelType(enum.StrEnum):
     whatsapp = "whatsapp"
     telegram = "telegram"
-
-
-class ChannelIntegrationStatus(enum.StrEnum):
-    active = "active"
-    revoked = "revoked"
 
 
 class ChannelIntegration(Base):
@@ -55,10 +52,18 @@ class ChannelIntegration(Base):
     # Telegram webhook secret sent to setWebhook — encrypted, returned in X-Telegram-Bot-Api-Secret-Token
     webhook_secret_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=ChannelIntegrationStatus.active.value
+        String(16),
+        nullable=False,
+        default=ChannelIntegrationStatus.active.value,
+        server_default=text("'active'"),
     )
     # Minimum RAG confidence to auto-reply; below this threshold → escalate to human
-    confidence_threshold: Mapped[float] = mapped_column(Float(), nullable=False, default=0.5)
+    confidence_threshold: Mapped[float] = mapped_column(
+        Float(),
+        nullable=False,
+        default=0.5,
+        server_default=text("0.5"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -68,6 +73,20 @@ class ChannelIntegration(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "channel", name="uq_channel_integration_per_tenant"),
-        # Fast lookup in WhatsApp webhook handler (cross-tenant, uses webhook_select policy)
-        Index("ix_channel_integrations_phone_number_id", "phone_number_id"),
+        # Unicidad cross-tenant: evita enrutar webhooks WhatsApp al tenant equivocado
+        Index(
+            "uq_channel_integrations_wa_phone_active",
+            "phone_number_id",
+            unique=True,
+            postgresql_where=text(
+                "status = 'active' AND phone_number_id IS NOT NULL AND channel = 'whatsapp'"
+            ),
+        ),
     )
+
+
+__all__ = [
+    "ChannelIntegration",
+    "ChannelIntegrationStatus",
+    "ChannelType",
+]

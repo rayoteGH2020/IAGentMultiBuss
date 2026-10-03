@@ -22,10 +22,16 @@ from app.core.cache import get_redis
 from app.core.db import session_factory_for_worker, set_tenant_context
 from app.jobs.knowledge_slots import tenant_knowledge_indexing_slot
 from app.models.knowledge import KnowledgeDocument
+from app.services import entitlement_service
 from app.services.knowledge_document_service import mark_failed
 from app.services.knowledge_index_service import run_index_pipeline
 
 logger = structlog.get_logger(__name__)
+
+_ERR_UNEXPECTED = (
+    "Error interno al indexar el documento. Vuelve a intentarlo y, si se repite, "
+    "contacta con soporte."
+)
 
 
 async def index_knowledge_document(
@@ -73,6 +79,21 @@ async def index_knowledge_document(
             )
             return {"status": "not_found", "document_id": document_id}
 
+        if not await entitlement_service.ensure_feature(db, t_uuid, "knowledge"):
+            logger.info(
+                "worker.knowledge.feature_disabled",
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+            await mark_failed(
+                db,
+                tenant_id=t_uuid,
+                document_id=doc_uuid,
+                error_message="plan_feature_disabled:knowledge",
+            )
+            await db.commit()
+            return {"status": "skipped", "reason": "plan_required"}
+
         try:
             # run_index_pipeline gestiona sus propios errores de extracción,
             # chunking y embeddings: llama a mark_failed internamente y retorna
@@ -93,7 +114,7 @@ async def index_knowledge_document(
             )
             return {"status": "ok", "document_id": document_id}
 
-        except Exception as exc:
+        except Exception:
             # Rollback deshace toda escritura parcial, incluidos los SET LOCAL
             # de contexto de tenant. Es necesario re-establecer el contexto
             # antes de llamar a mark_failed para que RLS aplique correctamente.
@@ -103,7 +124,9 @@ async def index_knowledge_document(
                 db,
                 tenant_id=t_uuid,
                 document_id=doc_uuid,
-                error_message=str(exc)[:500],
+                # Texto fijo: el de la excepción puede llevar contenido y se
+                # muestra en la UI y en la metadata de audit_log.
+                error_message=_ERR_UNEXPECTED,
             )
             await db.commit()
             logger.exception(

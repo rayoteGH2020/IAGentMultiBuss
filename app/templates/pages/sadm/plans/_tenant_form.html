@@ -1,0 +1,143 @@
+<div id="tenant-plan-form" class="space-y-6">
+  {% if notice %}
+  <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    {{ notice }}
+  </div>
+  {% endif %}
+
+  <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+    <h2 class="text-sm font-semibold text-slate-900">Asignar plan</h2>
+    <p class="text-xs text-slate-500">Plan actual: <span class="font-medium">{{ (tenant.plan_code or tenant.plan) | plan_label }}</span></p>
+    <p class="text-xs text-slate-500">
+      La primera asignación se aplica en el acto. Los cambios posteriores entran el día 1 del mes siguiente
+      (facturación por mes completo).
+    </p>
+    {% if scheduled_change %}
+    <div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <span>
+        Cambio programado a <span class="font-medium">{{ scheduled_change.plan_code | plan_label }}</span>
+        el {{ scheduled_change.effective_date.strftime("%d/%m/%Y") }}.
+      </span>
+      <button type="button"
+              hx-post="/sadm/plans/tenants/{{ tenant.id }}/scheduled/cancel"
+              hx-target="#tenant-plan-form"
+              hx-swap="outerHTML"
+              hx-confirm="¿Anular el cambio de plan programado?"
+              class="rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs cursor-pointer hover:bg-amber-100">
+        Anular cambio
+      </button>
+    </div>
+    {% endif %}
+    <form hx-post="/sadm/plans/tenants/{{ tenant.id }}"
+          hx-target="#tenant-plan-form"
+          hx-swap="outerHTML"
+          class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-1">Plan</label>
+        <select name="plan_code" required
+                class="block w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          {% for plan in plans %}
+          <option value="{{ plan.code }}"
+                  {% if (tenant.plan_code or tenant.plan) == plan.code %}selected{% endif %}>
+            {{ plan.code | plan_label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-1">Motivo (opcional)</label>
+        <input type="text" name="reason" maxlength="200"
+               class="block w-full max-w-lg rounded-lg border border-slate-300 px-3 py-2 text-sm"/>
+      </div>
+      <button type="submit" class="btn-primary cursor-pointer">Guardar plan</button>
+    </form>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+    <h2 class="text-sm font-semibold text-slate-900">Cupos del mes</h2>
+    <p class="text-xs text-slate-500">
+      Periodo {{ period_start.strftime("%d/%m/%Y") }} – {{ period_end.strftime("%d/%m/%Y") }}.
+      Facturas y tickets comparten tope (bolsa).
+      {% if monthly_quotas | selectattr("code", "equalto", "contract_uploads_first_period") | list %}
+      En carga inicial de contratos hasta el {{ initial_load_end.strftime("%d/%m/%Y") }}: sus altas
+      (y su ampliación) valen para toda la ventana y sustituyen a las mensuales.
+      {% endif %}
+    </p>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-slate-500">
+          <th class="py-1 font-medium">Cupo</th>
+          <th class="py-1 font-medium text-right">Usado</th>
+          <th class="py-1 font-medium text-right">Plan</th>
+          <th class="py-1 font-medium text-right">Ampliación</th>
+          <th class="py-1 font-medium text-right">Tope</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for quota in monthly_quotas %}
+        <tr>
+          <td class="py-1">{{ quota_labels.get(quota.code, quota.code) }}</td>
+          <td class="py-1 text-right tabular-nums">{{ quota.used }}</td>
+          <td class="py-1 text-right tabular-nums">{{ quota.plan_cap if quota.plan_cap is not none else "Sin límite" }}</td>
+          <td class="py-1 text-right tabular-nums">{{ quota.extra }}</td>
+          <td class="py-1 text-right tabular-nums">{{ quota.cap if quota.cap is not none else "Sin límite" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form hx-post="/sadm/plans/tenants/{{ tenant.id }}/quota-extra"
+          hx-target="#tenant-plan-form"
+          hx-swap="outerHTML"
+          hx-confirm="¿Ampliar este cupo solo para el mes en curso?"
+          class="flex flex-wrap items-end gap-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-1">Cupo</label>
+        <select name="code" required
+                class="block rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          {% for quota in monthly_quotas %}
+          <option value="{{ quota.code }}">{{ quota_labels.get(quota.code, quota.code) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-1">Ampliar en</label>
+        <input type="number" name="amount" min="1" max="10000" required
+               class="block w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"/>
+      </div>
+      <div class="grow">
+        <label class="block text-xs font-medium text-slate-700 mb-1">Motivo (opcional)</label>
+        <input type="text" name="reason" maxlength="200"
+               class="block w-full max-w-lg rounded-lg border border-slate-300 px-3 py-2 text-sm"/>
+      </div>
+      <button type="submit" class="btn-primary cursor-pointer">Ampliar este mes</button>
+    </form>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+    <h2 class="text-sm font-semibold text-slate-900">Override de entitlements</h2>
+    <p class="text-xs text-slate-500">
+      JSON en <code>tenants.settings.entitlements_override</code>. Ejemplo:
+      <code>{"features":{"knowledge":true},"limits":{"documents_per_day":150}}</code>
+    </p>
+    <form hx-post="/sadm/plans/tenants/{{ tenant.id }}/override"
+          hx-target="#tenant-plan-form"
+          hx-swap="outerHTML"
+          class="space-y-3">
+      <textarea name="override_json" rows="8"
+                class="block w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
+                placeholder='{"features": {}, "limits": {}}'>{{ override_json }}</textarea>
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-1">Motivo (opcional)</label>
+        <input type="text" name="reason" maxlength="200"
+               class="block w-full max-w-lg rounded-lg border border-slate-300 px-3 py-2 text-sm"/>
+      </div>
+      <div class="flex flex-wrap gap-3 items-center">
+        <button type="submit" class="btn-primary cursor-pointer">Guardar override</button>
+        <button type="submit" name="clear" value="1"
+                class="rounded-lg border border-slate-300 px-4 py-2 text-sm cursor-pointer hover:bg-slate-50">
+          Limpiar override
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

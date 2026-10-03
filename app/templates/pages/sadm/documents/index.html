@@ -1,0 +1,14 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Documentos rechazados · Admin{% endblock %}
+{% block page_title %}Documentos rechazados{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Documentos que incumplen los límites de procesado. El cliente no puede reintentarlos:
+    revisa el original y decide si se procesa saltándose los límites, con cargo a su organización.
+  </p>
+
+  {% include "pages/sadm/documents/_list.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{# Formulario de soporte técnico (admin → SADM). El POST devuelve este mismo
+   fragmento: con el error y los valores, o vacío con el aviso de enviado. #}
+{% if sent %}
+  <p role="status" class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+    Mensaje enviado al equipo de soporte.
+  </p>
+{% endif %}
+{% if error %}
+  <p role="alert" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{{ error }}</p>
+{% endif %}
+
+<form hx-post="/settings/support"
+      hx-encoding="multipart/form-data"
+      hx-target="#support-form-panel"
+      hx-swap="innerHTML"
+      hx-indicator="#support-spinner"
+      hx-disabled-elt="find button[type='submit']"
+      class="space-y-4">
+  <p class="text-xs text-slate-500">Los campos marcados con <span class="text-red-600">*</span> son obligatorios.</p>
+
+  {# Contador de caracteres restantes: estado solo cliente. El evento input cubre
+     teclado y pegado; maxlength ya recorta lo pegado que exceda el límite. #}
+  <label class="block text-sm"
+         x-data="{ left: {{ title_max }} }"
+         x-init="left = {{ title_max }} - $refs.field.value.length">
+    <span class="font-medium text-slate-700">Título <span class="text-red-600" aria-hidden="true">*</span></span>
+    <input type="text" name="title" required maxlength="{{ title_max }}"
+           x-ref="field"
+           @input="left = {{ title_max }} - $el.value.length"
+           value="{{ values.title or '' }}"
+           class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <span class="mt-1 block text-xs"
+          :class="left <= {{ title_max // 10 }} ? 'text-amber-600' : 'text-slate-400'">
+      Quedan <span x-text="left">{{ title_max - (values.title or '') | length }}</span> de {{ title_max }} caracteres.
+    </span>
+  </label>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <label class="block text-sm">
+      <span class="font-medium text-slate-700">Tipo <span class="text-red-600" aria-hidden="true">*</span></span>
+      <select name="kind" required
+              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <option value="" disabled {{ "selected" if not values.kind }}>Selecciona…</option>
+        {% for code, label in kinds.items() %}
+          <option value="{{ code }}" {{ "selected" if values.kind == code }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="block text-sm">
+      <span class="font-medium text-slate-700">Gravedad <span class="text-red-600" aria-hidden="true">*</span></span>
+      <select name="severity" required
+              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <option value="" disabled {{ "selected" if not values.severity }}>Selecciona…</option>
+        {% for code, label in severities.items() %}
+          <option value="{{ code }}" {{ "selected" if values.severity == code }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <label class="block text-sm"
+         x-data="{ left: {{ message_max }} }"
+         x-init="left = {{ message_max }} - $refs.field.value.length">
+    <span class="font-medium text-slate-700">Mensaje <span class="text-red-600" aria-hidden="true">*</span></span>
+    <textarea name="message" required maxlength="{{ message_max }}" rows="8"
+              x-ref="field"
+              @input="left = {{ message_max }} - $el.value.length"
+              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">{{ values.message or '' }}</textarea>
+    <span class="mt-1 block text-xs"
+          :class="left <= {{ message_max // 10 }} ? 'text-amber-600' : 'text-slate-400'">
+      Quedan <span x-text="left">{{ message_max - (values.message or '') | length }}</span> de {{ message_max }} caracteres.
+    </span>
+  </label>
+
+  <label class="block text-sm">
+    <span class="font-medium text-slate-700">Adjunto <span class="font-normal text-slate-400">(opcional)</span></span>
+    <input type="file" name="attachment" accept="{{ attachment_accept }}"
+           class="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-slate-200">
+    <span class="mt-1 block text-xs text-slate-400">Un fichero Word (.docx), texto (.txt) o JPG. Máximo 2 MB.</span>
+  </label>
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <span id="support-spinner" class="htmx-indicator text-xs text-slate-400">Enviando…</span>
+    <button type="submit" class="btn-primary cursor-pointer">Enviar</button>
+  </div>
+</form>

@@ -5,16 +5,43 @@ ARQ lee esta clase al arrancar el proceso worker:
 Todos los atributos son leídos como atributos de clase, no de instancia.
 """
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
+from arq import cron
 from arq import func as arq_func
 from arq.connections import RedisSettings
 
 from app.config import get_settings
+from app.core.activity.context import set_process_source
+from app.core.activity.jobs import tracked_job
+from app.core.logging import configure_worker_logging
+from app.jobs.activity_jobs import purge_activity_log, purge_audit_log
+from app.jobs.budget_alert_jobs import send_llm_budget_alert
 from app.jobs.channel_jobs import process_channel_message
+from app.jobs.contract_jobs import process_contract
+from app.jobs.document_quota_jobs import process_quota_pending, send_documents_quota_alert
+from app.jobs.insurance_jobs import process_insurance
 from app.jobs.invoice_jobs import process_invoice
 from app.jobs.knowledge_jobs import index_knowledge_document
+from app.jobs.membership_jobs import expire_member_removals
+from app.jobs.plan_jobs import apply_scheduled_plan_changes
+from app.jobs.provider_alert_jobs import send_llm_provider_billing_alert
 from app.jobs.ticket_jobs import process_ticket
+from app.services import activity_log_service
+
+
+async def startup(ctx: dict[str, Any]) -> None:
+    """Logging del worker (tras el ``dictConfig`` del CLI de arq) y volcado de actividad."""
+    configure_worker_logging()
+    set_process_source("worker")
+    ctx["activity_flusher"] = activity_log_service.start_flusher()
+
+
+async def shutdown(ctx: dict[str, Any]) -> None:
+    """Último volcado de ``activity_log`` antes de salir."""
+    flusher = ctx.get("activity_flusher")
+    if flusher is not None:
+        await flusher.stop()
 
 
 class WorkerSettings:
@@ -27,11 +54,63 @@ class WorkerSettings:
     # encolados con ese nombre se ignorarán silenciosamente.
     # index_knowledge_document usa arq_func() para sobreescribir el timeout
     # global (180 s) con 600 s: los embeddings de documentos largos son lentos.
+    # tracked_job: una fila en activity_log por ejecución, con tenant y petición de
+    # origen (D029). Conserva el nombre de la función, que es por el que enruta ARQ.
     functions: ClassVar[list[object]] = [
-        process_invoice,
-        process_ticket,
-        arq_func(index_knowledge_document, timeout=600),
-        arq_func(process_channel_message, timeout=120),
+        tracked_job(process_invoice),
+        tracked_job(process_ticket),
+        # Contratos de hasta 100 páginas (contract_max_pages): 600 s como el
+        # indexado de conocimiento.
+        arq_func(tracked_job(process_contract), timeout=600),
+        tracked_job(process_insurance),
+        arq_func(tracked_job(index_knowledge_document), timeout=600),
+        arq_func(tracked_job(process_channel_message), timeout=120),
+        tracked_job(send_llm_budget_alert),
+        tracked_job(send_llm_provider_billing_alert),
+        tracked_job(process_quota_pending),
+        tracked_job(send_documents_quota_alert),
+    ]
+
+    # Bajas de miembros con fecha efectiva vencida. Cada 15 min y al arrancar el
+    # worker (recupera las pendientes si estuvo parado). El corte inmediato lo
+    # hace el middleware; esto lo persiste para quien no vuelve a entrar.
+    cron_jobs: ClassVar[list[object]] = [
+        cron(
+            tracked_job(expire_member_removals),
+            minute={0, 15, 30, 45},
+            run_at_startup=True,
+            unique=True,
+        ),
+        # Cambios de plan programados para el día 1 (D027). Cada hora y al
+        # arrancar; hasta que corre, el plan nuevo ya rige por lectura.
+        cron(
+            tracked_job(apply_scheduled_plan_changes),
+            minute={5},
+            run_at_startup=True,
+            unique=True,
+        ),
+        # Documentos pendientes de cupo (bloque 2): cada hora, después del cambio de
+        # plan del día 1 (minuto 5) para aplicar ya el cupo nuevo, y al arrancar.
+        cron(
+            tracked_job(process_quota_pending),
+            minute={10},
+            run_at_startup=True,
+            unique=True,
+        ),
+        # Purga diaria de activity_log por retención (D029), de madrugada.
+        cron(
+            tracked_job(purge_activity_log),
+            hour={3},
+            minute={30},
+            unique=True,
+        ),
+        # Purga diaria de audit_log por retención (P2c-7, 2 años por defecto).
+        cron(
+            tracked_job(purge_audit_log),
+            hour={3},
+            minute={45},
+            unique=True,
+        ),
     ]
 
     # Máximo de jobs ejecutándose simultáneamente en ESTE proceso worker.
@@ -52,9 +131,14 @@ class WorkerSettings:
     # el TTL solo afecta a la inspección manual de jobs mediante arq CLI.
     keep_result = 3600
 
-    # Número máximo de intentos antes de que ARQ marque el job como fallido.
-    # Con max_tries=2, si el job lanza una excepción no controlada (distinto
-    # de arq.worker.Retry), ARQ lo reintenta una vez más automáticamente.
-    # Combinado con max_retries=2 de Instructor, en el peor caso se harían
-    # hasta 2 x 3 = 6 llamadas al LLM antes de agotar todos los intentos.
+    # Número máximo de ejecuciones de un job. ARQ solo vuelve a ejecutar un job
+    # ante arq.worker.Retry o si se cancela (worker reiniciado a mitad); una
+    # excepción normal lo cierra como fallido sin repetir. Cada ejecución
+    # cuenta, incluidas las diferidas por Retry. Los jobs de extracción no
+    # repiten la llamada al LLM en la segunda ejecución (extraction_guard.py):
+    # el tope por documento sigue siendo 1 + llm_extraction_max_retries (3).
     max_tries = 2
+
+    # Logs sin datos personales (Backlog P2c-2) y volcado de activity_log (D029).
+    on_startup = startup
+    on_shutdown = shutdown

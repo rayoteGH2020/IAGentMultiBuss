@@ -1,0 +1,54 @@
+{# Baja pendiente: toda la fila en rojo para que el estado se vea de un vistazo. #}
+<tr id="member-{{ member.membership_id }}"{% if member.removal_pending %} class="bg-red-50 text-red-700"{% endif %}>
+  <td class="text-sm">
+    {{ member.email }}
+    {% if removal_notice %}
+      <span role="status"
+            class="block text-xs {{ 'text-emerald-700' if removal_notice_ok else 'text-red-600' }}">{{ removal_notice }}</span>
+    {% endif %}
+  </td>
+  <td>{{ member.name or "—" }}</td>
+  <td class="text-sm">{{ member.role | role_label }}</td>
+  <td class="text-xs{% if not member.removal_pending %} text-slate-600{% endif %}">
+    {% if member.permissions.appointments.view %}Ver{% endif %}
+    {% if member.permissions.appointments.create %}+ Crear{% endif %}
+    {% if member.permissions.appointments.edit %}+ Editar{% endif %}
+    {% if member.permissions.appointments.cancel %}+ Cancelar{% endif %}
+  </td>
+  {% if member.removal_pending %}
+  {# Baja solicitada: miembro congelado (el servicio también rechaza editarlo); el aviso ocupa las dos columnas de acciones. #}
+  <td colspan="2" class="text-center text-xs" role="status">
+    Baja solicitada el {{ member.removal_requested_at | local_datetime("%d/%m/%Y") }}, efectiva desde el {{ member.removal_effective_date.strftime("%d/%m/%Y") }}
+  </td>
+  {% else %}
+  {# Una columna fija por acción: los iconos quedan alineados aunque falte alguno. #}
+  <td class="w-12 text-center">
+    <button type="button"
+            hx-get="/settings/members/{{ member.membership_id }}/edit"
+            hx-target="#member-modal-panel"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-member-modal'))"
+            class="inline-flex items-center justify-center p-2 text-primary-600 hover:text-primary-800 cursor-pointer"
+            aria-label="Editar permisos de {{ member.name or member.email }}"
+            title="Editar">
+      {% include "components/icons/pencil.html" %}
+    </button>
+  </td>
+  <td class="w-12 text-center">
+    {# Reglas de baja en app.core.permissions.can_request_member_removal.
+       La baja no se ejecuta aquí: se avisa al SADM, que la hace en Clerk. #}
+    {% if removable_ids and member.membership_id in removable_ids %}
+      <button type="button"
+              hx-get="/settings/members/{{ member.membership_id }}/removal-request"
+              hx-target="#member-modal-panel"
+              hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new CustomEvent('open-member-modal'))"
+              class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 cursor-pointer"
+              aria-label="Solicitar baja de {{ member.name or member.email }}"
+              title="Solicitar baja">
+        {% include "components/icons/trash.html" %}
+      </button>
+    {% endif %}
+  </td>
+  {% endif %}
+</tr>

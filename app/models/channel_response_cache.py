@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,19 @@ class ChannelResponseCache(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hit_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
 
-    __table_args__ = (Index("ix_channel_response_cache_tenant_created", "tenant_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_channel_response_cache_tenant_created", "tenant_id", "created_at"),
+        Index(
+            "ix_channel_response_cache_embedding",
+            "question_embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"question_embedding": "vector_cosine_ops"},
+        ),
+    )

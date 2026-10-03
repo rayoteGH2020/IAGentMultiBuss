@@ -8,6 +8,7 @@ import httpx
 import structlog
 
 from app.config import get_settings
+from app.core.log_redaction import pseudonymize
 
 logger = structlog.get_logger(__name__)
 
@@ -77,11 +78,11 @@ async def send_message(bot_token: str, chat_id: int | str, text: str) -> None:
             logger.warning(
                 "telegram.send_failed",
                 status=resp.status_code,
-                chat_id=str(chat_id),
+                chat_ref=pseudonymize(chat_id),
                 description=data.get("description"),
             )
         resp.raise_for_status()
-    logger.info("telegram.message_sent", chat_id=str(chat_id), chars=len(truncated))
+    logger.info("telegram.message_sent", chat_ref=pseudonymize(chat_id), chars=len(truncated))
 
 
 def verify_webhook_secret(token_header: str, expected_secret: str) -> bool:

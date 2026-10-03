@@ -1,0 +1,14 @@
+{% extends "layouts/dashboard.html" %}
+{% block title %}Uso de chat · Admin{% endblock %}
+{% block page_title %}Uso y coste de chat{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <p class="text-sm text-slate-500">
+    Elige una organización para ver el coste de <code class="text-xs">/chat</code>,
+    número de conversaciones, tokens y latencia media. Últimos 7 días (±7), o semana/mes
+    agregados (últimas 6, navegables de 6 en 6).
+  </p>
+  {% include "pages/sadm/chat_usage/_tenants.html" %}
+</div>
+{% endblock %}

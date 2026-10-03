@@ -91,7 +91,6 @@ def _fake_clerk_resolve(request: Request, *, user_sub: str, org_id: str) -> None
 
 
 def test_documents_get_shows_empty_state(
-    invoices_migration_applied_sync: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # UUIDs únicos por invocación: garantizan que incluso si la BD tiene datos
@@ -129,7 +128,6 @@ def test_documents_get_shows_empty_state(
 
 
 def test_documents_htmx_returns_fragment_only(
-    invoices_migration_applied_sync: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_sub = f"user_{uuid4().hex[:16]}"
@@ -168,9 +166,7 @@ def test_documents_htmx_returns_fragment_only(
     assert "<!DOCTYPE" not in r.text
 
 
-def test_legacy_invoices_redirects_to_documents(
-    invoices_migration_applied_sync: None,
-) -> None:
+def test_legacy_invoices_redirects_to_documents() -> None:
     from app.main import app
 
     with TestClient(app, raise_server_exceptions=False) as client:

@@ -26,6 +26,8 @@ from typing import Any, cast
 
 import structlog
 
+from app.evals.eval_db import use_eval_database
+
 logger = structlog.get_logger(__name__)
 
 DATASET = Path(__file__).parent.parent / "datasets" / "knowledge_retrieval_v1.json"
@@ -221,6 +223,8 @@ async def run_evals(
 
 def main() -> None:
     validate_only = "--validate-only" in sys.argv
+    if not validate_only:
+        use_eval_database()
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     tenant_id = uuid.UUID(args[0]) if args else None
 

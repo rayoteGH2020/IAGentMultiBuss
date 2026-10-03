@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -40,6 +40,13 @@ class ChatThread(Base):
         index=True,
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Soft-hide: deja de listarse en la UI; mensajes y fila se conservan.
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean(),
+        default=False,
+        server_default=text("false"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -58,6 +65,13 @@ class ChatThread(Base):
 
     __table_args__ = (
         Index("ix_chat_threads_tenant_user_updated", "tenant_id", "user_id", "updated_at"),
+        Index(
+            "ix_chat_threads_tenant_user_hidden_updated",
+            "tenant_id",
+            "user_id",
+            "is_hidden",
+            "updated_at",
+        ),
     )
 
 

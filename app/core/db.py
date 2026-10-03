@@ -129,7 +129,13 @@ async def dispose_engine() -> None:
     """
     global _engine, _sessionmaker
     if _engine is not None:
-        await _engine.dispose()
+        try:
+            await _engine.dispose()
+        except RuntimeError as exc:
+            # Python 3.14 + Windows: TestClient teardown puede cerrar el loop
+            # antes de completar dispose() (suite larga con NullPool).
+            if "Event loop is closed" not in str(exc):
+                raise
         _engine = None
     _sessionmaker = None
 

@@ -1,0 +1,77 @@
+{# Vista semana: 7 columnas + eje temporal unificado. #}
+{% if week_view.rows %}
+<div class="card overflow-hidden">
+  <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+    <span class="text-sm text-slate-600">Franjas de {{ week_view.granularity_minutes }} min · horario del centro</span>
+  </div>
+
+  <div class="overflow-x-auto">
+    <div class="flex min-w-[56rem]" style="--slot-h: {{ week_view.slot_height_px }}px;">
+      {# Eje de horas #}
+      <div class="w-[4.25rem] shrink-0 border-r border-slate-200 bg-slate-50">
+        <div class="h-12 border-b border-slate-200"></div>
+        {% for row in week_view.rows %}
+        <div class="flex h-[var(--slot-h)] items-start border-b px-2 pt-0.5 text-[11px] tabular-nums
+                    {{ 'border-slate-200 font-semibold text-slate-700' if row.is_hour_start else 'border-slate-100 text-slate-500' }}">
+          {{ row.time_label }}
+        </div>
+        {% endfor %}
+      </div>
+
+      {% for col in week_view.days %}
+      <div class="min-w-[7.5rem] flex-1 border-r border-slate-200">
+        <a href="/appointments?view=day&date={{ col.day.isoformat() }}"
+           class="sticky top-0 z-10 flex h-12 flex-col items-center justify-center border-b border-slate-200 px-1 text-center cursor-pointer
+                  {{ 'bg-primary-50 text-primary-900' if col.is_today else 'bg-white hover:bg-slate-50' }}">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ col.weekday_label }}</span>
+          <span class="text-sm font-bold tabular-nums">{{ col.day_number }}</span>
+        </a>
+
+        {% if col.is_closed %}
+        <div class="flex items-center justify-center px-2 text-center text-xs text-slate-500"
+             style="height: {{ week_view.total_height_px }}px;">
+          {{ col.closed_message or 'Cerrado' }}
+        </div>
+        {% else %}
+        <div class="relative" style="height: {{ week_view.total_height_px }}px;">
+          {% set ns = namespace(offset=0) %}
+          {% for row in week_view.rows %}
+            {% set is_open = row.minutes_from_midnight in col.open_minutes %}
+            <div class="pointer-events-none absolute inset-x-0 border-b
+                        {{ 'border-slate-200 bg-emerald-50/40' if is_open else 'border-slate-100 bg-slate-100/80' }}
+                        {{ 'opacity-100' if is_open else '' }}"
+                 style="top: {{ ns.offset }}px; height: {{ row.height_px }}px;"></div>
+            {% set ns.offset = ns.offset + row.height_px %}
+          {% endfor %}
+
+          {% for prof_key, blocks in col.blocks_by_prof.items() %}
+            {% for block in blocks %}
+            <a hx-get="/appointments/{{ block.appointment_id }}"
+               hx-target="#appointment-drawer"
+               hx-swap="innerHTML"
+               class="absolute left-0.5 right-0.5 z-20 overflow-hidden rounded border px-1 py-0.5 text-[10px] leading-tight shadow-sm cursor-pointer
+                      {{ 'opacity-50 line-through' if block.status == 'cancelled' else 'hover:brightness-95' }}
+                      {{ 'border-amber-300 bg-amber-100 text-amber-950' if prof_key == 'unassigned' else '' }}"
+               style="top: {{ block.top_px }}px; height: {{ [block.height_px, week_view.slot_height_px] | max }}px;
+                      {% if prof_key != 'unassigned' %}
+                      background: {{ (block.color | professional_color) ~ '33' }};
+                      border-color: {{ (block.color | professional_color) ~ '88' }};
+                      color: rgb(30 41 59);
+                      {% endif %}">
+              <span class="block truncate font-semibold">{{ block.time_label }}</span>
+              <span class="block truncate">{{ block.client_name }}</span>
+            </a>
+            {% endfor %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card p-8 text-center text-sm text-slate-600">
+  No hay franjas horarias configuradas para esta semana.
+</div>
+{% endif %}

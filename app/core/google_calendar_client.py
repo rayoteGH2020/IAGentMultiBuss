@@ -101,8 +101,10 @@ def _handle_google_response(response: httpx.Response, *, context: str) -> None:
     if response.status_code == 401:
         raise AuthError("google_token_expired")
     if response.status_code == 403:
+        # El detalle de Google va en details: los logs solo registran el mensaje.
         raise ForbiddenError(
-            f"Google Calendar access forbidden ({context}): {_google_error_detail(response)}"
+            f"Google Calendar access forbidden ({context})",
+            details={"body": _google_error_detail(response)},
         )
     if response.status_code >= 400:
         raise ExternalServiceError(
@@ -284,6 +286,20 @@ class GoogleCalendarClient:
         if not isinstance(payload, dict):
             raise ExternalServiceError("Invalid Google Calendar update response")
         return _parse_calendar_event(payload)
+
+    async def delete_event(
+        self,
+        access_token: str,
+        calendar_id: str,
+        event_id: str,
+    ) -> None:
+        """Elimina un evento del calendario indicado."""
+        url = f"{GOOGLE_CALENDAR_BASE}/calendars/{calendar_id}/events/{event_id}"
+        response = await self._client.delete(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        _handle_google_response(response, context="delete_event")
 
     async def revoke_token(self, token: str) -> None:
         """Revoca un access o refresh token en Google."""

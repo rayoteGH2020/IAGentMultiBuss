@@ -1,0 +1,51 @@
+{# Email de soporte técnico al SADM (support_service.build_support_email).
+   Estilos inline y tablas: los clientes de correo ignoran <style> y CSS moderno.
+   Autoescape activo: título y mensaje son texto del cliente. #}
+{% set palette = {
+  "low": ("#166534", "#dcfce7", "#16a34a"),
+  "medium": ("#854d0e", "#fef9c3", "#ca8a04"),
+  "high": ("#9a3412", "#ffedd5", "#ea580c"),
+  "critical": ("#ffffff", "#dc2626", "#991b1b"),
+} %}
+{% set fg, bg, border = palette[severity_code] %}
+<!doctype html>
+<html lang="es">
+<body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:8px;border-top:8px solid {{ border }};">
+    <tr>
+      <td style="padding:24px;">
+        <p style="margin:0 0 4px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Soporte técnico · {{ kind }}</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 16px;">
+          <tr>
+            <td style="background:{{ bg }};color:{{ fg }};border:2px solid {{ border }};border-radius:6px;padding:8px 16px;font-size:18px;font-weight:bold;letter-spacing:.08em;">
+              GRAVEDAD: {{ severity }}
+            </td>
+          </tr>
+        </table>
+        <h1 style="margin:0 0 12px;font-size:20px;">{{ title }}</h1>
+        <div style="white-space:pre-wrap;font-size:14px;line-height:1.5;border-left:4px solid {{ border }};padding:8px 12px;background:#f8fafc;">{{ message }}</div>
+
+        <h2 style="margin:24px 0 8px;font-size:14px;color:#475569;">Organización</h2>
+        <table role="presentation" cellpadding="4" cellspacing="0" style="font-size:13px;">
+          <tr><td style="color:#64748b;">Nombre</td><td><strong>{{ org_name }}</strong></td></tr>
+          <tr><td style="color:#64748b;">ID tenant</td><td>{{ tenant_id }}</td></tr>
+          <tr><td style="color:#64748b;">Clerk org ID</td><td>{{ clerk_org_id }}</td></tr>
+          <tr><td style="color:#64748b;">Plan</td><td>{{ plan }}</td></tr>
+        </table>
+
+        <h2 style="margin:24px 0 8px;font-size:14px;color:#475569;">Enviado por</h2>
+        <table role="presentation" cellpadding="4" cellspacing="0" style="font-size:13px;">
+          <tr><td style="color:#64748b;">Nombre</td><td><strong>{{ member_name }}</strong></td></tr>
+          <tr><td style="color:#64748b;">Email</td><td>{{ member_email }}</td></tr>
+          <tr><td style="color:#64748b;">Rol</td><td>{{ member_role }}</td></tr>
+          <tr><td style="color:#64748b;">Fecha</td><td>{{ sent_at }}</td></tr>
+        </table>
+
+        <p style="margin:24px 0 0;font-size:13px;color:#475569;">
+          Adjunto: {{ attachment_name or "ninguno" }}
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

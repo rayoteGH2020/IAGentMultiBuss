@@ -200,6 +200,7 @@ async def test_run_tool_loop_executes_tool_and_finishes(monkeypatch: pytest.Monk
     assert result.final_text == "Listo."
     assert result.tool_calls_executed == ["ping"]
     assert len(result.llm_call_ids) == 2
+    assert result.failed is False
 
 
 @pytest.mark.asyncio
@@ -318,6 +319,10 @@ async def test_run_tool_loop_attaches_citations_from_search_knowledge(
         "app.llm.chat_loop.LLMCall",
         lambda **kwargs: MagicMock(id=uuid4()),
     )
+    monkeypatch.setattr(
+        "app.llm.chat_loop.filter_citations_existing_for_tenant",
+        AsyncMock(side_effect=lambda _db, *, tenant_id, citations, settings=None: citations),
+    )
 
     ctx = ToolContext(db=db, tenant_id=uuid4())
     settings = get_settings()
@@ -343,3 +348,45 @@ async def test_run_tool_loop_attaches_citations_from_search_knowledge(
     final_msg = assistant_msgs[-1]
     assert final_msg.citations is not None
     assert final_msg.citations[0]["document_name"] == "FAQ Horarios"
+
+
+def test_document_tools_forward_expiry_filters() -> None:
+    from datetime import date
+
+    from app.llm.tools.document_chat import (
+        AggregateDocumentsArgs,
+        SearchDocumentsArgs,
+        _filters_from_aggregate_args,
+        _filters_from_search_args,
+    )
+
+    search = _filters_from_search_args(
+        SearchDocumentsArgs(
+            doc_type_code="seguro",
+            fecha_fin_from=date(2027, 10, 1),
+            fecha_fin_to=date(2027, 10, 31),
+        ),
+    )
+    aggregate = _filters_from_aggregate_args(
+        AggregateDocumentsArgs(
+            doc_type_code="contrato",
+            metric="count",
+            fecha_fin_from=date(2027, 10, 1),
+            fecha_fin_to=date(2027, 10, 31),
+        ),
+    )
+    for filters in (search, aggregate):
+        assert filters.fecha_fin_from == date(2027, 10, 1)
+        assert filters.fecha_fin_to == date(2027, 10, 31)
+        assert filters.fecha_from is None
+
+
+def test_document_tool_schemas_expose_expiry_filters() -> None:
+    registry = build_document_chat_registry()
+    for tool in registry.list_for_llm():
+        if tool.name not in {"search_documents", "aggregate_documents"}:
+            continue
+        properties = tool.parameters_model.model_json_schema()["properties"]
+        assert "fecha_fin_from" in properties
+        assert "fecha_fin_to" in properties
+        assert "vencimiento" in properties["fecha_fin_from"]["description"]

@@ -8,7 +8,18 @@ on:
     paths:
       - "app/llm/**"           # Cambios en cliente LLM, prompts, pricing, tracing
       - "app/schemas/invoice.py"       # Cambios en el schema Pydantic de extracción
+      - "app/schemas/ticket.py"
+      - "app/schemas/contract.py"
+      - "app/schemas/insurance.py"
+      - "app/schemas/document_query.py"
       - "app/services/invoice_service.py"  # Cambios en el servicio que aplica el resultado
+      - "app/services/ticket_service.py"
+      - "app/services/contract_service.py"
+      - "app/services/insurance_service.py"
+      - "app/services/document_query_service.py"  # Consultas del chat documental
+      - "tests/fixtures/invoices/**"
+      - "tests/fixtures/contracts/**"
+      - "tests/fixtures/insurances/**"
       - "app/services/knowledge_search_service.py"
       - "app/services/chat_service.py"
       - "app/services/chat_citations.py"
@@ -31,14 +42,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1
+
       - name: Sync dependencies
         run: uv sync --frozen
 
       - name: Validate knowledge_qa_v1 dataset
         run: uv run python -m app.evals.runners.knowledge_qa --validate-only
 
+      - name: Validate chat_documents_v2 dataset
+        run: uv run python -m app.evals.runners.chat_documents --validate-only
+
   invoice-extraction:
     runs-on: ubuntu-latest
+    # pull-requests: read → el gate de baseline lee las etiquetas del PR en vivo
+    # (así un re-run tras poner eval-regression-accepted ve la etiqueta nueva).
+    permissions:
+      contents: read
+      pull-requests: read
 
     # Servicios de soporte: el runner necesita Postgres (para persistir LLMCall
     # y hacer queries con RLS) y Redis (para el semáforo de concurrencia por tenant,
@@ -52,15 +74,17 @@ jobs:
         env:
           POSTGRES_USER: saas
           POSTGRES_PASSWORD: saas  # pragma: allowlist secret
-          POSTGRES_DB: saas
+          # Misma BD que en local: evals y tests comparten saas_test (app/evals/eval_db.py).
+          POSTGRES_DB: saas_test
         ports:
           - 5432:5432
+        # Health: 10 reintentos × 5s ≈ 50s (arranque en frío en runners GitHub).
+        # IMPORTANTE: no poner `#` dentro del bloque `options: >-` — YAML lo
+        # trata como texto literal y Docker recibe `invalid reference format`.
         options: >-
-          --health-cmd "pg_isready -U saas -d saas"
+          --health-cmd "pg_isready -U saas -d saas_test"
           --health-interval 5s
           --health-timeout 5s
-          # 10 reintentos × 5 s = hasta 50 s para que Postgres arranque.
-          # El arranque en frío del contenedor puede tardar 20-30 s en GitHub-hosted runners.
           --health-retries 10
       redis:
         image: redis:7
@@ -79,7 +103,8 @@ jobs:
       APP_SECRET_KEY: ci-not-secret  # pragma: allowlist secret
       # asyncpg en DATABASE_URL: obligatorio para que SQLAlchemy use el driver async.
       # Con psycopg2 las llamadas async fallarían en runtime.
-      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas  # pragma: allowlist secret
+      # saas_test: los runners redirigen DATABASE_URL a esta BD (use_eval_database).
+      DATABASE_URL: postgresql+asyncpg://saas:saas@localhost:5432/saas_test  # pragma: allowlist secret
       REDIS_URL: redis://localhost:6379/0
       # Secretos LLM: inyectados desde GitHub Secrets del repositorio.
       # El runner los necesita para llamar a Gemini (extracción) y opcionalmente
@@ -108,16 +133,28 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmagic1 postgresql-client
+
       - name: Sync dependencies
-        # --frozen: usa las versiones exactas de uv.lock sin intentar resolver
-        # nuevas versiones. Garantiza reproducibilidad entre ejecuciones de CI.
         run: uv sync --frozen
+
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: saas  # pragma: allowlist secret
+        run: psql -h localhost -U saas -d saas_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Apply DB migrations
         # Se aplican TODAS las migraciones (upgrade head) para que las tablas
         # invoices, llm_calls, etc. existan antes de que el runner las use.
         # Si una migración falla aquí, el eval falla antes de gastar créditos LLM.
+        id: migrate
         run: uv run alembic upgrade head
+
+      - name: Mark eval start
+        # Los runners nombran los resultados <eval>_<epoch>.json; el gate de
+        # baseline solo compara los generados a partir de este instante.
+        run: echo "EVAL_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Run invoice extraction evals
         # Se ejecuta como módulo Python (-m) para que las importaciones absolutas
@@ -126,6 +163,52 @@ jobs:
         # suficiente para CI donde no hay tenants reales.
         # No se usa `infisical run --` porque los secretos llegan via el bloque env:.
         run: uv run python -m app.evals.runners.extraction
+
+      - name: Run ticket, contract and insurance extraction evals
+        # Se ejecuta aunque falle el eval de facturas (cada step falla por su
+        # cuenta), pero no si fallaron las migraciones: no gastar LLM sin BD.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: uv run python -m app.evals.runners.document_extraction all
+
+      - name: Run document chat eval (x2)
+        # Siembra documentos conocidos en el tenant de evals y puntúa la
+        # respuesta final del chat (chat_documents_v2, D015). Dos ejecuciones:
+        # el chat varía ~6 % entre runs sin cambios de código y el gate de
+        # baseline compara la media. Ambas se ejecutan aunque falle la primera.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: |
+          status=0
+          for run in 1 2; do
+            uv run python -m app.evals.runners.chat_documents || status=1
+          done
+          exit "$status"
+
+      - name: Compare against main baseline
+        # AGENTS.md §9: falla si una métrica baja >5 % frente a la baseline de
+        # main (app/evals/baselines.json en origin/main, no la del PR, para que
+        # un PR no pueda rebajar su propia referencia). Con la etiqueta
+        # eval-regression-accepted informa sin fallar; tras ponerla, re-run.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          baseline="$RUNNER_TEMP/baselines_main.json"
+          if git fetch --depth=1 origin main \
+            && git show origin/main:app/evals/baselines.json > "$baseline" 2>/dev/null; then
+            echo "Baseline: origin/main"
+          else
+            echo "::warning::main no tiene app/evals/baselines.json; se usa la del PR"
+            cp app/evals/baselines.json "$baseline"
+          fi
+          args=(--since "${EVAL_STARTED_AT:-0}" --baseline "$baseline")
+          if [ -n "$PR_NUMBER" ] \
+            && gh pr view "$PR_NUMBER" --json labels -q '.labels[].name' \
+              | grep -qx eval-regression-accepted; then
+            echo "::warning::Etiqueta eval-regression-accepted: las regresiones no fallan el job"
+            args+=(--allow-regression)
+          fi
+          uv run python -m app.evals.compare_baseline "${args[@]}"
 
       - name: Upload eval results
         # if: always(): sube los resultados AUNQUE el step anterior haya fallado.
@@ -142,7 +225,3 @@ jobs:
           # debe considerarse un fallo del CI — simplemente el dataset no está
           # anotado todavía.
           if-no-files-found: warn
-        # NOTA: Este workflow actualmente NO falla el CI si las métricas caen.
-        # Agents.md §9 especifica que una bajada >5% respecto a main debe fallar
-        # el PR. Pendiente: añadir un step de comparación contra la línea base
-        # (p. ej. descargando el artifact de main y comparando field_accuracy_avg).

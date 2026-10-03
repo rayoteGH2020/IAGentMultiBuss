@@ -30,7 +30,7 @@ Si el asistente empieza a generar código sin haber leído los ficheros relevant
 - **HTTP client**: `httpx` async.
 - **Templating**: Jinja2.
 - **Interactividad**: HTMX + Alpine.js. NO React, NO Vue, NO Svelte.
-- **CSS**: Tailwind CSS 4 (CLI standalone).
+- **CSS**: Tailwind CSS 3.4 (CLI standalone, `tailwind.config.js`). Migrar a v4 queda para después del producto mínimo (D028).
 - **BD**: PostgreSQL 16+ con pgvector. NO MongoDB, NO Pinecone, NO Qdrant.
 - **Storage**: Cloudflare R2 vía `boto3`.
 - **LLMs**: SDKs oficiales de Anthropic y Google. Cliente propio en `app/llm/client.py`. NO LangChain ni LlamaIndex como columna vertebral.
@@ -65,7 +65,9 @@ routes/ → services/ → models/ + llm/ + core/
 - **`app/models/`**: define tablas y relaciones. **No tiene lógica de negocio.**
 - **`app/core/`**: infraestructura transversal (db, security, storage, etc.).
 
-**Regla absoluta**: `routes/` no importa nunca de `models/` directamente. Siempre vía `services/`.
+**Regla absoluta**: `routes/` no importa nunca de `models/` directamente. Siempre vía `services/` (y enums/DTOs desde `app/schemas/` para contexto Jinja).
+
+Las agregaciones cross-tenant read-only (p. ej. métricas internas) viven en `app/services/`, no en rutas.
 
 ### Sub-división `routes/web/` vs `routes/api/`
 
@@ -215,18 +217,42 @@ Las queries no necesitan `WHERE tenant_id = ?` explícito (RLS lo aplica), pero 
 
 ### Cifrado de campos sensibles
 
-- Conexiones a BD del cliente (módulo 3): cifradas con `pgcrypto`.
+- Conexiones a BD del cliente (módulo 3 Analytics / BI): **no aplica** — D011: ese módulo no se implementa. `pgcrypto` sigue usándose para tokens OAuth y demás secretos de integración.
 - Tokens OAuth de integraciones: cifrados.
 
 ### Audit log
 
-Toda acción sobre datos del cliente (subir, ver, descargar, modificar, borrar) debe loguearse en `audit_log`.
+Objetivo: poder responder "quién tocó o vio este dato del cliente, cuándo y desde dónde" sin enterrar esos eventos en ruido. Cada entrada lleva `tenant_id`, `user_id` y, si hay request HTTP, IP y user agent (`app/routes/web/audit_context.py`).
+
+**Se audita siempre:**
+
+1. **Mutaciones** sobre datos del cliente: subir, crear, modificar, reprocesar, borrar.
+2. **Acceso a un documento concreto**: abrir su detalle o su editor, y ver o descargar el fichero original. El fichero se sirve siempre por una ruta que audita y redirige (302) a una URL prefirmada de vida corta; **nunca** incrustar URLs prefirmadas en el HTML (se saltarían la auditoría).
+3. **Consultas que recuperan contenido**: mensajes al chat, tools ejecutadas y búsquedas semánticas en la base de conocimiento.
+4. **Exportaciones y descargas masivas** (varios documentos, ZIP, CSV, export RGPD): una entrada por operación con número de elementos y filtros aplicados.
+5. **Accesos del superadmin (SADM)** a datos de un tenant: en el `audit_log` del tenant propietario, con `user_id` del superadmin, para que el cliente pueda ver quién accedió.
+
+**No se audita** (ruido sin valor forense; lo cubre el access log del proxy): listados, filtros y paginación, y refrescos por polling HTMX (filas de estado, contadores).
+
+Si una vista nueva no encaja claramente en una de estas categorías, decidirlo antes de implementarla y reflejarlo aquí.
+
+**Metadata sin datos personales en claro (P2c-7, D031):** emails, nombres de fichero y nombres de personas van como seudónimo HMAC con `app/core/audit_pseudonym.py` (`audit_ref`, `file_metadata`: extensión, seudónimo del nombre y SHA-256 del fichero), nunca en claro. Lo vigila `tests/unit/test_audit_pseudonym.py`. Para rastrear a una persona o un fichero: `scripts/audit_lookup.py`. `audit_log` se purga a los `AUDIT_LOG_RETENTION_DAYS` (2 años por defecto, mínimo 1 año impuesto en BD).
+
+### Registro de actividad (`activity_log`, D029)
+
+No es auditoría: sirve para depurar (peticiones, jobs, logs y errores) y se purga por retención. Se rellena solo, sin código en cada vista: el middleware `app/core/activity/middleware.py`, el wrapper `tracked_job` de los jobs ARQ y un procesador de structlog que copia cada `log.info/warning/error`.
+
+- Nunca usarlo para responder "quién vio qué": eso es `audit_log`.
+- `data` solo guarda claves de una lista permitida con valores tipo identificador o código (`app/core/activity/capture.py`). Si un campo nuevo de log debe llegar a la tabla, añadirlo ahí, nunca con texto libre ni datos personales.
+- Los jobs nuevos se registran en `WorkerSettings` envueltos con `tracked_job(...)`; al encolar, pasar `**job_parent_kwargs()` para enlazarlos con la petición que los lanza.
 
 ---
 
 ## 8. Capa LLM (referencia)
 
 Toda la especificación arquitectónica de la capa LLM — punto de entrada único en `app/llm/client.py`, métodos `complete` y `embed`, tabla `DEFAULT_MODELS`, prompts versionados, observabilidad (`llm_calls`, Langfuse) y guardrails (validación, PII, SQL solo lectura en analítica) — está en **`arquitectura.md` §8**. Las reglas operativas (no usar SDKs desde `routes`/`services`, no prompts largos inline) siguen aplicando aquí y en el DO/DON'T.
+
+**Trazas Langfuse: metadatos, nunca contenido.** Los payloads `input` / `output` / `status_message` se construyen siempre con los helpers de `app/llm/observability.py` (`trace_messages`, `trace_result`, `trace_text`, `trace_status_message`). Pasar mensajes, documentos, respuestas del modelo o consultas de usuario directamente a `start_observation()` / `obs.update()` es un fallo de RGPD, no un detalle de estilo.
 
 ---
 
@@ -275,7 +301,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 
 - ✅ Devolver fragmentos HTML desde endpoints HTMX.
 - ✅ Validar tenant en cada request antes de tocar BD.
-- ✅ Loguear toda llamada LLM en `llm_calls` y Langfuse.
+- ✅ Loguear toda llamada LLM en `llm_calls` y Langfuse (a Langfuse **solo metadatos**, vía `app/llm/observability.py`).
 - ✅ Usar Pydantic + Instructor para output estructurado.
 - ✅ Mantener prompts en ficheros versionados.
 - ✅ Type hints estrictos.
@@ -297,6 +323,7 @@ Toda función pública no trivial debe tener test. Coverage objetivo: >70% en `s
 - ❌ NO usar `session.query()` (SQLAlchemy legado).
 - ❌ NO confiar en `WHERE tenant_id = ?` sin RLS de respaldo.
 - ❌ NO guardar archivos de cliente en disco; siempre R2.
+- ❌ NO enviar contenido de cliente (documentos, mensajes, consultas, respuestas del modelo, mensajes de error crudos) a Langfuse.
 - ❌ NO usar `print`, `time.sleep`, `requests` síncrono.
 - ❌ NO crear ni commitear archivos `.env` (secretos vía Infisical; ver **§2**). NO commitear claves sueltas ni `app/static/css/app.css`.
 - ❌ NO introducir microservicios, Kubernetes ni GraphQL en esta fase.
@@ -320,7 +347,11 @@ NO inventar. Decir:
 ---
 
 ## 14. Estilo de respuesta
-
+- No eres mi asistente, eres mi asesor.
+- No tienes que darme la razón, tienes que darme las mejores opciones para mi proyoecto, teniendo en cuenta la ciberseguridad, la calidad de código y la facilidad de mantenimiento del código
+- Etiqueta cada respuesta con nivel de confianza: seguro si tienes evidencias, probable si es inferencia y suposicióni si estás rellenando
+- Si algo de lo que proponogo no sigue las directrices indicadas, dimelo al principio de tú respuesta
+- Si quiero que hagas algo que no sigue las directrices, no me dejes continuar y razonalo.
 - Conciso, sin preámbulos.
 - Código completo, no stubs ni placeholders.
 - Comentarios solo cuando aporten contexto no obvio.

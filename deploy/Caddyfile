@@ -1,0 +1,39 @@
+# Reverse proxy + TLS automático (Let's Encrypt). Variables desde Infisical:
+#   APP_DOMAIN  dominio público (sin https://), p. ej. app.midominio.com
+#   ACME_EMAIL  email para avisos de caducidad de certificados
+# Las cabeceras de seguridad (CSP, HSTS, etc.) las pone la app
+# (SecurityHeadersMiddleware); aquí no se duplican.
+{
+	# Caddy es el borde: no se declara ningún proxy de confianza, así que
+	# reescribe X-Forwarded-* con lo que ve él e ignora lo que mande el cliente.
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Tope global de subida: por encima de KNOWLEDGE_MAX_FILE_SIZE_BYTES (15 MB)
+	# y VOICE_MAX_AUDIO_BYTES (8 MB). La app valida el límite fino.
+	request_body {
+		max_size 20MB
+	}
+
+	# /metrics es interno (token-gated); no se expone a Internet.
+	@internal path /metrics /metrics/*
+	respond @internal 404
+
+	reverse_proxy api:8000 {
+		health_uri /health
+		health_headers {
+			Host {$APP_DOMAIN}
+			X-Forwarded-Proto https
+		}
+	}
+
+	header -Server
+
+	log {
+		output stdout
+		format json
+	}
+}

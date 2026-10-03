@@ -1,5 +1,10 @@
-{# Modal LLM genérico. Requiere: record_id, dialog_title, source_filename (opcional), call #}
+{# Modal LLM genérico.
+   Requiere: record_id, dialog_title, call.
+   Opcionales: source_filename, document_kind (para borrado completo).
+   Estado Alpine: documentRowActions (llmOpen, deletePhase, …). #}
 {% if call %}
+{% set display_filename = call.source_filename or source_filename|default(none) %}
+{% set doc_kind = document_kind|default(none) %}
 <template x-teleport="body">
   <div
     x-show="llmOpen"
@@ -11,8 +16,8 @@
     x-transition:leave-start="opacity-100"
     x-transition:leave-end="opacity-0"
     class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 p-4"
-    @click.self="llmOpen = false"
-    @keydown.escape.window="if (llmOpen) llmOpen = false"
+    @click.self="closeLlm()"
+    @keydown.escape.window="if (llmOpen) closeLlm()"
     role="dialog"
     aria-modal="true"
     aria-labelledby="llm-dialog-title-{{ record_id }}">
@@ -27,25 +32,18 @@
       class="llm-call-dialog"
       @click.stop>
       <header class="llm-call-dialog-header">
-        <div>
-          <p class="text-[11px] font-semibold uppercase tracking-wider text-amber-700/80">
-            Llamada LLM
-          </p>
-          <h2 id="llm-dialog-title-{{ record_id }}" class="text-base font-semibold text-slate-900 mt-0.5">
-            {{ dialog_title }}
+        <div class="min-w-0 flex-1">
+          <h2 id="llm-dialog-title-{{ record_id }}" class="text-base font-semibold text-slate-900">
+            {{ dialog_title }}{% if display_filename %}
+            <span class="font-normal text-slate-600"> ({{ display_filename }})</span>{% endif %}
           </h2>
-          {% set display_filename = call.source_filename or source_filename|default(none) %}
-          {% if display_filename %}
-          <p class="text-xs text-slate-500 mt-1 truncate max-w-[18rem]"
-             title="{{ display_filename }}">
-            {{ display_filename }}
-          </p>
-          {% endif %}
         </div>
         <button
           type="button"
-          @click="llmOpen = false"
+          @click="closeLlm()"
           class="llm-call-dialog-close"
+          :disabled="isDeleting || deleteDone"
+          :class="(isDeleting || deleteDone) ? 'opacity-40 cursor-not-allowed' : ''"
           aria-label="Cerrar">
           ✕
         </button>
@@ -54,7 +52,45 @@
         {% include "components/llm_call_details.html" %}
       </div>
       <footer class="llm-call-dialog-footer">
-        <button type="button" @click="llmOpen = false" class="btn-secondary text-sm px-3 py-1.5">
+        <div class="llm-call-dialog-footer-start">
+          {% if doc_kind %}
+          <button
+            type="button"
+            class="llm-call-delete-btn"
+            title="Borrar documento y fichero"
+            aria-label="Borrar documento y fichero"
+            :disabled="isDeleting || deleteDone"
+            :class="(isDeleting || deleteDone) ? 'opacity-40 cursor-not-allowed' : ''"
+            @click="requestDelete('/documents/{{ doc_kind }}/{{ record_id }}/delete')">
+            <span x-show="isDeleting" x-cloak aria-hidden="true">
+              <svg class="animate-spin h-4 w-4 text-red-500" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/>
+                <path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" class="opacity-75"/>
+              </svg>
+            </span>
+            <span x-show="!isDeleting" class="llm-call-delete-icon">
+              {% include "components/icons/trash.html" %}
+            </span>
+          </button>
+          {% endif %}
+          <p
+            x-show="deleteMessage"
+            x-cloak
+            class="llm-call-delete-status"
+            :class="{
+              'text-slate-600': deletePhase === 'deleting',
+              'text-emerald-700': deletePhase === 'done',
+              'text-red-700': deletePhase === 'error'
+            }"
+            role="status"
+            x-text="deleteMessage"></p>
+        </div>
+        <button
+          type="button"
+          @click="closeLlm()"
+          class="btn-secondary text-sm px-3 py-1.5"
+          :disabled="isDeleting"
+          :class="isDeleting ? 'opacity-40 cursor-not-allowed' : ''">
           Cerrar
         </button>
       </footer>

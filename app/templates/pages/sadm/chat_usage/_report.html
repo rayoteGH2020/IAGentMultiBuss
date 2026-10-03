@@ -1,0 +1,113 @@
+{# Informe de uso de chat: controles de ventana + tabla ordenable. #}
+{% set p = report.period %}
+{% set next_sort = 'asc' if report.sort == 'desc' else 'desc' %}
+{% set base_q = 'view=' ~ p.view %}
+
+<div id="chat-usage-report" class="space-y-4"
+     hx-boost="false">
+
+  <section class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-base font-semibold text-slate-900">{{ report.tenant_name }}</h2>
+        <p class="mt-0.5 text-sm text-slate-500">
+          Ventana: <span class="font-medium text-slate-700">{{ p.label }}</span>
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        {% for v, label in [('day', 'Día'), ('week', 'Semana'), ('month', 'Mes')] %}
+        <a href="/sadm/chat-usage/{{ report.tenant_id }}?view={{ v }}&sort={{ report.sort }}{% if v == p.view %}&anchor={{ p.anchor.isoformat() }}{% endif %}"
+           class="cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium
+                  {% if p.view == v %}bg-primary-600 text-white{% else %}border border-slate-200 bg-white text-slate-600 hover:bg-slate-50{% endif %}">
+          {{ label }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <a href="/sadm/chat-usage/{{ report.tenant_id }}?view={{ p.view }}&anchor={{ p.prev_anchor.isoformat() }}&sort={{ report.sort }}"
+         class="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        ← Anterior
+      </a>
+      {% if p.can_go_forward and p.next_anchor %}
+      <a href="/sadm/chat-usage/{{ report.tenant_id }}?view={{ p.view }}&anchor={{ p.next_anchor.isoformat() }}&sort={{ report.sort }}"
+         class="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        Siguiente →
+      </a>
+      {% else %}
+      <span class="rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
+            title="No se puede avanzar más allá del periodo actual">
+        Siguiente →
+      </span>
+      {% endif %}
+      <span class="text-xs text-slate-400">
+        {% if p.view == 'week' %}6 semanas (L–D), Anterior/Siguiente ±6{% elif p.view == 'month' %}6 meses, Anterior/Siguiente ±6{% else %}7 días, Anterior/Siguiente ±7{% endif %}
+      </span>
+    </div>
+  </section>
+
+  <section class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500">
+              <a href="/sadm/chat-usage/{{ report.tenant_id }}?view={{ p.view }}&anchor={{ p.anchor.isoformat() }}&sort={{ next_sort }}"
+                 class="cursor-pointer inline-flex items-center gap-1 hover:text-slate-800"
+                 title="Cambiar orden por fecha">
+                Fecha
+                <span aria-hidden="true">{% if report.sort == 'desc' %}↓{% else %}↑{% endif %}</span>
+              </a>
+            </th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Chats</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Coste</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Tokens in</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Tokens out</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-slate-500">Latencia media</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for row in report.rows %}
+          <tr class="hover:bg-slate-50/60">
+            <td class="px-4 py-3 text-slate-800 font-medium">{{ row.period_label }}</td>
+            <td class="px-4 py-3 text-right text-slate-600">{{ row.chat_count }}</td>
+            <td class="px-4 py-3 text-right text-slate-900 font-medium">{{ "%.4f"|format(row.cost_eur) }} €</td>
+            <td class="px-4 py-3 text-right text-slate-600">{{ row.input_tokens }}</td>
+            <td class="px-4 py-3 text-right text-slate-600">{{ row.output_tokens }}</td>
+            <td class="px-4 py-3 text-right text-slate-600">
+              {% if row.llm_calls %}{{ "%.0f"|format(row.avg_latency_ms) }} ms{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-4 py-8 text-center text-sm text-slate-400">
+              Sin actividad de chat en esta ventana.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if report.rows %}
+        <tfoot class="bg-slate-50 border-t border-slate-200">
+          <tr>
+            <td class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Total</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">{{ report.totals.chat_count }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-900">{{ "%.4f"|format(report.totals.cost_eur) }} €</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">{{ report.totals.input_tokens }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">{{ report.totals.output_tokens }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">
+              {% if report.totals.llm_calls %}{{ "%.0f"|format(report.totals.avg_latency_ms) }} ms{% else %}—{% endif %}
+            </td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+    <p class="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+      Chats = hilos distintos con mensaje de usuario en el periodo.
+      Coste / tokens / latencia = agregados de <code>llm_calls</code> con <code>task=chat</code>.
+      Semana/mes: una fila agregada por periodo (ventana de 6). Día: 7 filas (±7).
+    </p>
+  </section>
+</div>

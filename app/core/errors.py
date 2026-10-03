@@ -3,14 +3,32 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, status
-
-if TYPE_CHECKING:
-    from uuid import UUID
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from app.core.logging import get_logger
 
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from app.core.document_processing_errors import DocumentErrorCode
+
 log = get_logger(__name__)
+
+_SUPERADMIN_AREA_PREFIXES = ("/sadm", "/admin/integrations")
+
+
+def _is_superadmin_area_path(path: str) -> bool:
+    """Rutas de consola SADM / integraciones cross-tenant."""
+    return any(
+        path == prefix or path.startswith(f"{prefix}/") for prefix in _SUPERADMIN_AREA_PREFIXES
+    )
+
+
+def _forbidden_redirect_target(request: Request) -> str:
+    """Destino amigable si un usuario sin permiso SADM accede al área admin."""
+    if getattr(request.state, "user", None) is not None:
+        return "/"
+    return "/login"
 
 
 class AppError(Exception):
@@ -61,6 +79,19 @@ class ForbiddenError(AppError):
     code = "forbidden"
 
 
+class PlanRequiredError(ForbiddenError):
+    """Modulo o feature no incluido en el plan del tenant (Paso03)."""
+
+    code = "plan_required"
+
+    def __init__(self, feature: str, *, message: str | None = None) -> None:
+        super().__init__(
+            message or f"Feature '{feature}' is not included in your plan",
+            details={"code": "plan_required", "feature": feature},
+        )
+        self.feature = feature
+
+
 class RateLimitError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "rate_limited"
@@ -73,14 +104,93 @@ class ExternalServiceError(AppError):
 
 
 class LLMCompleteError(ExternalServiceError):
-    """Fallo en LLMClient.complete() tras persistir la fila en `llm_calls`."""
+    """Fallo en LLMClient.complete() tras persistir la fila en `llm_calls`.
 
-    def __init__(self, message: str, *, llm_call_id: UUID) -> None:
-        super().__init__(
-            message,
-            details={"llm_call_id": str(llm_call_id)},
-        )
+    ``message`` es seguro para logs y respuestas (tipo de fallo, sin contenido).
+    ``raw_error`` es el texto técnico del SDK: puede incluir la respuesta cruda
+    del modelo, así que solo se persiste en BD (RLS), nunca en logs.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        llm_call_id: UUID,
+        document_error_code: DocumentErrorCode | None = None,
+        raw_error: str | None = None,
+    ) -> None:
+        details: dict[str, object] = {"llm_call_id": str(llm_call_id)}
+        if document_error_code is not None:
+            details["document_error_code"] = document_error_code.value
+        super().__init__(message, details=details)
         self.llm_call_id = llm_call_id
+        # Motivo estructurado para mark_failed (p. ej. provider_overload).
+        self.document_error_code = document_error_code
+        self.raw_error = raw_error
+
+    @property
+    def persisted_error(self) -> str:
+        """Texto para `error` del documento: el técnico si existe (la UI lo traduce)."""
+        return self.raw_error or self.message
+
+
+_INTERNAL_MESSAGE_MARKERS = (
+    "ENCRYPTION_KEY",
+    "APP_SECRET_KEY",
+    "CLERK_SECRET_KEY",
+    "POSTGRES",
+    "DATABASE_URL",
+    "JWKS",
+    "API_KEY",
+    "SECRET",
+    "not configured",
+    "Missing encrypted",
+    "Failed to decrypt",
+)
+
+
+def _looks_external_forbidden(exc: AppError) -> bool:
+    message = exc.message.lower()
+    return "google" in message or "external" in message or "api" in message
+
+
+def _looks_internal_message(message: str) -> bool:
+    return any(marker.lower() in message.lower() for marker in _INTERNAL_MESSAGE_MARKERS)
+
+
+def public_error_message(
+    exc: AppError,
+    *,
+    fallback: str = "No se pudo completar la operación. Inténtalo de nuevo.",
+) -> str:
+    """Mensaje seguro para devolver al cliente sin filtrar detalles internos."""
+    if isinstance(exc, AuthError):
+        if exc.details.get("code") == "no_active_organization":
+            return "No hay una organización activa."
+        return "Sesión no válida. Inicia sesión de nuevo."
+    if isinstance(exc, PlanRequiredError):
+        return (
+            "Esta función no está incluida en tu plan. "
+            "Contacta con el administrador para ampliarla."
+        )
+    if isinstance(exc, ExternalServiceError):
+        return fallback
+    if isinstance(exc, ForbiddenError) and _looks_external_forbidden(exc):
+        return fallback
+    if _looks_internal_message(exc.message):
+        return fallback
+    return exc.message
+
+
+def public_error_details(exc: AppError) -> dict[str, object]:
+    """Detalles estructurados seguros para respuestas HTTP."""
+    if isinstance(exc, AuthError) and exc.details.get("code") == "no_active_organization":
+        return exc.details
+    if isinstance(exc, ExternalServiceError) or _looks_internal_message(exc.message):
+        return {}
+    if isinstance(exc, ForbiddenError) and _looks_external_forbidden(exc):
+        return {}
+    return exc.details
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -92,11 +202,12 @@ def register_error_handlers(app: FastAPI) -> None:
             "app_error",
             code=exc.code,
             message=exc.message,
-            details=exc.details,
             path=request.url.path,
         )
         if isinstance(exc, AuthError):
             accept = request.headers.get("accept", "")
+            message = public_error_message(exc)
+            details = public_error_details(exc)
 
             if exc.details.get("code") == "no_active_organization":
                 # Caso especial: el JWT es válido pero el usuario no tiene
@@ -111,8 +222,8 @@ def register_error_handlers(app: FastAPI) -> None:
                         status_code=exc.status_code,
                         content={
                             "code": exc.code,
-                            "message": exc.message,
-                            "details": exc.details,
+                            "message": message,
+                            "details": details,
                         },
                         headers={"HX-Redirect": "/onboarding"},
                     )
@@ -132,8 +243,8 @@ def register_error_handlers(app: FastAPI) -> None:
                     status_code=exc.status_code,
                     content={
                         "code": exc.code,
-                        "message": exc.message,
-                        "details": exc.details,
+                        "message": message,
+                        "details": details,
                     },
                 )
 
@@ -142,17 +253,77 @@ def register_error_handlers(app: FastAPI) -> None:
                 # Mismo patrón HTMX: no puede seguir redirects → HX-Redirect.
                 return JSONResponse(
                     status_code=exc.status_code,
-                    content={"code": exc.code, "message": exc.message, "details": exc.details},
+                    content={"code": exc.code, "message": message, "details": details},
                     headers={"HX-Redirect": "/login"},
                 )
             if "text/html" in accept and request.url.path not in {"/login", "/signup"}:
                 return RedirectResponse(url="/login", status_code=302)
 
+        if isinstance(exc, ForbiddenError) and _is_superadmin_area_path(request.url.path):
+            accept = request.headers.get("accept", "")
+            redirect_url = _forbidden_redirect_target(request)
+            message = public_error_message(exc)
+            details = public_error_details(exc)
+            if request.headers.get("HX-Request") == "true":
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={
+                        "code": exc.code,
+                        "message": message,
+                        "details": details,
+                    },
+                    headers={"HX-Redirect": redirect_url},
+                )
+            if "text/html" in accept:
+                return RedirectResponse(url=redirect_url, status_code=302)
+
+        if isinstance(exc, PlanRequiredError):
+            from app.core.entitlement_codes import feature_ui_label
+            from app.core.templating import render
+
+            feature = str(exc.details.get("feature") or getattr(exc, "feature", ""))
+            ctx = {
+                "feature": feature,
+                "feature_label": feature_ui_label(feature),
+                "error_message": public_error_message(exc),
+            }
+            accept = request.headers.get("accept", "")
+            is_htmx = request.headers.get("HX-Request") == "true"
+            is_boosted = request.headers.get("HX-Boosted") == "true"
+            if is_htmx and not is_boosted:
+                return render(
+                    request,
+                    full="pages/errors/plan_required.html",
+                    partial="components/plan_required_fragment.html",
+                    ctx=ctx,
+                    status_code=exc.status_code,
+                )
+            if "text/html" in accept or is_boosted or is_htmx:
+                return render(
+                    request,
+                    full="pages/errors/plan_required.html",
+                    partial=None,
+                    ctx=ctx,
+                    status_code=exc.status_code,
+                )
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "code": exc.code,
+                    "message": public_error_message(exc),
+                    "details": public_error_details(exc),
+                },
+            )
+
         # Resto de AppErrors (NotFoundError, ValidationError, ForbiddenError…):
         # respuesta JSON estándar con el código y mensaje del error de dominio.
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": exc.code, "message": exc.message, "details": exc.details},
+            content={
+                "code": exc.code,
+                "message": public_error_message(exc),
+                "details": public_error_details(exc),
+            },
         )
 
     @app.exception_handler(Exception)

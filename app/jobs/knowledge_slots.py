@@ -59,5 +59,5 @@ async def tenant_knowledge_indexing_slot(
                 logger.warning(
                     "worker.knowledge.slot_decr_failed",
                     tenant_id=str(tenant_id),
-                    error=str(exc),
+                    error_type=type(exc).__name__,
                 )

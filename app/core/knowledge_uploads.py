@@ -102,7 +102,7 @@ def validate_knowledge_upload(
 
         detected = magic.from_buffer(data[:4096], mime=True)
     except Exception as exc:
-        logger.warning("knowledge_upload.magic_failed", error=str(exc))
+        logger.warning("knowledge_upload.magic_failed", error_type=type(exc).__name__)
         detected = None
 
     if detected not in allowed:

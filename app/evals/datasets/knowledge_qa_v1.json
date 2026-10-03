@@ -1,189 +1,189 @@
 {
-  "version": "1",
-  "description": "Eval QA del chat RAG unificado (Paso 20). Alineado con seed_knowledge_eval y knowledge_retrieval_v1.",
-  "targets": {
-    "retrieval_recall_at_5_min": 0.8,
-    "answer_grounded_min": 0.85,
-    "citation_present_min": 0.9,
-    "latency_p50_ms_max": 8000
-  },
-  "cases": [
-    {
-      "id": "qa_001",
-      "question": "¿Cuál es el horario de atención al cliente los sábados?",
-      "expected_answer_contains": ["sábado", "horario"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["Sábados", "9:00"],
-      "difficulty": "easy"
+    "version": "1",
+    "description": "Eval QA del chat RAG unificado (Paso 20). Alineado con seed_knowledge_eval y knowledge_retrieval_v1.",
+    "targets": {
+        "retrieval_recall_at_5_min": 0.8,
+        "answer_grounded_min": 0.85,
+        "citation_present_min": 0.9,
+        "latency_p50_ms_max": 8000
     },
-    {
-      "id": "qa_002",
-      "question": "¿Cuáles son las condiciones de cancelación del contrato o de una cita?",
-      "expected_answer_contains": ["cancelación", "24 horas"],
-      "expected_sources_kind": ["faq", "terms"],
-      "relevant_content_substrings": ["24 horas"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_003",
-      "question": "formas de pago efectivo tarjeta bizum",
-      "expected_answer_contains": ["Bizum", "tarjeta"],
-      "expected_sources_kind": ["faq"],
-      "relevant_content_substrings": ["Bizum"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_004",
-      "question": "política de vestimenta uniforme sala",
-      "expected_answer_contains": ["uniforme"],
-      "expected_sources_kind": ["policy"],
-      "relevant_content_substrings": ["uniforme oscuro"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_005",
-      "question": "CODIGOCONTRATO4242 facturación",
-      "expected_answer_contains": ["contrato", "CODIGOCONTRATO4242"],
-      "expected_sources_kind": ["contract"],
-      "relevant_content_substrings": ["CODIGOCONTRATO4242"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_006",
-      "question": "¿A qué hora abrimos de martes a viernes por la mañana?",
-      "expected_answer_contains": ["9:30", "martes"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["9:30", "Martes"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_007",
-      "question": "importe mensual contrato euros",
-      "expected_answer_contains": ["99", "EUR"],
-      "expected_sources_kind": ["contract"],
-      "relevant_content_substrings": ["99 EUR"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_008",
-      "question": "precio corte caballero desde euros",
-      "expected_answer_contains": ["caballero", "12"],
-      "expected_sources_kind": ["services"],
-      "relevant_content_substrings": ["12 €", "caballero"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_009",
-      "question": "política privacidad datos personales RGPD",
-      "expected_answer_contains": ["privacidad", "datos"],
-      "expected_sources_kind": ["terms"],
-      "relevant_content_substrings": ["privacidad", "datos"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_010",
-      "question": "ZETATERMINO789 horario comercial",
-      "expected_answer_contains": ["horario"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["ZETATERMINO789"],
-      "difficulty": "hard"
-    },
-    {
-      "id": "qa_011",
-      "question": "¿Está abierto el lunes?",
-      "expected_answer_contains": ["lunes", "cerrado"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["Lunes cerrado"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_012",
-      "question": "cuánto cuesta arreglar la barba",
-      "expected_answer_contains": ["Barba", "8"],
-      "expected_sources_kind": ["services"],
-      "relevant_content_substrings": ["Barba", "8 €"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_013",
-      "question": "corte con navaja precio",
-      "expected_answer_contains": ["navaja", "18"],
-      "expected_sources_kind": ["services"],
-      "relevant_content_substrings": ["navaja", "18 €"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_014",
-      "question": "horario tarde cierre 20:30",
-      "expected_answer_contains": ["20:30", "16:30"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["20:30", "16:30"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_015",
-      "question": "¿Aceptáis pago en efectivo?",
-      "expected_answer_contains": ["efectivo"],
-      "expected_sources_kind": ["faq"],
-      "relevant_content_substrings": ["efectivo"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_016",
-      "question": "cancelar cita con antelación mínima",
-      "expected_answer_contains": ["antelación", "24"],
-      "expected_sources_kind": ["faq"],
-      "relevant_content_substrings": ["24 horas"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_017",
-      "question": "referencia interna facturación mensual servicios",
-      "expected_answer_contains": ["facturación", "CODIGOCONTRATO4242"],
-      "expected_sources_kind": ["contract"],
-      "relevant_content_substrings": ["facturación", "CODIGOCONTRATO4242"],
-      "difficulty": "hard"
-    },
-    {
-      "id": "qa_018",
-      "question": "qué ponerse en sala de espera ropa",
-      "expected_answer_contains": ["uniforme", "oscuro"],
-      "expected_sources_kind": ["policy"],
-      "relevant_content_substrings": ["uniforme"],
-      "difficulty": "hard"
-    },
-    {
-      "id": "qa_019",
-      "question": "servicios peluquería hombre precios lista",
-      "expected_answer_contains": ["caballero", "servicios"],
-      "expected_sources_kind": ["services"],
-      "relevant_content_substrings": ["caballero", "Servicios"],
-      "difficulty": "hard"
-    },
-    {
-      "id": "qa_020",
-      "question": "condiciones generales del servicio legales",
-      "expected_answer_contains": ["condiciones", "generales"],
-      "expected_sources_kind": ["terms"],
-      "relevant_content_substrings": ["Condiciones generales"],
-      "difficulty": "medium"
-    },
-    {
-      "id": "qa_021",
-      "question": "tarjeta bancaria método pago aceptado",
-      "expected_answer_contains": ["tarjeta"],
-      "expected_sources_kind": ["faq"],
-      "relevant_content_substrings": ["tarjeta"],
-      "difficulty": "easy"
-    },
-    {
-      "id": "qa_022",
-      "question": "horario sábado mañana hasta qué hora",
-      "expected_answer_contains": ["sábado", "14:00"],
-      "expected_sources_kind": ["schedule"],
-      "relevant_content_substrings": ["Sábados", "14:00"],
-      "difficulty": "medium",
-      "skip_live_llm": true
-    }
-  ]
+    "cases": [
+        {
+            "id": "qa_001",
+            "question": "¿Cuál es el horario de atención al cliente los sábados?",
+            "expected_answer_contains": ["sábado", "horario"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["Sábados", "9:00"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_002",
+            "question": "¿Cuáles son las condiciones de cancelación del contrato o de una cita?",
+            "expected_answer_contains": ["cancelación", "24 horas"],
+            "expected_sources_kind": ["faq", "terms"],
+            "relevant_content_substrings": ["24 horas"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_003",
+            "question": "formas de pago efectivo tarjeta bizum",
+            "expected_answer_contains": ["Bizum", "tarjeta"],
+            "expected_sources_kind": ["faq"],
+            "relevant_content_substrings": ["Bizum"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_004",
+            "question": "política de vestimenta uniforme sala",
+            "expected_answer_contains": ["uniforme"],
+            "expected_sources_kind": ["policy"],
+            "relevant_content_substrings": ["uniforme oscuro"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_005",
+            "question": "CODIGOCONTRATO4242 facturación",
+            "expected_answer_contains": ["contrato", "CODIGOCONTRATO4242"],
+            "expected_sources_kind": ["contract"],
+            "relevant_content_substrings": ["CODIGOCONTRATO4242"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_006",
+            "question": "¿A qué hora abrimos de martes a viernes por la mañana?",
+            "expected_answer_contains": ["9:30", "martes"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["9:30", "Martes"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_007",
+            "question": "importe mensual contrato euros",
+            "expected_answer_contains": ["99", "EUR"],
+            "expected_sources_kind": ["contract"],
+            "relevant_content_substrings": ["99 EUR"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_008",
+            "question": "precio corte caballero desde euros",
+            "expected_answer_contains": ["caballero", "12"],
+            "expected_sources_kind": ["services"],
+            "relevant_content_substrings": ["12 €", "caballero"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_009",
+            "question": "política privacidad datos personales RGPD",
+            "expected_answer_contains": ["privacidad", "datos"],
+            "expected_sources_kind": ["terms"],
+            "relevant_content_substrings": ["privacidad", "datos"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_010",
+            "question": "ZETATERMINO789 horario comercial",
+            "expected_answer_contains": ["horario"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["ZETATERMINO789"],
+            "difficulty": "hard"
+        },
+        {
+            "id": "qa_011",
+            "question": "¿Está abierto el lunes?",
+            "expected_answer_contains": ["lunes", "cerrado"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["Lunes cerrado"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_012",
+            "question": "cuánto cuesta arreglar la barba",
+            "expected_answer_contains": ["Barba", "8"],
+            "expected_sources_kind": ["services"],
+            "relevant_content_substrings": ["Barba", "8 €"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_013",
+            "question": "corte con navaja precio",
+            "expected_answer_contains": ["navaja", "18"],
+            "expected_sources_kind": ["services"],
+            "relevant_content_substrings": ["navaja", "18 €"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_014",
+            "question": "horario tarde cierre 20:30",
+            "expected_answer_contains": ["20:30", "16:30"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["20:30", "16:30"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_015",
+            "question": "¿Aceptáis pago en efectivo?",
+            "expected_answer_contains": ["efectivo"],
+            "expected_sources_kind": ["faq"],
+            "relevant_content_substrings": ["efectivo"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_016",
+            "question": "cancelar cita con antelación mínima",
+            "expected_answer_contains": ["antelación", "24"],
+            "expected_sources_kind": ["faq"],
+            "relevant_content_substrings": ["24 horas"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_017",
+            "question": "referencia interna facturación mensual servicios",
+            "expected_answer_contains": ["facturación", "CODIGOCONTRATO4242"],
+            "expected_sources_kind": ["contract"],
+            "relevant_content_substrings": ["facturación", "CODIGOCONTRATO4242"],
+            "difficulty": "hard"
+        },
+        {
+            "id": "qa_018",
+            "question": "qué ponerse en sala de espera ropa",
+            "expected_answer_contains": ["uniforme", "oscuro"],
+            "expected_sources_kind": ["policy"],
+            "relevant_content_substrings": ["uniforme"],
+            "difficulty": "hard"
+        },
+        {
+            "id": "qa_019",
+            "question": "servicios peluquería hombre precios lista",
+            "expected_answer_contains": ["caballero", "servicios"],
+            "expected_sources_kind": ["services"],
+            "relevant_content_substrings": ["caballero", "Servicios"],
+            "difficulty": "hard"
+        },
+        {
+            "id": "qa_020",
+            "question": "condiciones generales del servicio legales",
+            "expected_answer_contains": ["condiciones", "generales"],
+            "expected_sources_kind": ["terms"],
+            "relevant_content_substrings": ["Condiciones generales"],
+            "difficulty": "medium"
+        },
+        {
+            "id": "qa_021",
+            "question": "tarjeta bancaria método pago aceptado",
+            "expected_answer_contains": ["tarjeta"],
+            "expected_sources_kind": ["faq"],
+            "relevant_content_substrings": ["tarjeta"],
+            "difficulty": "easy"
+        },
+        {
+            "id": "qa_022",
+            "question": "horario sábado mañana hasta qué hora",
+            "expected_answer_contains": ["sábado", "14:00"],
+            "expected_sources_kind": ["schedule"],
+            "relevant_content_substrings": ["Sábados", "14:00"],
+            "difficulty": "medium",
+            "skip_live_llm": true
+        }
+    ]
 }

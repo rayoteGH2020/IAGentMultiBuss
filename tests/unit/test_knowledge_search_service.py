@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -95,8 +98,11 @@ async def test_search_caps_top_k() -> None:
     with (
         patch.object(kss, "get_settings", return_value=mock_settings),
         patch.object(kss, "get_langfuse", return_value=fake_langfuse),
-        patch.object(kss, "_dense_search", AsyncMock(return_value=[dense_row])),
-        patch.object(kss, "_sparse_search", AsyncMock(return_value=[])),
+        patch.object(
+            kss,
+            "_fetch_dense_sparse_parallel",
+            AsyncMock(return_value=([dense_row], [])),
+        ),
         patch.object(kss.audit_service, "log_action", AsyncMock()),  # type: ignore[attr-defined]
     ):
         result = await kss.search(
@@ -218,8 +224,11 @@ async def test_search_calls_rate_check_when_redis_provided() -> None:
 
     with (
         patch.object(kss, "get_langfuse", return_value=fake_langfuse),
-        patch.object(kss, "_dense_search", AsyncMock(return_value=[])),
-        patch.object(kss, "_sparse_search", AsyncMock(return_value=[])),
+        patch.object(
+            kss,
+            "_fetch_dense_sparse_parallel",
+            AsyncMock(return_value=([], [])),
+        ),
         patch.object(kss.audit_service, "log_action", AsyncMock()),  # type: ignore[attr-defined]
     ):
         await kss.search(
@@ -232,3 +241,94 @@ async def test_search_calls_rate_check_when_redis_provided() -> None:
         )
 
     redis.incr.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_dense_sparse_parallel_runs_both_branches() -> None:
+    tenant_id = uuid4()
+    dense_called = False
+    sparse_called = False
+
+    async def fake_dense(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
+        nonlocal dense_called
+        dense_called = True
+        return [_row("dense", 1)]
+
+    async def fake_sparse(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
+        nonlocal sparse_called
+        sparse_called = True
+        return [_row("sparse", 1)]
+
+    @asynccontextmanager
+    async def fake_session_factory(_tenant_id: object) -> AsyncIterator[AsyncMock]:
+        yield AsyncMock()
+
+    with (
+        patch.object(kss, "session_factory_for_worker", fake_session_factory),
+        patch.object(kss, "_dense_search", fake_dense),
+        patch.object(kss, "_sparse_search", fake_sparse),
+    ):
+        dense_rows, sparse_rows = await kss._fetch_dense_sparse_parallel(
+            tenant_id=tenant_id,
+            query_vector=[0.1] * 512,
+            query="horario",
+            filter_sql="",
+            filter_params={},
+            dense_limit=60,
+            sparse_limit=60,
+        )
+
+    assert dense_called is True
+    assert sparse_called is True
+    assert dense_rows[0]["chunk_id"] == "dense"
+    assert sparse_rows[0]["chunk_id"] == "sparse"
+
+
+@pytest.mark.asyncio
+async def test_fetch_dense_sparse_parallel_is_concurrent() -> None:
+    tenant_id = uuid4()
+    dense_running = asyncio.Event()
+    sparse_running = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_dense(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
+        dense_running.set()
+        await sparse_running.wait()
+        await release.wait()
+        return []
+
+    async def slow_sparse(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
+        sparse_running.set()
+        await dense_running.wait()
+        await release.wait()
+        return []
+
+    @asynccontextmanager
+    async def fake_session_factory(_tenant_id: object) -> AsyncIterator[AsyncMock]:
+        yield AsyncMock()
+
+    with (
+        patch.object(kss, "session_factory_for_worker", fake_session_factory),
+        patch.object(kss, "_dense_search", slow_dense),
+        patch.object(kss, "_sparse_search", slow_sparse),
+    ):
+        task = asyncio.create_task(
+            kss._fetch_dense_sparse_parallel(
+                tenant_id=tenant_id,
+                query_vector=[0.1] * 512,
+                query="horario",
+                filter_sql="",
+                filter_params={},
+                dense_limit=60,
+                sparse_limit=60,
+            ),
+        )
+        await asyncio.wait_for(
+            asyncio.gather(dense_running.wait(), sparse_running.wait()),
+            timeout=1.0,
+        )
+        release.set()
+        dense_rows, sparse_rows = await task
+
+    assert dense_rows == []
+    assert sparse_rows == []

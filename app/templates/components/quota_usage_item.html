@@ -1,0 +1,22 @@
+{# Un cupo mensual en «Mi cuenta»: «X de Y», barra y renovación (QuotaStatus). #}
+<li class="rounded-lg border border-slate-200 px-3 py-2" data-quota="{{ quota.key }}">
+  <div class="flex items-center justify-between gap-3">
+    <span class="text-sm text-slate-600">{{ quota.label }}</span>
+    <span class="text-sm font-semibold text-slate-900 tabular-nums">
+      {{ quota.used }}
+      <span class="font-normal text-slate-500">de {{ quota.cap if quota.cap is not none else "sin límite" }}</span>
+    </span>
+  </div>
+  {% if quota.percent is not none %}
+  {% set percent = quota.percent %}
+  {% set bar_label = quota.label %}
+  {% include "components/quota_usage_bar.html" %}
+  {% endif %}
+  {% if quota.detail or quota.renewal_label %}
+  <p class="mt-1 text-xs text-slate-500">
+    {% if quota.detail %}{{ quota.detail }}{% endif %}
+    {% if quota.detail and quota.renewal_label %} · {% endif %}
+    {% if quota.renewal_label %}se renueva el {{ quota.renewal_label }}{% endif %}
+  </p>
+  {% endif %}
+</li>

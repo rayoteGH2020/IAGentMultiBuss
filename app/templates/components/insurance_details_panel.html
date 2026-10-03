@@ -1,0 +1,56 @@
+{# Detalle expandible de póliza de seguro. #}
+{% set insurance = document.insurance %}
+{% set has_fields = insurance.tomador or insurance.tipo_seguro or insurance.fecha_fin or insurance.cobertura or insurance.numero_poliza or insurance.source_filename or insurance.prima is not none %}
+{% set sm = insurance.currency | currency_symbol %}
+
+<section class="document-detail__section" aria-label="Detalle del seguro">
+  <h3 class="document-detail__section-title">Detalle del seguro</h3>
+  {% if has_fields %}
+  <div class="document-detail__fields">
+    {% if insurance.source_filename %}
+    <div class="document-detail__field document-detail__field--wide">
+      <span class="document-detail__field-label">Fichero</span>
+      <span class="document-detail__field-value">{{ insurance.source_filename }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.tomador %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Tomador</span>
+      <span class="document-detail__field-value">{{ insurance.tomador }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.tipo_seguro %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Tipo</span>
+      <span class="document-detail__field-value">{{ insurance.tipo_seguro }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.numero_poliza %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Nº póliza</span>
+      <span class="document-detail__field-value">{{ insurance.numero_poliza }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.fecha_fin %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Fecha fin</span>
+      <span class="document-detail__field-value tabular-nums">{{ insurance.fecha_fin }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.prima is not none %}
+    <div class="document-detail__field">
+      <span class="document-detail__field-label">Prima</span>
+      <span class="document-detail__field-value tabular-nums">{{ "%.2f"|format(insurance.prima) }} {{ sm }}</span>
+    </div>
+    {% endif %}
+    {% if insurance.cobertura %}
+    <div class="document-detail__field document-detail__field--wide">
+      <span class="document-detail__field-label">Cobertura</span>
+      <span class="document-detail__field-value document-detail__desc">{{ insurance.cobertura }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="document-detail__empty">No hay detalle adicional para este seguro.</p>
+  {% endif %}
+</section>

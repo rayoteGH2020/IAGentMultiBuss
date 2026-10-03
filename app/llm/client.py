@@ -19,22 +19,29 @@ import instructor
 import structlog
 from anthropic import AsyncAnthropic
 from google import genai
+from instructor.core.hooks import Hooks
 from langfuse.types import TraceContext
 from pydantic import BaseModel
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential_jitter,
-)
 
 from app.config import Settings, get_settings
+from app.core.document_processing_errors import (
+    DocumentErrorCode,
+    provider_error_code,
+    provider_error_user_message,
+)
 from app.core.errors import ExternalServiceError, LLMCompleteError, ValidationError
 from app.llm.chat_loop import ToolLoopResult
 from app.llm.chat_loop import run_tool_loop as _run_tool_loop
 from app.llm.embeddings import VoyageEmbedder
+from app.llm.observability import (
+    error_log_fields,
+    trace_messages,
+    trace_result,
+    trace_status_message,
+)
 from app.llm.pricing import compute_cost_eur
+from app.llm.provider_alerts import alert_if_provider_billing_error
+from app.llm.retry import call_with_transient_retry
 from app.llm.tools.registry import ToolContext, ToolRegistry
 from app.llm.tracing import get_langfuse
 from app.models import LLMCall
@@ -46,79 +53,43 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 _MISSING_ANTHROPIC_KEY_PLACEHOLDER = "missing-anthropic-key"
-_ANTHROPIC_TASKS = frozenset({"classify", "sql"})
+_ANTHROPIC_TASKS = frozenset({"classify", "sql"})  # "sql": D011 — sin producto Analytics
 
 # Literal restringe los valores en tiempo de type-check; un typo en task sería
 # detectado por mypy antes de llegar a DEFAULT_MODELS en runtime.
 # "embedding" usa Voyage vía embed(); no pasa por complete() ni _resolve_model().
-TaskType = Literal["extraction", "chat", "sql", "classify", "embedding", "transcription"]
+# "sql" permanece en el Literal por compatibilidad tipada; D011 — no hay producto
+# Analytics SQL / BI (modulo 3 no se implementara). No anadir runners que lo usen.
+TaskType = Literal[
+    "extraction", "chat", "sql", "classify", "embedding", "transcription", "translate"
+]
 
-# Códigos HTTP retryables: rate-limit y errores de servidor/sobrecarga.
-# 529 es específico de Anthropic ("overloaded"); el resto son estándar.
-# frozenset: inmutable y O(1) en lookup.
-_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504, 529})
-
-# Markers textuales para fallback cuando la excepción del SDK no expone .code
-# de forma estructurada. Se buscan en minúsculas en str(exc).
-_RETRYABLE_MARKERS: tuple[str, ...] = (
-    "503",
-    "504",
-    "529",
-    "unavailable",
-    "overloaded",
-    "rate limit",
-    "rate_limit_error",
-    "too many requests",
-    "internal server error",
-)
+# Política de reintentos (códigos/markers retryables): app/llm/retry.py.
 
 # Indicadores de sobrecarga del proveedor (tras agotar reintentos).
 # Cuando el error técnico coincide, se expone al usuario un mensaje amigable
 # en lugar del mensaje crudo del SDK; el error raw sigue guardándose en BD.
-_PROVIDER_OVERLOAD_MARKERS: tuple[str, ...] = (
-    "503",
-    "high demand",
-    "overloaded",
-    "service unavailable",
-)
-_PROVIDER_OVERLOAD_USER_MSG = (
-    "El servidor de IA tiene muchas solicitudes y ha rechazado la tuya, "
-    "prueba de nuevo un poco más tarde"
-)
+# Clasificación canónica: DocumentErrorCode.provider_overload.
 
 
-def _user_facing_llm_error(raw_error: str) -> str:
-    """Devuelve mensaje amigable si el error es sobrecarga del proveedor, si no el raw."""
-    low = raw_error.lower()
-    if any(m in low for m in _PROVIDER_OVERLOAD_MARKERS):
-        return _PROVIDER_OVERLOAD_USER_MSG
-    return raw_error
+def _safe_llm_error_message(raw_error: str | None, error_type: str | None, fallback: str) -> str:
+    """Mensaje de LLMCompleteError sin contenido: acaba en logs y tracebacks.
 
-
-def _is_retryable_provider_error(exc: BaseException) -> bool:
-    """True si la excepción del SDK indica un fallo transitorio del proveedor.
-
-    No reintentamos ValidationError de Pydantic (lo hace Instructor) ni 4xx
-    distintos de 429 (un 400 / 401 / 403 no se arregla reintentando, sería
-    coste sin sentido).
+    El texto técnico viaja aparte en ``LLMCompleteError.raw_error``.
     """
-    # Distintos SDKs exponen el código HTTP con nombres distintos:
-    # - google-genai: ApiError.code
-    # - anthropic: APIStatusError.status_code
-    # - httpx en bruto: HTTPStatusError.response.status_code
-    code = getattr(exc, "code", None)
-    if not isinstance(code, int):
-        code = getattr(exc, "status_code", None)
-    if not isinstance(code, int):
-        response = getattr(exc, "response", None)
-        code = getattr(response, "status_code", None) if response is not None else None
-    if isinstance(code, int) and code in _RETRYABLE_STATUS:
-        return True
+    provider_message = provider_error_user_message(raw_error)
+    if provider_message is not None:
+        return provider_message
+    return f"{fallback} ({error_type})" if error_type else fallback
 
-    # Fallback: algunos SDKs envuelven el error en una excepción genérica con
-    # el código embebido en el mensaje. Es una red de seguridad, no la vía principal.
-    msg = str(exc).lower()
-    return any(marker in msg for marker in _RETRYABLE_MARKERS)
+
+def _llm_error_document_code(raw_error: str | None) -> DocumentErrorCode | None:
+    return provider_error_code(raw_error)
+
+
+def _langfuse_safe_status(raw_error: str | None) -> str | None:
+    """Texto seguro para Langfuse (sin contenido de documento ni nombre de fichero)."""
+    return provider_error_user_message(raw_error)
 
 
 def _anthropic_api_key_configured(settings: Settings) -> bool:
@@ -132,64 +103,53 @@ def _log_anthropic_failure(
     task: TaskType,
     model: str,
     tenant_id: str,
-    error: str,
     exc: BaseException | None,
 ) -> None:
-    """Log de error Anthropic muy visible en consola (classify / sql / chat con Claude)."""
+    """Log de error Anthropic muy visible en consola (classify / sql / chat con Claude).
+
+    Sin el mensaje de la excepción ni ``exc_info``: ver ``error_log_fields``.
+    """
     log = logger.bind(
         provider="anthropic",
         task=task,
         model=model,
         tenant_id=tenant_id,
-        error=error,
         hint=(
             "Revisa ANTHROPIC_API_KEY en Infisical. "
             "classify y sql usan Claude por defecto; chat usa Gemini salvo LLM_MODEL_CHAT."
         ),
     )
     if exc is not None:
-        log.error(event, exc_type=type(exc).__name__, exc_info=exc)
+        log.error(event, **error_log_fields(exc))
     else:
         log.error(event)
-
-
-def _log_transient_retry(
-    retry_state: RetryCallState,
-    *,
-    provider: str,
-    model: str,
-) -> None:
-    """Callback de tenacity: loguea reintentos; Anthropic con evento dedicado."""
-    exc = retry_state.outcome.exception() if retry_state.outcome else None
-    next_sleep = getattr(retry_state.next_action, "sleep", None)
-    payload = {
-        "provider": provider,
-        "model": model,
-        "attempt": retry_state.attempt_number,
-        "next_sleep_s": next_sleep,
-        "error": str(exc)[:200] if exc else None,
-    }
-    if provider == "anthropic":
-        logger.warning("anthropic_llm_retry", **payload)
-    else:
-        logger.warning("llm.retry_transient_error", **payload)
 
 
 # Router de modelos por defecto (arquitectura.md §8). Se puede sobreescribir
 # por entorno via LLM_MODEL_* en config.py sin tocar código.
 # - extraction / chat: Gemini Flash (GOOGLE_API_KEY); mismo proveedor que extracción.
 # - classify: Haiku es el modelo más económico de Anthropic para tareas simples.
-# - sql: Sonnet (ANTHROPIC_API_KEY) cuando exista módulo analytics.
+# - sql: RESERVADO. D011 — modulo 3 Analytics SQL / BI NO se implementara;
+#   la entrada permanece para no romper TaskType/overrides historicos, pero no
+#   hay rutas ni runners que la usen. No reactivar sin decision de producto.
 DEFAULT_MODELS: dict[str, str] = {
-    "extraction": "gemini-2.5-flash",
+    # gemini-3.8-flash con thinking_level=low (ver _google_thinking_config):
+    # medido en invoices_v1 (2026-09) p50 2,5 s y 98,3 % de precisión frente a
+    # 15,6 s / 96,7 % de gemini-2.5-flash con thinking dinámico.
+    "extraction": "gemini-3.8-flash",
     "classify": "claude-haiku-4-5-20251001",
-    "chat": "gemini-2.5-flash",
+    # gemini-3.5-flash-lite (D015): knowledge_qa_v1 al 100 % como 2.5-flash y
+    # 3.8-flash, mismo coste que 2.5-flash y familia 3.x. El chat conserva el
+    # thinking por defecto: con thinking bajo el modelo se salta tools.
+    "chat": "gemini-3.5-flash-lite",
     # "chat": "claude-sonnet-4-6",  # alternativa Anthropic; requiere ANTHROPIC_API_KEY
-    "sql": "claude-sonnet-4-6",
+    "sql": "claude-sonnet-4-6",  # D011: muerto a efectos de producto (ver comentario arriba).
     # "embedding" usa Voyage vía embed(); model_override en settings.knowledge_embedding_model.
     "embedding": "voyage-3-lite",
     # "transcription" usa Gemini audio nativo; Anthropic no soporta audio directo.
     "transcription": "gemini-2.5-flash",
+    # "translate" usa Gemini para traducción de texto.
+    "translate": "gemini-2.5-flash",
 }
 
 # TypeVar acotado a BaseModel: permite que complete() sea genérico y devuelva
@@ -228,14 +188,67 @@ def _extract_token_usage(raw: Any) -> tuple[int, int]:
         if p_t is not None or c_t is not None:
             return int(p_t or 0), int(c_t or 0)
 
-    # Formato Google Gemini: usage_metadata con prompt_token_count / candidates_token_count
+    # Formato Google Gemini: usage_metadata. Google factura el razonamiento
+    # (`thoughts_token_count`) como output, pero no lo incluye en
+    # `candidates_token_count`: sin sumarlo, el coste y el budget del plan se
+    # quedan cortos (~7x en extracción con thinking dinámico).
     um = getattr(raw, "usage_metadata", None)
     if um is not None:
-        return int(getattr(um, "prompt_token_count", None) or 0), int(
-            getattr(um, "candidates_token_count", None) or 0
+        output = int(getattr(um, "candidates_token_count", None) or 0) + int(
+            getattr(um, "thoughts_token_count", None) or 0
         )
+        return int(getattr(um, "prompt_token_count", None) or 0), output
 
     return 0, 0
+
+
+class _AttemptUsage:
+    """Suma los tokens de cada intento de Instructor, reintentos incluidos.
+
+    Instructor 1.15 solo acumula el uso entre reintentos para OpenAI y
+    Anthropic; con Gemini la respuesta final trae solo el último intento, y si
+    se agotan los reintentos no hay respuesta final. El hook
+    ``completion:response`` se emite con la respuesta de cada intento antes de
+    que Instructor sume el uso sobre ella, así que la foto se toma ahí.
+    """
+
+    def __init__(self) -> None:
+        self.attempts = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.hooks = Hooks()
+        self.hooks.on("completion:response", self._on_response)
+
+    def _on_response(self, response: Any) -> None:
+        in_t, out_t = _extract_token_usage(response)
+        self.attempts += 1
+        self.input_tokens += in_t
+        self.output_tokens += out_t
+
+
+# Tareas que no ganan calidad con el razonamiento del modelo y sí pagan su
+# latencia y coste. Medido en extracción (invoices_v1): con thinking dinámico
+# p50 15,6 s; con thinking mínimo ~2,5 s sin perder precisión.
+_LOW_THINKING_TASKS: frozenset[TaskType] = frozenset({"extraction"})
+
+
+def _google_thinking_config(task: TaskType, model: str) -> dict[str, Any] | None:
+    """Configuración de thinking para Gemini según tarea y familia de modelo.
+
+    Cada familia usa un parámetro distinto: Gemini 3.x `thinking_level` y
+    Gemini 2.5 Flash `thinking_budget` (0 lo desactiva). Los modelos Pro no
+    admiten desactivarlo, así que se dejan con su valor por defecto.
+
+    Returns:
+        Kwargs de `thinking_config` para Instructor, o None si no se toca.
+    """
+    if task not in _LOW_THINKING_TASKS:
+        return None
+    if model.startswith("gemini-3") and "-pro" not in model:
+        return {"thinking_level": "low"}
+    if model.startswith("gemini-2.5-flash"):
+        return {"thinking_budget": 0}
+    return None
 
 
 class LLMClient:
@@ -289,6 +302,7 @@ class LLMClient:
             "sql": self._settings.llm_model_sql,
             "embedding": None,
             "transcription": self._settings.llm_model_transcription,
+            "translate": self._settings.llm_model_translate,
         }
         model = overrides.get(task) or DEFAULT_MODELS[task]
         # Heurística de routing por prefijo de modelo:
@@ -304,17 +318,20 @@ class LLMClient:
     async def _call_sdk_once(
         self,
         *,
+        task: TaskType,
         provider: str,
         model: str,
         typed_messages: list[ChatCompletionMessageParam],
         response_model: type[T],
         max_retries: int,
+        hooks: Hooks | None = None,
     ) -> tuple[T, Any]:
         """Una sola llamada al SDK del proveedor. Sin reintentos de transporte.
 
         `max_retries` se propaga a Instructor para los reintentos de validación
         de schema (independientes de los reintentos por error HTTP que aplica
-        _invoke_sdk si el flag está activo).
+        _invoke_sdk si el flag está activo). `hooks` son hooks de Instructor
+        solo para esta llamada (p. ej. ``_AttemptUsage``).
         """
         if provider == "anthropic":
             # create_with_completion: método de Instructor que devuelve
@@ -329,9 +346,14 @@ class LLMClient:
                     messages=typed_messages,
                     response_model=response_model,
                     max_retries=max_retries,
+                    hooks=hooks,
                     max_tokens=4096,
                 ),
             )
+        extra: dict[str, Any] = {}
+        thinking_config = _google_thinking_config(task, model)
+        if thinking_config is not None:
+            extra["thinking_config"] = thinking_config
         return cast(
             tuple[T, Any],
             await self._google.chat.completions.create_with_completion(
@@ -339,17 +361,21 @@ class LLMClient:
                 messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                hooks=hooks,
+                **extra,
             ),
         )
 
     async def _invoke_sdk(
         self,
         *,
+        task: TaskType,
         provider: str,
         model: str,
         typed_messages: list[ChatCompletionMessageParam],
         response_model: type[T],
         max_retries: int,
+        hooks: Hooks | None = None,
     ) -> tuple[T, Any]:
         """Invoca el SDK, opcionalmente con reintentos para errores transitorios.
 
@@ -360,38 +386,32 @@ class LLMClient:
         """
         if not self._settings.llm_retry_transient_errors:
             return await self._call_sdk_once(
+                task=task,
                 provider=provider,
                 model=model,
                 typed_messages=typed_messages,
                 response_model=response_model,
                 max_retries=max_retries,
+                hooks=hooks,
             )
 
-        # reraise=True: tras agotar reintentos, vuelve a lanzar la excepción
-        # original tal cual, no la RetryError de tenacity. Mantiene la semántica
-        # del except externo en complete() (que ya sabe formatear errores SDK).
-        async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(self._settings.llm_retry_max_attempts),
-            wait=wait_exponential_jitter(
-                initial=1.0,
-                max=self._settings.llm_retry_max_wait_seconds,
+        # Tras agotar reintentos relanza la excepción original (no RetryError):
+        # mantiene la semántica del except externo en complete().
+        return await call_with_transient_retry(
+            lambda: self._call_sdk_once(
+                task=task,
+                provider=provider,
+                model=model,
+                typed_messages=typed_messages,
+                response_model=response_model,
+                max_retries=max_retries,
+                hooks=hooks,
             ),
-            retry=retry_if_exception(_is_retryable_provider_error),
-            before_sleep=lambda rs: _log_transient_retry(rs, provider=provider, model=model),
-            reraise=True,
-        ):
-            with attempt:
-                return await self._call_sdk_once(
-                    provider=provider,
-                    model=model,
-                    typed_messages=typed_messages,
-                    response_model=response_model,
-                    max_retries=max_retries,
-                )
-        # Unreachable: AsyncRetrying con reraise=True siempre devuelve dentro
-        # del `with attempt:` o re-lanza la excepción del último intento.
-        # Necesario para que mypy no se queje de "missing return".
-        raise RuntimeError("AsyncRetrying exited without yielding a result")
+            max_attempts=self._settings.llm_retry_max_attempts,
+            max_wait_seconds=self._settings.llm_retry_max_wait_seconds,
+            provider=provider,
+            model=model,
+        )
 
     async def complete(
         self,
@@ -424,7 +444,7 @@ class LLMClient:
                 "provider": provider,
             },
             model=model,
-            input=messages,
+            input=trace_messages(messages),
         )
 
         # cast solo informa a mypy del tipo esperado; no hace conversión en runtime.
@@ -436,18 +456,28 @@ class LLMClient:
         # el bloque finally los lee para persistir el LLMCall en cualquier caso.
         status = "ok"
         error: str | None = None
+        # error_type viaja a Langfuse; `error` (texto completo, puede contener
+        # la respuesta cruda del modelo) solo se persiste en llm_calls.
+        error_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         result: T | None = None
         raw: Any = None
         llm_call: LLMCall | None = None
+        usage = _AttemptUsage()
 
         try:
+            from app.services import entitlement_service, plan_quota_service
+
+            ents = await entitlement_service.resolve_tenant(db, tenant_id)
+            await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
+
             anthropic_key_missing = provider == "anthropic" and not _anthropic_api_key_configured(
                 self._settings
             )
             if anthropic_key_missing:
                 status = "error"
+                error_type = "configuration_error"
                 error = (
                     f"ANTHROPIC_API_KEY is not configured (task={task}, model={model}). "
                     "Set ANTHROPIC_API_KEY in Infisical or override LLM_MODEL_CLASSIFY / "
@@ -458,41 +488,52 @@ class LLMClient:
                     task=task,
                     model=model,
                     tenant_id=str(tenant_id),
-                    error=error,
                     exc=None,
                 )
             else:
                 try:
                     result, raw = await self._invoke_sdk(
+                        task=task,
                         provider=provider,
                         model=model,
                         typed_messages=typed_messages,
                         response_model=response_model,
                         max_retries=max_retries,
+                        hooks=usage.hooks,
                     )
-                    input_tokens, output_tokens = _extract_token_usage(raw)
+                    # Suma de todos los intentos (reintentos de Instructor
+                    # incluidos). Sin intentos registrados (SDK simulado en
+                    # tests), se usa la respuesta final.
+                    input_tokens, output_tokens = (
+                        (usage.input_tokens, usage.output_tokens)
+                        if usage.attempts
+                        else _extract_token_usage(raw)
+                    )
                 except Exception as exc:
+                    # Los intentos que llegaron a responder consumieron tokens
+                    # aunque la validación fallase: cuentan en coste y budget.
+                    input_tokens, output_tokens = usage.input_tokens, usage.output_tokens
                     status = "error"
                     # Truncado a 1000 chars: el error puede contener la respuesta
                     # completa del LLM si Instructor falla al parsear el schema.
                     error = str(exc)[:1000]
+                    error_type = type(exc).__name__
                     if provider == "anthropic":
                         _log_anthropic_failure(
                             event="anthropic_llm_call_failed",
                             task=task,
                             model=model,
                             tenant_id=str(tenant_id),
-                            error=error,
                             exc=exc,
                         )
                     else:
-                        logger.exception(
+                        logger.error(
                             "llm.complete_failed",
                             task=task,
                             model=model,
                             provider=provider,
                             tenant_id=str(tenant_id),
-                            error=error,
+                            **error_log_fields(exc),
                         )
         finally:
             # El bloque finally se ejecuta SIEMPRE: en éxito y en error.
@@ -521,12 +562,23 @@ class LLMClient:
             db.add(llm_call)
             await db.flush()
 
+            # También en error: un fallo con tokens procesados se paga igual
+            # (spec de planes §4.2). Errores sin tokens cuestan 0 y no suman.
+            if cost > 0:
+                from app.services import plan_quota_service
+
+                await plan_quota_service.record_llm_cost(
+                    db,
+                    tenant_id=tenant_id,
+                    cost_eur=cost,
+                )
+
             # update() + end() + flush(): secuencia Langfuse para cerrar el span
             # con los datos de resultado y enviarlo al servidor. flush() fuerza
             # el envío inmediato; sin él los datos podrían perderse si el proceso
             # termina antes del siguiente ciclo de envío en background.
             obs.update(
-                output=result.model_dump() if result is not None else None,
+                output=trace_result(result),
                 metadata={
                     "latency_ms": latency_ms,
                     "status": status,
@@ -534,16 +586,23 @@ class LLMClient:
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=error,
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=_langfuse_safe_status(error),
+                ),
             )
             obs.end()
             self._langfuse.flush()
 
         assert llm_call is not None
         if status == "error":
+            await alert_if_provider_billing_error(provider, error)
             raise LLMCompleteError(
-                _user_facing_llm_error(error) if error else "LLM call failed",
+                _safe_llm_error_message(error, error_type, "LLM call failed"),
                 llm_call_id=llm_call.id,
+                document_error_code=_llm_error_document_code(error),
+                raw_error=error,
             )
 
         assert result is not None
@@ -641,10 +700,16 @@ class LLMClient:
         started = time.perf_counter()
         status = "ok"
         error: str | None = None
+        error_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         transcript = ""
         llm_call: LLMCall | None = None
+
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
 
         try:
             audio_part = genai.types.Part.from_bytes(data=audio, mime_type=mime_type)
@@ -661,12 +726,13 @@ class LLMClient:
         except Exception as exc:
             status = "error"
             error = str(exc)[:1000]
-            logger.exception(
+            error_type = type(exc).__name__
+            logger.error(
                 "llm.transcribe_failed",
                 model=model,
                 tenant_id=str(tenant_id),
                 mime_type=mime_type,
-                error=error,
+                **error_log_fields(exc),
             )
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -688,22 +754,38 @@ class LLMClient:
             db.add(llm_call)
             await db.flush()
 
+            if status == "ok" and cost > 0:
+                from app.services import plan_quota_service
+
+                await plan_quota_service.record_llm_cost(
+                    db,
+                    tenant_id=tenant_id,
+                    cost_eur=cost,
+                )
+
             obs.update(
                 output={"transcript_chars": len(transcript)},
                 metadata={"latency_ms": latency_ms, "status": status},
                 usage_details={"input": input_tokens, "output": output_tokens},
                 cost_details={"total": float(cost)},
                 level=None if status == "ok" else "ERROR",
-                status_message=error,
+                status_message=trace_status_message(
+                    error_type=error_type,
+                    error=error,
+                    safe_message=_langfuse_safe_status(error),
+                ),
             )
             obs.end()
             self._langfuse.flush()
 
         assert llm_call is not None
         if status == "error":
+            await alert_if_provider_billing_error(provider, error)
             raise LLMCompleteError(
-                _user_facing_llm_error(error) if error else "Transcription failed",
+                _safe_llm_error_message(error, error_type, "Transcription failed"),
                 llm_call_id=llm_call.id,
+                document_error_code=_llm_error_document_code(error),
+                raw_error=error,
             )
 
         return transcript
@@ -734,6 +816,11 @@ class LLMClient:
         if not texts:
             return []
 
+        from app.services import entitlement_service, plan_quota_service
+
+        ents = await entitlement_service.resolve_tenant(db, tenant_id)
+        await plan_quota_service.ensure_llm_budget(db, ents, tenant_id)
+
         # Inicialización lazy: solo se crea el cliente Voyage cuando se necesita.
         if self._voyage_embedder is None:
             api_key = self._settings.voyage_api_key.get_secret_value().strip()
@@ -741,7 +828,7 @@ class LLMClient:
                 raise ExternalServiceError(
                     "VOYAGE_API_KEY is not configured. Add it in Infisical and restart the worker."
                 )
-            model = self._settings.knowledge_embedding_model
+            model = self._settings.resolved_knowledge_embedding_model
             dims = self._settings.knowledge_embedding_dimensions
             self._voyage_embedder = VoyageEmbedder(
                 api_key=api_key,
@@ -749,7 +836,7 @@ class LLMClient:
                 output_dimension=dims,
             )
 
-        model = self._settings.knowledge_embedding_model
+        model = self._settings.resolved_knowledge_embedding_model
         expected_dims = self._settings.knowledge_embedding_dimensions
 
         # Un trace_id compartido por todos los batches del mismo embed() call
@@ -777,6 +864,7 @@ class LLMClient:
             started = time.perf_counter()
             status = "ok"
             error: str | None = None
+            error_type: str | None = None
             batch_result = None
 
             try:
@@ -792,11 +880,13 @@ class LLMClient:
             except Exception as exc:
                 status = "error"
                 error = str(exc)[:1000]
-                logger.exception(
+                error_type = type(exc).__name__
+                logger.error(
                     "llm.embed_batch_failed",
                     batch_idx=batch_idx,
                     batch_size=len(batch),
                     tenant_id=str(tenant_id),
+                    **error_log_fields(exc),
                 )
                 raise
             finally:
@@ -821,6 +911,13 @@ class LLMClient:
                 )
                 await db.flush()
 
+                if status == "ok" and cost > 0:
+                    await plan_quota_service.record_llm_cost(
+                        db,
+                        tenant_id=tenant_id,
+                        cost_eur=cost,
+                    )
+
                 obs.update(
                     output={
                         "embeddings_count": len(batch_result.embeddings) if batch_result else 0
@@ -829,7 +926,11 @@ class LLMClient:
                     usage_details={"input": tokens_in, "output": 0},
                     cost_details={"total": float(cost)},
                     level=None if status == "ok" else "ERROR",
-                    status_message=error,
+                    status_message=trace_status_message(
+                        error_type=error_type,
+                        error=error,
+                        safe_message=_langfuse_safe_status(error),
+                    ),
                 )
                 obs.end()
                 self._langfuse.flush()

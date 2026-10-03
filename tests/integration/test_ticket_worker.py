@@ -49,7 +49,8 @@ async def test_process_ticket_persists_extraction_mock(
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    tenant: Tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fecha fija del pasado, D017).
+    tenant: Tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
 
     monkeypatch.setattr(
@@ -74,8 +75,10 @@ async def test_process_ticket_persists_extraction_mock(
         mime_type: str,
         tenant_id: UUID,
         db: AsyncSession,
+        source_filename: str | None = None,
+        max_pdf_pages: int | None = None,
     ) -> TicketExtractionResult:
-        _ = file_bytes, mime_type, tenant_id, db
+        _ = file_bytes, mime_type, tenant_id, db, source_filename, max_pdf_pages
         return TicketExtractionResult(
             ticket=TicketRecibo(
                 fecha=date(2025, 3, 10),

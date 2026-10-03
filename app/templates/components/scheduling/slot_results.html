@@ -1,0 +1,26 @@
+{% if error_message %}
+<p class="text-sm text-red-600">{{ error_message }}</p>
+{% elif slots_response %}
+  {% if slots_response.same_start_time_warning %}
+  <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+    Varios profesionales disponibles a la misma hora. Si prefieres uno concreto, prueba otra franja horaria.
+  </p>
+  {% endif %}
+  <ul class="space-y-2 text-sm">
+    {% for slot in slots_response.slots %}
+    <li class="rounded-lg border border-slate-200 px-3 py-2 flex justify-between items-center">
+      <span>
+        <strong>{{ slot.start | local_datetime('%d/%m %H:%M') }}</strong>
+        — {{ slot.professional_name }} ({{ slot.service_name }})
+      </span>
+      <button type="button"
+              class="text-primary-600 text-xs cursor-pointer"
+              onclick="const f=this.closest('form'); if(f){ const i=f.querySelector('[name=start_at]'); if(i){ i.value='{{ slot.start.strftime('%Y-%m-%dT%H:%M') }}'; } const p=f.querySelector('[name=professional_id]'); if(p){ p.value='{{ slot.professional_id }}'; } }">
+        Usar
+      </button>
+    </li>
+    {% else %}
+    <li class="text-slate-500">No hay huecos en el horizonte configurado.</li>
+    {% endfor %}
+  </ul>
+{% endif %}

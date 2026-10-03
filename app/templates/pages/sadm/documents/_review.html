@@ -1,0 +1,71 @@
+{# Fragmento HTMX: ficha de revisión de un documento rechazado (SADM). #}
+{% set doc = review.document %}
+<div id="document-review" class="space-y-6">
+
+  <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
+    <div class="flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h2 class="text-base font-semibold text-slate-900 truncate">
+          {{ doc.source_filename or "Documento sin nombre" }}
+        </h2>
+        <p class="text-sm text-slate-500">{{ doc.tenant_name }} · {{ doc.kind }}</p>
+      </div>
+      <a href="{{ review.file_url }}" target="_blank" rel="noopener"
+         class="btn-secondary shrink-0">Ver original</a>
+    </div>
+    <p class="text-sm text-red-700">{{ doc.error_message }}</p>
+  </div>
+
+  <div class="rounded-xl border border-amber-200 bg-amber-50 p-6 space-y-2">
+    <h3 class="text-sm font-semibold text-amber-900">Aviso de coste y tiempo</h3>
+    <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-amber-900 sm:grid-cols-4">
+      <div>
+        <dt class="text-xs text-amber-700">Páginas</dt>
+        <dd class="font-medium">{{ review.pages }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-amber-700">Tiempo estimado</dt>
+        <dd class="font-medium">{{ review.estimate.seconds }} s</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-amber-700">Coste de proveedor</dt>
+        <dd class="font-medium">{{ "%.4f"|format(review.estimate.provider_cost_eur) }} €</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-amber-700">A repercutir</dt>
+        <dd class="font-medium">{{ "%.2f"|format(review.estimate.billable_eur) }} €</dd>
+      </div>
+    </dl>
+    <p class="text-xs text-amber-700">
+      Estimación con {{ review.estimate.model }} sobre tokens medios por página; el cargo se
+      ajusta al coste real cuando termina la extracción.
+    </p>
+  </div>
+
+  {% if review.over_hard_limit %}
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    El documento supera el techo de procesado excepcional. Hay que dividirlo antes de procesarlo.
+  </div>
+  {% else %}
+  <form hx-post="/sadm/documents/{{ doc.kind }}/{{ doc.id }}/process"
+        hx-target="#document-review"
+        hx-swap="outerHTML"
+        hx-confirm="Se procesará saltándose los límites y se registrará el cargo. ¿Continuar?"
+        hx-indicator="#spinner-authorize"
+        class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+    <div>
+      <label for="reason" class="block text-xs font-medium text-slate-700 mb-1">
+        Motivo de la autorización
+      </label>
+      <input id="reason" type="text" name="reason" maxlength="300"
+             placeholder="Ej.: factura anual del cliente, acordado con soporte"
+             class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"/>
+    </div>
+    <div class="flex items-center gap-3">
+      <button type="submit" class="btn-primary">Procesar saltando límites</button>
+      <span id="spinner-authorize" class="htmx-indicator text-sm text-slate-400">…</span>
+    </div>
+  </form>
+  {% endif %}
+
+</div>

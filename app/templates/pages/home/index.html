@@ -22,7 +22,7 @@
     </div>
     <div class="card">
       <p class="text-sm text-slate-500">Plan</p>
-      <p class="text-3xl font-bold mt-2 capitalize">{{ tenant.plan if tenant else "—" }}</p>
+      <p class="text-3xl font-bold mt-2">{{ (tenant.plan_code or tenant.plan) | plan_label if tenant else "—" }}</p>
     </div>
   </div>
 

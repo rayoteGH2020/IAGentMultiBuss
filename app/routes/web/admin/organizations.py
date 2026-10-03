@@ -1,12 +1,11 @@
-"""SADM — gestión de organizaciones (Paso 50)."""
+"""SADM — organizaciones read-only (Paso05 / D005: identidades solo Clerk)."""
 
 from __future__ import annotations
 
-from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,23 +33,6 @@ async def list_organizations(
     )
 
 
-@router.post("", response_class=HTMLResponse)
-async def create_organization(
-    request: Request,
-    _admin: SuperAdmin,
-    name: Annotated[str, Form()],
-    db: AsyncSession = Depends(get_db_no_tenant),
-) -> HTMLResponse:
-    tenant = await admin_service.create_org_with_tenant(db, name.strip())
-    tenants = await admin_service.list_all_tenants(db)
-    return render(
-        request,
-        full="pages/sadm/organizations/index.html",
-        partial="pages/sadm/organizations/_list.html",
-        ctx={"tenants": tenants, "created": tenant},
-    )
-
-
 @router.get("/{tenant_id}/members", response_class=HTMLResponse)
 async def list_members(
     request: Request,
@@ -58,10 +40,11 @@ async def list_members(
     _admin: SuperAdmin,
     db: AsyncSession = Depends(get_db_no_tenant),
 ) -> HTMLResponse:
+    tenant = await admin_service.get_tenant(db, tenant_id)
     members = await admin_service.list_tenant_members(db, tenant_id)
     return render(
         request,
         full="pages/sadm/organizations/members.html",
         partial="pages/sadm/organizations/_members.html",
-        ctx={"members": members, "tenant_id": tenant_id},
+        ctx={"members": members, "tenant_id": tenant_id, "tenant": tenant},
     )

@@ -1,0 +1,43 @@
+{# Selector de inicio de cita: fecha + hora/minuto solo desde franjas del grid. #}
+{% if read_only and appointment %}
+<p class="text-sm">
+  <span class="text-slate-600">Inicio</span><br>
+  <span class="font-medium tabular-nums">{{ appointment.start_at | local_datetime(scheduling_timezone) }}</span>
+</p>
+{% else %}
+<div class="block text-sm"
+     x-data="appointmentStartPicker"
+     data-grid-times='{{ grid_times_by_weekday | tojson }}'
+     data-closed-dates='{{ closed_dates | tojson }}'
+     data-default-date="{{ appointment_default_date }}"
+     data-default-hour="{{ appointment_default_hour }}"
+     data-default-minute="{{ appointment_default_minute }}">
+  <span class="text-slate-600">Inicio</span>
+  <div class="mt-1 grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+    <input type="date" name="appointment_date" x-model="date" required
+           class="w-full rounded-lg border border-slate-300 px-3 py-2 tabular-nums">
+    <div class="inline-flex items-center gap-0.5">
+      <select x-model="hour" required
+              class="h-10 w-[3.5rem] cursor-pointer rounded-lg border border-slate-300 bg-white px-1.5 text-sm tabular-nums">
+        <template x-for="h in hourOptions" :key="h">
+          <option :value="h" x-text="h"></option>
+        </template>
+      </select>
+      <span class="select-none text-slate-300">:</span>
+      <select x-model="minute" required
+              class="h-10 w-[3.5rem] cursor-pointer rounded-lg border border-slate-300 bg-white px-1.5 text-sm tabular-nums">
+        <template x-for="m in minuteOptions" :key="m">
+          <option :value="m" x-text="m"></option>
+        </template>
+      </select>
+    </div>
+    <input type="hidden" name="start_time" :value="startTime">
+  </div>
+  <p x-show="!hasSlots" x-cloak class="mt-1 text-xs text-amber-700">
+    El centro está cerrado o no hay franjas disponibles en esta fecha.
+  </p>
+  <p x-show="closedDateSelected" x-cloak class="mt-1 text-xs text-red-600">
+    Esta fecha está marcada como cierre excepcional.
+  </p>
+</div>
+{% endif %}

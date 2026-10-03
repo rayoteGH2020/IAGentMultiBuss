@@ -34,13 +34,25 @@ def wa_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", _VERIFY_TOKEN)
     monkeypatch.setenv("WHATSAPP_APP_SECRET", _APP_SECRET)
     get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.routes.api.webhooks_whatsapp.claim_webhook_event",
+        AsyncMock(return_value=True),
+    )
+    # Paso03: por defecto el plan incluye el canal (tests legacy de enqueue).
+    ents = MagicMock()
+    ents.has = MagicMock(return_value=True)
+    monkeypatch.setattr(
+        "app.routes.api.webhooks_whatsapp.entitlement_service.resolve_tenant",
+        AsyncMock(return_value=ents),
+    )
     yield
     get_settings.cache_clear()
 
 
 @pytest.fixture
 def app_client() -> AsyncClient:
-    return AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test")
+    # Host permitido por SECURITY_ALLOWED_HOSTS (Infisical/dev).
+    return AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://localhost")
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +65,11 @@ def _sign(body: bytes, secret: str = _APP_SECRET) -> str:
     return f"sha256={sig}"
 
 
-def _wa_payload(phone_number_id: str = "123456789", message_text: str = "Hola") -> bytes:
+def _wa_payload(
+    phone_number_id: str = "123456789",
+    message_text: str = "Hola",
+    message_id: str = "wamid.test_msg_1",
+) -> bytes:
     payload = {
         "entry": [
             {
@@ -62,6 +78,7 @@ def _wa_payload(phone_number_id: str = "123456789", message_text: str = "Hola") 
                         "value": {
                             "messages": [
                                 {
+                                    "id": message_id,
                                     "type": "text",
                                     "from": "34600000001",
                                     "text": {"body": message_text},
@@ -135,8 +152,7 @@ async def test_webhook_post_enqueues_job(app_client: AsyncClient) -> None:
 
     with (
         patch(
-            "app.routes.api.webhooks_whatsapp.channel_integration_service"
-            ".get_integration_by_phone_number_id",
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
             new=AsyncMock(return_value=fake_integration),
         ),
         patch(
@@ -160,6 +176,7 @@ async def test_webhook_post_enqueues_job(app_client: AsyncClient) -> None:
     assert call_kwargs["channel"] == "whatsapp"
     assert call_kwargs["customer_identifier"] == "34600000001"
     assert call_kwargs["message_text"] == "Hola"
+    assert call_kwargs["provider_event_id"] == "wamid.test_msg_1"
 
 
 async def test_webhook_post_invalid_signature_returns_200_silently(
@@ -196,9 +213,142 @@ async def test_webhook_post_unknown_phone_number_id_returns_200(
 
     with (
         patch(
-            "app.routes.api.webhooks_whatsapp.channel_integration_service"
-            ".get_integration_by_phone_number_id",
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
             new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+            new=mock_enqueue,
+        ),
+    ):
+        async with app_client as client:
+            resp = await client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Signature-256": _sign(body),
+                },
+            )
+
+    assert resp.status_code == 200
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_webhook_post_production_rejects_unsigned_without_app_secret(
+    app_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En production sin WHATSAPP_APP_SECRET no se procesa el mensaje."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "")
+    monkeypatch.setenv("WEBHOOK_ALLOW_UNSIGNED", "false")
+    monkeypatch.setenv("CLERK_JWT_AZP_ALLOWLIST", "https://testserver")
+    get_settings.cache_clear()
+
+    body = _wa_payload()
+    mock_enqueue = AsyncMock()
+    fake_integration = _fake_integration("tenant_uuid")
+
+    with (
+        patch(
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
+            new=AsyncMock(return_value=fake_integration),
+        ),
+        patch(
+            "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+            new=mock_enqueue,
+        ),
+    ):
+        async with app_client as client:
+            resp = await client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+
+    assert resp.status_code == 503
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_webhook_post_dev_allow_unsigned_without_app_secret(
+    app_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En dev con WEBHOOK_ALLOW_UNSIGNED=true se acepta POST sin firma HMAC."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "")
+    monkeypatch.setenv("WEBHOOK_ALLOW_UNSIGNED", "true")
+    get_settings.cache_clear()
+
+    phone_number_id = "999111222"
+    body = _wa_payload(phone_number_id=phone_number_id)
+    mock_enqueue = AsyncMock(return_value="job_id_dev")
+    fake_integration = _fake_integration("tenant_uuid")
+
+    with (
+        patch(
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
+            new=AsyncMock(return_value=fake_integration),
+        ),
+        patch(
+            "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+            new=mock_enqueue,
+        ),
+    ):
+        async with app_client as client:
+            resp = await client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+
+    assert resp.status_code == 200
+    mock_enqueue.assert_awaited_once()
+
+
+async def test_webhook_post_body_too_large_does_not_enqueue(
+    app_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WEBHOOK_MAX_BODY_BYTES", "32")
+    get_settings.cache_clear()
+    body = _wa_payload(message_text="x" * 200)
+    mock_enqueue = AsyncMock()
+
+    with patch(
+        "app.routes.api.webhooks_whatsapp.enqueue_channel_message",
+        new=mock_enqueue,
+    ):
+        async with app_client as client:
+            resp = await client.post(
+                "/api/webhooks/whatsapp",
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Signature-256": _sign(body),
+                },
+            )
+
+    assert resp.status_code == 200
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_webhook_post_replay_same_message_id_skips_enqueue(
+    app_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.routes.api.webhooks_whatsapp.claim_webhook_event",
+        AsyncMock(return_value=False),
+    )
+    body = _wa_payload(message_id="wamid.replay")
+    mock_enqueue = AsyncMock()
+
+    with (
+        patch(
+            "app.services.channel_integration_service.get_integration_by_phone_number_id",
+            new=AsyncMock(return_value=_fake_integration("tenant_uuid")),
         ),
         patch(
             "app.routes.api.webhooks_whatsapp.enqueue_channel_message",

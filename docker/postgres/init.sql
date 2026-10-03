@@ -18,10 +18,12 @@
 --   - Compatibilidad con algunas versiones de Alembic que la referencian.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- pgcrypto: funciones de cifrado simérico (pgp_sym_encrypt / pgp_sym_decrypt).
+-- pgcrypto: funciones de cifrado simétrico (pgp_sym_encrypt / pgp_sym_decrypt).
 -- Necesaria para cifrar campos sensibles en BD (arquitectura.md §9):
---   - data_sources.connection_encrypted — credenciales de BD del cliente (módulo 3).
---   - Tokens OAuth de integraciones (WhatsApp Business, etc.).
+--   - Tokens OAuth de integraciones (WhatsApp Business, Google Calendar, etc.).
+-- D011 (2026-09-23): data_sources.connection_encrypted (modulo 3 Analytics /
+--   BI sobre BD externa) NO se implementara — decision de producto. No crear
+--   esa tabla ni reactivar el caso sin Decision_Log nueva.
 -- Sin esta extensión, los modelos que usen pgcrypto fallarían en runtime.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
