@@ -185,8 +185,9 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
 - **Extracción al subir (Instructor, `contract_extraction_v2`, D024):** parte contraria, fecha de firma, inicio de vigencia, vencimiento, cuota sin IVA (`importe_periodico`) con su `periodicidad`, importe total, `importe_anual` (calculado) e `iva_incluido`. Renovación automática, preaviso en días y **fecha límite de baja** se añaden con los avisos de contratos **[Post producto mínimo]** (Backlog P3-6).
 - **Avisos según el plan** (sección 2.2), con un trabajo programado diario. **[Post producto mínimo]** (Backlog P3-6).
 - **Cupo:** al 80 % y al 100 % de las altas, aviso. Al 100 %, el contrato queda pendiente de cupo (`status = quota_pending`).
+- **Estado actual (hecho 2026-10-03, bloque 5, `p82_contract_quota_01`):** altas reservadas al encolar y devueltas si el contrato no termina bien; borrar uno procesado no las devuelve. Carga inicial contada en el mes del alta durante toda la ventana. Tramos `CONTRACT_UPLOAD_PAGE_TIERS` (`30,60`) y máximo `contract_max_pages` rechazado en la subida. Archivo de activos lleno = rechazo con «marca primero el contrato anterior como sustituido»; activo = vigente, no fallido y no vencido. Duplicado por hash = rechazo (sin reutilizar la extracción). Botones «Marcar como sustituido» / «Volver a vigente» (auditados) y el chat excluye los sustituidos salvo que se pidan. Emails al 80 % y con el primer pendiente; avisos en la app con el bloque 7. La ampliación del SADM de la carga inicial solo vale dentro de su ventana; agotada, no se pasa al cupo mensual: se pide ampliación (la carga inicial de clientes nuevos será asistida). Detalles en D027.
 
-- **Estados (convención):** dos ejes separados. `status` = procesado del fichero por el LLM (`pending`, `processing`, `ready`, `failed`, `reviewed`, y `quota_pending` nuevo). `lifecycle` = estado del documento para el usuario (`active`, `replaced`, `archived`); el borrado es `deleted_at`. Los valores van en inglés; la UI los muestra en español con el filtro `status_label` (`app/core/status_labels.py`).
+- **Estados (convención):** dos ejes separados. `status` = procesado del fichero por el LLM (`pending`, `processing`, `ready`, `failed`, `reviewed`, y `quota_pending` nuevo). `lifecycle` = estado del documento para el usuario (`active`, `replaced`, `archived`); el borrado es `deleted_at`. Implementado en contratos (`p82`): `active` y `replaced`; `archived` y `deleted_at` llegan con el borrado diferido (P3-8). Los valores van en inglés; la UI los muestra en español con el filtro `status_label` (`app/core/status_labels.py`).
 
 ### 4.4 Chat documental y chat de conocimiento (dueño, en la app)
 - Cuenta **cada pregunta con su respuesta** en `chat_questions_per_month`, un único cupo mensual del tenant para los dos chats (D023).
@@ -267,7 +268,7 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
   - **80 %:** email al admin del tenant (una vez al mes). Alerta en SADM dentro de la app: pendiente (Backlog P2b-18).
   - **90 %:** el chat de la app responde con mensaje fijo sin llamar al modelo (contacto del admin, D020) y email al SADM (una vez al mes).
   - **100 %: tope duro** (`ensure_llm_budget`). Se bloquean las funciones que llaman al LLM y aparece un banner en todas las páginas del panel:
-    - Facturas y tickets pasan a pendientes (`status = quota_pending`, motivo `llm_budget`) y se procesan solos al renovarse el presupuesto (hecho, bloque 2, 2026-10-01). Contratos y pólizas siguen fallando con un mensaje reintentable hasta el bloque 5.
+    - Facturas y tickets pasan a pendientes (`status = quota_pending`, motivo `llm_budget`) y se procesan solos al renovarse el presupuesto (hecho, bloque 2, 2026-10-01). Los contratos también (hecho, bloque 5, 2026-10-03), y devuelven sus altas. Las pólizas siguen fallando con un mensaje reintentable (aparcadas).
     - El asistente de canales responderá con el mensaje fijo (Backlog P2b-17, fuera del producto mínimo).
     - Nada se pierde.
 - **Ampliación:**
@@ -417,9 +418,9 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 
 1. Seed: nuevos límites y valores de `members_max` (hecho, D022) y `llm_budget_eur_month` (hecho, D026). `analytics` en Premium se añade al retomar el analista (D018).
 2. ~~Registro de coste en `llm_calls` y presupuesto con aviso al 80 % y tope al 100 % + override en SADM.~~ Hecho (P2b-14, D019, D026). Falta la ampliación mensual del presupuesto (Backlog P2b-27).
-3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; conectado a facturas, tickets y reintentos (paso 4) y a las preguntas del chat (D023, bloque 4); falta en contratos (paso 5).
+3. `plan_quota_service` mensual: consumo atómico, devoluciones, persistencia y bolsa compensable. **Base hecha (D027):** `monthly_quota_service` + tabla `quota_usage`; conectado a facturas, tickets y reintentos (paso 4), a las preguntas del chat (D023, bloque 4) y a las altas de contratos (paso 5).
 4. ~~Cuotas en facturas y tickets (`quota_pending`).~~ Hecho (bloques 2 y 3, 2026-10-01, `p80_document_quota_01`): reserva al encolar y devolución si no termina bien, `quota_pending` con su job, hash SHA-256, avisos por email al 80 % y al primer pendiente, y reintentos al mes con máximo 3 por documento. Detalles en D027.
-5. Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash, borrado diferido y extracción.
+5. ~~Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash y extracción.~~ Hecho (bloque 5, 2026-10-03, `p82_contract_quota_01`). Fuera: borrado diferido y purga (Backlog P3-8) y renovación enlazada automática. Detalles en D027.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
 7. Usuarios (hecho, D022) e histórico (`history_months`, bloque 6).
 8. Interfaz de consumo y avisos.

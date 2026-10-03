@@ -37,6 +37,8 @@ git grep -n "TOKEN\\|PASSWORD\\|SECRET\\|API_KEY\\|Bearer"
 
 No documentar los valores encontrados.
 
+**Errores de configuracion al arrancar (corregido 2026-10-01, `001209e`):** `Settings` usa `hide_input_in_errors=True`. Antes, un `ValidationError` de pydantic (p. ej. una variable invalida en Infisical `prod`) imprimia los valores recibidos, incluido el principio de `APP_SECRET_KEY`, y acababa en los logs del contenedor. Ahora sale solo el motivo del validador. Lo vigila `tests/unit/test_config_activity_log.py::test_validation_errors_never_print_secret_values`.
+
 ## 3. Autenticacion y autorizacion
 
 Obligatorio:

@@ -41,6 +41,7 @@ No se reinicia la aplicacion. El codigo actual tiene suficiente estructura, segu
 | `Paso11_Despliegue_VPS.md` | Despliegue en VPS con Docker Compose + Caddy (D013). |
 | `Paso12_ConexionWa_Tel_Calendario.md` | Citas por WhatsApp/Telegram sobre el modulo interno de citas (D030). Pendiente, fuera del producto minimo. |
 | `PasosParaProduccion.md` | Checklist consolidada de go-live (variables, Clerk, infra, QA, rollback). |
+| `TestPM.md` | Pruebas de cada fila del cierre del producto minimo (automaticas, en dev y en prod); se amplia al cerrar cada fila. |
 
 ## Estado del repositorio observado
 

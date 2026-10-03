@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-01: `p81_chat_quota_01`; los bloques 5-7 pueden anadir migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-03: `p82_contract_quota_01`; los bloques 6-7 pueden anadir migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -402,6 +402,8 @@ WHERE request_id = '<uuid>' OR parent_request_id = '<uuid>'
 ORDER BY occurred_at;
 ```
 
+**Contratos (bloque 5, implementado 2026-10-03):** los cupos vienen del plan; `CONTRACT_UPLOAD_PAGE_TIERS` (por defecto `30,60`) solo se define para cambiar los tramos de altas por paginas. Un valor mal formado (umbrales no crecientes) impide arrancar.
+
 **Chat (D023, implementado 2026-10-01):** el cupo es `chat_questions_per_month` del plan; no hay variables que definir. El limite de ritmo por usuario usa los defaults (`CHAT_RATE_LIMIT_PER_MINUTE=10`, `CHAT_RATE_LIMIT_PER_HOUR=60`); definirlas solo para cambiarlos.
 
 - [ ] Borradas de Infisical `prod` (y `dev`) `CHAT_DAILY_MESSAGE_LIMIT` y `CHAT_USER_DAILY_MESSAGE_LIMIT`, si existen: ya no se usan (se ignoran, pero confunden).
@@ -500,7 +502,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-01: `p81_chat_quota_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-03: `p82_contract_quota_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -588,7 +590,7 @@ Detalle: `Paso10_QA_Release_Produccion.md`, `Paso07`.
 
 ### 11.4 Planes
 
-Se valida el comportamiento del codigo desplegado (`Planes_Entitlements.md`). Esta fase va despues de los bloques 2-7 del cierre del producto minimo (Backlog fila 9); lo que no se haya implementado de la spec va como gap en la Fase 13 y se tachan aqui sus casillas.
+Se valida el comportamiento del codigo desplegado (`Planes_Entitlements.md`). Esta fase va despues de los bloques 2-7 del cierre del producto minimo (Backlog fila 9); lo que no se haya implementado de la spec va como gap en la Fase 13 y se tachan aqui sus casillas. El detalle de que probar de cada fila del cierre (tests automaticos, pruebas en dev y en prod con sus consultas SQL) esta en `TestPM.md`; las casillas de abajo son el resumen.
 
 - [ ] Sidebar segun plan; URL directa a feature no incluida → denegada.
 - [ ] Cuota bloquea antes de gastar LLM.
@@ -624,7 +626,27 @@ SELECT used, extra FROM quota_usage
 WHERE tenant_id = '<tenant>' AND code = 'chat_questions_per_month'
   AND period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date;
 ```
-- [ ] Contratos (bloque 5): "Marcar como sustituido" libera el hueco de activo; un contrato de mas de 100 paginas se rechaza.
+- [ ] Contratos (bloque 5), con un tenant de prueba dado de alta hace mas de dos meses (fuera de la carga inicial) y overrides bajos en `/sadm/plans` (`contracts_active_max` = 2, `contract_uploads_per_month` = 3):
+  - Subir un contrato de 45 paginas → consume 2 altas. Subir uno de 1 pagina → 3 de 3. El siguiente queda "Pendiente de cupo" con el texto de altas de contratos.
+  - Con 2 contratos vigentes, subir un tercero → "Has llegado al maximo de 2 contratos vigentes... marca primero el contrato anterior como sustituido", sin fila nueva.
+  - Desplegar el detalle de un contrato procesado → "Marcar como sustituido" → la fila muestra "Sustituido" y ya se puede subir otro. "Volver a vigente" con el archivo lleno → mensaje de que no hay hueco.
+  - En el chat, "¿que contratos tengo con <parte>?" no lista el sustituido; "¿y los anteriores?" si.
+  - Volver a subir el mismo fichero → "ya esta subido como contrato".
+  - Un PDF de mas de 100 paginas → "tu plan admite contratos de hasta 100 paginas", sin fila nueva.
+  - En `/sadm/plans/tenants/{id}` de ese tenant, ampliar "Altas de contratos en la carga inicial" → "terminó el ...". En un tenant recien creado, la pagina muestra "En carga inicial de contratos hasta el ..." y ampliar "Altas de contratos al mes" se rechaza.
+  - Comprobar altas y huecos (las altas deben coincidir con la suma de `upload_units` de los contratos con reserva):
+
+```sql
+SELECT code, period, used, extra FROM quota_usage
+WHERE tenant_id = '<tenant>' AND code LIKE 'contract_uploads%';
+
+SELECT lifecycle, status, quota_code, quota_period, upload_units, page_count, fecha_fin
+FROM contracts WHERE tenant_id = '<tenant>' ORDER BY created_at;
+
+SELECT action, created_at FROM audit_log
+WHERE tenant_id = '<tenant>' AND action IN ('contract.replaced', 'contract.reactivated')
+ORDER BY created_at DESC;
+```
 - [ ] Historico (bloque 6): en Basico no se ven facturas ni tickets de hace mas de 12 meses.
 - [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de cada cupo.
 - [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).

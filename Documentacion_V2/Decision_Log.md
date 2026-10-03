@@ -493,7 +493,7 @@ Motivo:
 Consecuencia:
 
 - Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
-- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`) y 4 chat D023 (2026-10-01, `p81_chat_quota_01`); pendientes 5 contratos, 6 `history_months`, 7 consumo en "Mi cuenta".
+- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`) 4 chat D023 (2026-10-01, `p81_chat_quota_01`) y 5 contratos (2026-10-03, `p82_contract_quota_01`); pendientes 6 `history_months` y 7 consumo en "Mi cuenta".
 
 Detalles de implementacion de los bloques 2 y 3 (aprobados 2026-10-01):
 
@@ -512,6 +512,29 @@ Ademas:
 - La fila "Pendiente de cupo" no hace polling: se ve procesada al recargar el panel.
 - `documents_per_day` se mantiene (50 / 200 / 800) como freno contra scripts y deja de mostrarse en "Mi cuenta". `document_retries_per_day` sale del catalogo (`p80`), pero el codigo sigue siendo valido para no romper overrides antiguos.
 - Corregido de paso un fallo previo: confirmar el tipo sugerido (factura ↔ ticket) llamaba a `dismiss_from_panel`, que solo admite documentos fallidos, y el documento original estaba pendiente; el cambio de tipo fallaba. Ahora el original se oculta directamente y el hash pasa al documento nuevo.
+
+Detalles de implementacion del bloque 5, contratos (aprobados 2026-10-02, hecho 2026-10-03, `99132d3`, `p82_contract_quota_01`):
+
+1. **Altas reservadas al encolar y devueltas si el contrato no termina bien** (fallo, extraccion inservible, abandono por atasco, presupuesto de IA agotado), como en el bloque 2. **Borrar un contrato procesado nunca devuelve sus altas** (spec §4.3); uno que no termino, si.
+2. **Activo** = `lifecycle` `active`, no fallido, no oculto y no vencido (`fecha_fin` vacia o de hoy en adelante). Un contrato vencido libera su hueco solo. Los pendientes y en proceso tambien ocupan hueco, para no pasarse con subidas simultaneas.
+3. **Archivo de activos lleno = rechazo en la subida**, sin R2 ni LLM ni altas, con "Si es una renovacion, marca primero el contrato anterior como sustituido". Las altas, reintentos y reactivaciones se serializan por tenant con un bloqueo transaccional.
+4. **Carga inicial:** durante la ventana (`initial_load_window_end`) se consume `contract_uploads_first_period`, contado siempre en el mes del alta aunque la ventana abarque dos meses; sustituye al mensual. Despues, `contract_uploads_per_month`. Los mensajes de pendiente dan como fecha el dia siguiente al fin de la ventana (el dia 1 intermedio no trae altas nuevas).
+   - **Ampliacion del SADM (2026-10-03):** la de la carga inicial solo se admite dentro de la ventana y va al mes del alta; la de altas mensuales solo fuera de ella. Cada una se rechaza con un mensaje que indica cual ampliar. Fuera de la ventana, la carga inicial deja de aparecer en los cupos del SADM.
+   - **Agotar la carga inicial antes de tiempo (2026-10-03):** no se pasa al cupo mensual. A los clientes nuevos se les ayudara con su carga inicial (la mayor parte de su documentacion historica); si necesitan mas, piden ampliacion al SADM.
+5. **Tramos por paginas configurables** (`CONTRACT_UPLOAD_PAGE_TIERS`, por defecto `30,60`): 1 + numero de umbrales que superan sus paginas; una imagen cuenta como 1 pagina. Maximo `contract_max_pages` del plan (100), con `DOCUMENT_OVERRIDE_MAX_PDF_PAGES` como techo; por encima se rechaza en la subida sin R2 ni LLM. Antes de este bloque los contratos usaban el tope de facturas (3 paginas).
+6. **Chat:** `search_documents` y `aggregate_documents` excluyen los contratos sustituidos salvo `incluir_sustituidos=true`; `ContractRead` incluye `lifecycle`. Riesgo: cambia la respuesta de las tools de contratos; las evals de chat lo validan en CI.
+7. **"Marcar como sustituido" / "Volver a vigente"** en el detalle del contrato procesado, con `hx-confirm`; reactivar comprueba el hueco. Las dos acciones se auditan (`contract.replaced`, `contract.reactivated`). Etiqueta "Sustituido" en la fila.
+8. **Duplicado por hash** de un contrato existente (vigente o sustituido) = rechazo; un fallido no oculto apunta a "Reintentar". No se reutiliza la extraccion (la spec lo plantea con borrado diferido, P3-8).
+
+Ademas:
+
+- Sin altas → `quota_pending` (mismo job `process_quota_pending`, que encola contratos). Una bolsa sin hueco no frena a la otra: cada bolsa conserva el orden de llegada.
+- Emails al admin `contracts_warning` (80 %) y `contracts_exhausted` (primer pendiente), deduplicados como los de documentos.
+- Presupuesto de IA agotado → el contrato pasa a `quota_pending` (motivo `llm_budget`) y devuelve sus altas, como facturas y tickets. Las polizas siguen igual (aparcadas).
+- Reintentar un contrato exige hueco de activo y vuelve a reservar sus altas; sin altas se rechaza sin gastar el reintento.
+- Job `process_contract` con timeout de 600 s; un contrato no se da por interrumpido hasta 660 s (las facturas, 180 s), para no ofrecer "Reintentar" sobre una extraccion larga en curso. Se mide en dev cuanto tarda un contrato de 80-100 paginas; el procesamiento en batch para la carga inicial queda para despues del producto minimo (Backlog P3-9).
+- El procesado excepcional del SADM no reserva altas ni comprueba el archivo de activos.
+- Los contratos anteriores a `p82` no tienen hash ni paginas (no se recalculan); cuentan como activos segun la regla del punto 2.
 
 ## D028 - Tailwind 3.4 como version vigente; migracion a v4 despues del producto minimo
 
