@@ -375,9 +375,34 @@ SELECT p.code, pe.limit_value FROM plan_entitlements pe JOIN plans p ON p.id = p
 WHERE pe.kind = 'limit' AND pe.code = 'history_months' ORDER BY p.code;
 ```
 
-## Fila 7 — Consumo en «Mi cuenta» (bloque 7)
+## Fila 7 — Consumo en «Mi cuenta» (bloque 7, `17e0975`)
 
-Pendiente de implementar. Previsto: «X de Y» del mes de cada cupo (facturas + tickets, reintentos, preguntas de chat, altas de contratos) y avisos al 80 % y al 100 % dentro de la app.
+**[auto]**
+
+```powershell
+infisical run -- uv run pytest tests/integration/test_quota_status.py tests/unit/test_quota_status_units.py tests/unit/test_settings_profile_plan.py tests/unit/test_plan_usage_and_channel_slots.py tests/integration/test_chat_web.py tests/integration/test_sadm_plan_routes.py -q
+```
+
+Cubre: niveles y porcentaje (80 % aviso, 100 % agotado, tope 0 = no incluido); «X de Y» de la bolsa de facturas y tickets con desglose y ampliación del SADM; altas de contratos en carga inicial o mensual; contratos vigentes; avisos de `/documents` al 80 % y al 100 % y con el archivo de contratos lleno; `/chat` solo al 100 %; un fallo al calcular los avisos no hace caer la página; uso de IA en % y sin euros; marca «≥ 80 %» / «100 %» del SADM; colores de las barras.
+
+**[dev]** — tenant de prueba con overrides bajos en `/sadm/plans/tenants/{id}`: `invoices_per_month` = 5, `tickets_per_month` = 0, `chat_questions_per_month` = 2.
+
+- [ ] «Mi cuenta» muestra «Consumo del mes» con facturas y tickets, reintentos, preguntas al chat, altas de contratos (con «carga inicial» si el tenant es nuevo) y contratos vigentes, cada uno con «se renueva el …». El uso de IA sale en % y en ninguna parte de la página aparece «€».
+- [ ] Subir 4 facturas → `/documents` muestra el aviso ámbar «Has usado 4 de 5 facturas y tickets…» sin recargar. La 5.ª → aviso rojo «Has agotado…»; la 6.ª queda «Pendiente de cupo».
+- [ ] Ampliar el cupo en 5 desde el SADM → al recargar, «Mi cuenta» muestra el tope 10 y el aviso pasa a ámbar o desaparece.
+- [ ] Hacer 2 preguntas en el chat → al recargar `/chat`, aviso rojo «Has usado las 2 preguntas de este mes…». Con 1 de 2 no hay aviso.
+- [ ] `/sadm/plans` marca el tenant con «100 %» (o «≥ 80 %»); un tenant sin consumo no lleva marca.
+- [ ] Con override `contracts_active_max` = 1 y un contrato vigente, `/documents` muestra «Tienes 1 contratos vigentes, el máximo de tu plan…».
+
+```sql
+SELECT code, period, used, extra FROM quota_usage
+WHERE tenant_id = '<tenant>' AND period = date_trunc('month', now() AT TIME ZONE 'Europe/Madrid')::date
+ORDER BY code;
+```
+
+**[prod]**
+
+- [ ] «Mi cuenta» del tenant piloto muestra el consumo del mes sin euros y la lista de `/sadm/plans` carga sin errores con todos los tenants (una consulta por tenant; revisar el tiempo de carga si hay muchos).
 
 ## Fila 8 — Cierre del código
 

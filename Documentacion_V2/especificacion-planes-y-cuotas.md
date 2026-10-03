@@ -380,7 +380,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 - `refund(event_id)`.
 - **Bolsa compensable:** un límite virtual `documents_per_month = invoices_per_month + tickets_per_month`.
 - **Presupuesto:** `consume_budget(tenant_id, cost_eur)` después de cada llamada, y `check_budget()` antes de las llamadas caras.
-- **Interfaz:** un componente Jinja con barras de consumo y banners al 80 % y al 100 % (HTMX).
+- **Interfaz:** un componente Jinja con barras de consumo y banners al 80 % y al 100 % (HTMX). **Hecho (bloque 7, 2026-10-03):** `quota_status_service`; consumo del mes en «Mi cuenta» (uso de IA solo en %), avisos en `/documents` (80 % y 100 %) y `/chat` (100 %), marca en la lista de tenants del SADM. Detalles en D027.
 
 ---
 
@@ -424,7 +424,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 5. ~~Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash y extracción.~~ Hecho (bloque 5, 2026-10-03, `p82_contract_quota_01`). Fuera: borrado diferido y purga (Backlog P3-8) y renovación enlazada automática. Detalles en D027.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
 7. Usuarios (hecho, D022) e histórico (hecho, bloque 6, `p83_history_months_01`; pendiente la decisión sobre documentos que nacen fuera del histórico, D017).
-8. Interfaz de consumo y avisos.
+8. ~~Interfaz de consumo y avisos.~~ Hecho (bloque 7, 2026-10-03).
 9. Trabajos programados: reinicio de periodos y purga de contratos borrados (los avisos de contratos, post producto mínimo).
 10. Asistente: cuotas de mensajes y recordatorios, anti-abuso, corte por presupuesto (P2b-17), límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales). Requisito previo: conectar las citas del canal al módulo interno (`Paso12`, D030). **[Post producto mínimo]**: WhatsApp/Telegram quedan fuera del soft launch. El conocimiento en el prompt es una optimización no comprometida (P2b-22).
 11. Analista de datos (Premium). **[Post producto mínimo, D018]**

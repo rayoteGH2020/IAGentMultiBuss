@@ -505,7 +505,16 @@ Motivo:
 Consecuencia:
 
 - Bloque 1 (hecho): `app/core/billing_period.py`; tabla `quota_usage` (migracion `p77_quota_usage_01`, RLS, `saas_app` sin DELETE ni TRUNCATE) con los limites mensuales en el catalogo; `monthly_quota_service` (consumo atomico por bolsa con `pg_advisory_xact_lock`, bolsa facturas + tickets, devoluciones, ampliacion del mes); `plan_change_service` + cron `apply_scheduled_plan_changes` (el plan nuevo rige por lectura desde las 00:00 del dia 1); SADM `/sadm/plans/tenants/{id}` con cupos del mes, ampliacion y cambio programado.
-- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`) 4 chat D023 (2026-10-01, `p81_chat_quota_01`) y 5 contratos (2026-10-03, `p82_contract_quota_01`); pendientes 6 `history_months` y 7 consumo en "Mi cuenta".
+- Los limites mensuales estan en el catalogo y cada bloque los activa y retira el diario correspondiente: **aplicados** 2 facturas/tickets + `quota_pending` y 3 reintentos (2026-10-01, `p80_document_quota_01`) 4 chat D023 (2026-10-01, `p81_chat_quota_01`) 5 contratos (2026-10-03, `p82_contract_quota_01`), 6 `history_months` (2026-10-03, `p83_history_months_01`) y 7 consumo en "Mi cuenta" (2026-10-03, `17e0975`, sin migracion).
+
+Detalles del bloque 7, consumo y avisos en la app (aprobados 2026-10-03):
+
+1. "Mi cuenta" muestra "X de Y", barra y fecha de renovacion de: facturas y tickets (una barra, la bolsa, con el desglose), reintentos, preguntas al chat, altas de contratos (carga inicial con su fin o mensual) y contratos vigentes. Las ampliaciones del SADM suben el tope. Un cupo a 0 (no incluido) no se muestra.
+2. Presupuesto de IA solo en porcentaje ("Uso de IA del mes: 35 %"): los euros dejaban ver el coste interno.
+3. Avisos en la pagina donde se consume, para todos los usuarios: `/documents` al 80 % y al 100 % (facturas y tickets, altas de contratos) y con el archivo de contratos vigentes lleno; se refrescan con el fragmento HTMX del panel. `/chat` solo al 100 % (tope tecnico, spec §4.4). Un fallo al calcularlos nunca hace caer la pagina (savepoint + log).
+4. Barras con los mismos umbrales que los avisos: ambar desde el 80 %, roja al 100 % (antes 70 % / 90 %).
+5. SADM: marca "≥ 80 %" / "100 %" por tenant en `/sadm/plans` (presupuesto de IA o algun cupo mensual; P2b-18).
+6. Sin migracion ni cache: se calcula al cargar la pagina (`quota_status_service`).
 
 Detalles de implementacion de los bloques 2 y 3 (aprobados 2026-10-01):
 

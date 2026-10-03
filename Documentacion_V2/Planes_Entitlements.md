@@ -93,6 +93,7 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 - Reintentos (bloque 3): `document_retries_per_month` y maximo 3 por documento (`manual_retry_count`, "Revision manual" en el panel). Los fallos que no causa el usuario no gastan reintento.
 - Chat (bloque 4, D023): `chat_questions_per_month` en `chat_service._run_assistant_turn` (se devuelve si el proveedor falla); al 100 %, respuesta fija sin LLM con renovacion y contacto del admin. Limite de ritmo por usuario y tenant en `plan_quota_service.ensure_chat_rate`.
 - Presupuesto de IA (D019, D026): email al admin al 80 %, corte del chat y email al SADM al 90 %, bloqueo de toda la IA al 100 % (`ensure_llm_budget`).
+- Consumo y avisos en la app (bloque 7): `quota_status_service`. "Mi cuenta" con "X de Y" de cada cupo mensual y el uso de IA en %; avisos al 80 % / 100 % en `/documents` y al 100 % en `/chat`; marca "≥ 80 %" / "100 %" por tenant en `/sadm/plans`.
 - SADM `/sadm/plans`: assign + override permanente (`entitlements_override`) + ampliacion de un cupo solo para el mes en curso (`quota_usage.extra`, auditada). El presupuesto de IA no tiene ampliacion mensual: solo override permanente (Backlog P2b-27).
 - Unico punto de cambio de plan: SADM (ningun rol de tenant, D016). La primera asignacion es inmediata; las siguientes se programan para el dia 1 del mes siguiente (`plan_change_service` + cron `apply_scheduled_plan_changes`, D027).
 - Historial: `tenant_plan_changes`.

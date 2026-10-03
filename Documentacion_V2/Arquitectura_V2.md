@@ -266,6 +266,8 @@ Cupo de facturas y tickets (D027, bloques 2 y 3): `document_quota_service` reser
 
 Contratos (D027, bloque 5): el mismo servicio reserva las altas del contrato (1 a 3 segun sus paginas) en la bolsa de carga inicial o en la mensual; `contract_quota_service` decide la bolsa, los tramos y el hueco en el archivo de activos (`contracts_active_max`), y gestiona "Marcar como sustituido" / "Volver a vigente" (`contracts.lifecycle`).
 
+Consumo y avisos (D027, bloque 7): `quota_status_service` lee `quota_usage`, el archivo de contratos y `usage_meter` para "Mi cuenta", los avisos de `/documents` y `/chat` y la marca del SADM; nunca hace caer la pagina.
+
 Historico visible (D017, bloque 6): `document_history_service` calcula el primer dia visible segun `history_months` y da las condiciones SQL de facturas, tickets y contratos. El panel (`document_panel_service`) y las consultas del chat (`document_query_service`) las aplican; nada se borra.
 
 Cada worker de procesado revalida feature de plan y puede devolver `skipped` / `plan_required` sin gastar LLM.

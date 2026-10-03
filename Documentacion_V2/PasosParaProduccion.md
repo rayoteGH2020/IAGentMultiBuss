@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-03: `p83_history_months_01`; el bloque 7 puede anadir migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-03: `p83_history_months_01`, head final del cierre del producto minimo salvo cambios en la fila 8).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -652,7 +652,7 @@ ORDER BY created_at DESC;
   - Volver a subir el mismo fichero → "ya esta subido... Queda fuera de los 12 meses de historico de tu plan".
   - Pasar el tenant a Avanzado (o override `history_months` = 36) → vuelve a verse.
   - Un contrato vigente con fecha de inicio antigua se ve siempre; uno vencido hace mas de 12 meses, no.
-- [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de cada cupo.
+- [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de facturas y tickets (con desglose), reintentos, preguntas, altas de contratos y contratos vigentes, con la fecha de renovacion, y el uso de IA en % sin euros. Con un override bajo (p. ej. `invoices_per_month` = 5 y 4 subidas), `/documents` muestra el aviso ambar del 80 % y, al llegar a 5, el rojo; `/chat` avisa solo con las preguntas agotadas; la lista de `/sadm/plans` marca ese tenant con "≥ 80 %" o "100 %".
 - [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).
 
 ### 11.5 Canales, calendario y billing (solo si entran en el alcance)
