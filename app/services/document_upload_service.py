@@ -232,6 +232,9 @@ async def _ingest_uploaded_document(
 
     if doc_type in {DocTypeCode.factura, DocTypeCode.ticket}:
         quota_ents = ents or await entitlement_service.resolve_tenant(db, tenant_id)
+        _reject_if_outside_history(
+            verification, quota_ents, tenant_id=tenant_id, filename=filename, doc_type=doc_type
+        )
         ingest = _ingest_invoice if doc_type == DocTypeCode.factura else _ingest_ticket
         return await ingest(
             db,
@@ -285,6 +288,40 @@ async def _ingest_uploaded_document(
         )
 
     raise ValidationError(f"Unsupported document type: {doc_type.value!r}")
+
+
+def _reject_if_outside_history(
+    verification: document_classification.TypeVerificationResult | None,
+    ents: Entitlements,
+    *,
+    tenant_id: UUID,
+    filename: str,
+    doc_type: DocTypeCode,
+) -> None:
+    """Factura o ticket con fecha de emisión anterior al histórico del plan (D017).
+
+    La fecha sale del texto del PDF o de la clasificación, sin extraer: se rechaza
+    como un duplicado, antes de R2, del cupo y de la extracción.
+    """
+    issue_date = verification.issue_date if verification is not None else None
+    since = document_history_service.visible_from_for(ents)
+    if issue_date is None or since is None or issue_date >= since:
+        return
+    logger.info(
+        "document_ingest.outside_history",
+        tenant_id=str(tenant_id),
+        doc_type=doc_type.value,
+        issue_date=issue_date.isoformat(),
+    )
+    raise UploadValidationError(
+        document_history_service.outside_history_upload_message(
+            filename=filename,
+            kind_label="una factura" if doc_type == DocTypeCode.factura else "un ticket",
+            issue_date=issue_date,
+            months=document_history_service.history_months(ents),
+            since=since,
+        )
+    )
 
 
 async def _ingest_contract(

@@ -9,11 +9,21 @@
 
 Se calcula al leer: nada se borra y, si el tenant sube de plan, lo oculto vuelve a
 verse. Se aplica al panel y al chat; no al export RGPD, al SADM ni a los cupos.
+
+**Documentos que ya nacen fuera del histórico** (facturas y tickets, decisión
+2026-10-03): solo se procesa lo que entra en el histórico del plan.
+
+- En la subida, si la fecha de emisión se conoce sin extraer (texto del PDF o la
+  misma llamada de clasificación), se rechaza como un duplicado: sin R2, cupo ni
+  extracción (``outside_history_upload_message``).
+- Si no se conocía, tras la extracción: error visible ``outside_history``, sin
+  reintento ni procesado del SADM, y se devuelve el cupo
+  (``reject_if_outside_history``).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import structlog
 from sqlalchemy import Date, and_, cast, func, literal, or_, select
@@ -94,6 +104,75 @@ async def ensure_visible(
     found = await db.scalar(select(literal(True)).where(identity, visible))
     if not found:
         raise NotFoundError(f"Document {document_id} not found")
+
+
+def outside_history_upload_message(
+    *, filename: str, kind_label: str, issue_date: date, months: int | None, since: date
+) -> str:
+    """Rechazo en la subida de un documento anterior al histórico del plan."""
+    return (
+        f'"{filename}" es {kind_label} del {issue_date.strftime("%d/%m/%Y")}: tu plan procesa '
+        f"documentos de los últimos {months} meses (desde el {since.strftime('%d/%m/%Y')}). "
+        "No se ha subido ni consume cupo."
+    )
+
+
+async def reject_if_outside_history(
+    db: AsyncSession,
+    document: Invoice | Ticket,
+    *,
+    issue_date: date | None,
+    llm_call_id: UUID | None,
+) -> bool:
+    """Tras la extracción: si la fecha es anterior al histórico, error definitivo.
+
+    Devuelve el cupo reservado y cierra el intento como fallido. True si se rechazó.
+    """
+    if issue_date is None:
+        return False
+    since = await visible_from(db, document.tenant_id)
+    if since is None or issue_date >= since:
+        return False
+
+    from app.core.document_processing_errors import DocumentErrorCode, rejection_message
+    from app.models import InvoiceStatus, TicketStatus
+    from app.models.document_processing_attempt import ProcessingAttemptStatus
+    from app.services import document_processing_service, document_quota_service
+
+    kind: Literal["invoice", "ticket"]
+    if isinstance(document, Invoice):
+        kind = "invoice"
+        document.status = InvoiceStatus.failed
+    else:
+        kind = "ticket"
+        document.status = TicketStatus.failed
+    document.error_code = DocumentErrorCode.outside_history.value
+    document.error_message = rejection_message(
+        DocumentErrorCode.outside_history,
+        filename=document.source_filename,
+        detail=(
+            f"fecha del documento {issue_date.strftime('%d/%m/%Y')}; tu plan procesa "
+            f"desde el {since.strftime('%d/%m/%Y')}"
+        ),
+    )
+    await document_quota_service.release_reservation(db, document)
+    await document_processing_service.finalize_processing_attempt(
+        db,
+        tenant_id=document.tenant_id,
+        document_kind=kind,
+        document_id=document.id,
+        status=ProcessingAttemptStatus.failed,
+        llm_call_id=llm_call_id,
+        error_message=document.error_message,
+        error_code=document.error_code,
+    )
+    logger.info(
+        "document_history.outside_history_after_extraction",
+        tenant_id=str(document.tenant_id),
+        document_kind=kind,
+        document_id=str(document.id),
+    )
+    return True
 
 
 def hidden_message(months: int | None) -> str:

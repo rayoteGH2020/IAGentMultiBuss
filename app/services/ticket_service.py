@@ -208,6 +208,13 @@ async def apply_extraction_result(
         await db.flush()
         return ticket
 
+    # Fecha anterior al histórico del plan sin detectar en la subida (D017).
+    if await document_history_service.reject_if_outside_history(
+        db, ticket, issue_date=recibo.fecha, llm_call_id=llm_call_id
+    ):
+        await db.flush()
+        return ticket
+
     ticket.fecha = recibo.fecha
     ticket.comercio = recibo.comercio[:300]
     ticket.numero_ticket = recibo.numero_ticket[:100] if recibo.numero_ticket else None

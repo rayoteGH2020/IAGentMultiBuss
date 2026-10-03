@@ -1,7 +1,6 @@
 """Schema de clasificación de tipo documental (Instructor / LLM)."""
 
-from __future__ import annotations
-
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -20,4 +19,17 @@ class DocumentTypeClassification(BaseModel):
     )
     reason: str = Field(
         description="Breve justificación basada en el contenido visible",
+    )
+    fecha_emision: date | None = Field(
+        default=None,
+        description=(
+            "Fecha de emisión del documento (no la de vencimiento, pago ni servicio). "
+            "null si no se lee con claridad"
+        ),
+    )
+    fecha_confianza: float = Field(
+        default=0,
+        ge=0,
+        le=1,
+        description="Confianza en que fecha_emision es correcta y es la de emisión",
     )

@@ -328,6 +328,13 @@ async def apply_extraction_result(
         await db.flush()
         return invoice
 
+    # Fecha anterior al histórico del plan sin detectar en la subida (D017).
+    if await document_history_service.reject_if_outside_history(
+        db, invoice, issue_date=factura.fecha, llm_call_id=llm_call_id
+    ):
+        await db.flush()
+        return invoice
+
     invoice.fecha = factura.fecha
     # Truncados a límites de columna. Los valores vienen del LLM y pueden ser
     # arbitrariamente largos si el modelo extrae texto de contexto adicional.

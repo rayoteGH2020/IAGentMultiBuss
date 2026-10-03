@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-PROMPT_VERSION = "classification_v1"
+PROMPT_VERSION = "classification_v2"
 
 
 def _media_part(file_bytes: bytes, mime_type: str) -> Image | PDF:

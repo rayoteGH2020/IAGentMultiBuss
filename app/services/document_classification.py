@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING, Literal
 
 import structlog
 
+from app.core.document_dates import find_issue_date
 from app.core.document_text import extract_document_text
 from app.llm.classification import classify_document_with_llm
 from app.models import DocTypeCode
 
 if TYPE_CHECKING:
+    from datetime import date
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,9 @@ _FACTURA_TICKET_TYPES = frozenset({DocTypeCode.factura, DocTypeCode.ticket})
 HIGH_CONFIDENCE_THRESHOLD = 0.75
 # Confianza asignada a un mismatch heurístico (reglas de texto estables).
 HEURISTIC_CONFIDENCE = 0.85
+# Confianza mínima en la fecha leída por el LLM para rechazar en la subida un
+# documento fuera del histórico del plan (D017); por debajo decide la extracción.
+ISSUE_DATE_CONFIDENCE_THRESHOLD = 0.8
 
 TypeVerifyMethod = Literal[
     "trusted_type",
@@ -49,6 +54,9 @@ class TypeVerificationResult:
     confidence: float | None
     needs_confirmation: bool
     method: TypeVerifyMethod
+    # Fecha de emisión, si se conoce antes de extraer: del texto del PDF (sin LLM)
+    # o de la misma llamada de clasificación con confianza alta (D017).
+    issue_date: date | None = None
 
 
 def classify_from_text(text: str) -> DocTypeCode | None:
@@ -72,11 +80,13 @@ async def verify_user_doc_type(
     user_choice: DocTypeCode,
     source_filename: str | None = None,
 ) -> TypeVerificationResult:
-    """Verifica factura/ticket antes de extracción cara.
+    """Verifica factura/ticket antes de extracción cara y lee la fecha de emisión.
 
     Contratos/seguros se confían al tipo de usuario (otra vía de prompts).
     Ante mismatch con confianza alta, el llamador debe pedir confirmación HTMX
-    y no encolar la extracción.
+    y no encolar la extracción. La fecha (``issue_date``) sale del texto del PDF
+    o, si hace falta la clasificación con LLM, de esa misma llamada: permite
+    rechazar lo anterior al histórico del plan sin extraerlo (D017).
     """
     if user_choice not in _FACTURA_TICKET_TYPES:
         return TypeVerificationResult(
@@ -88,6 +98,7 @@ async def verify_user_doc_type(
         )
 
     text = extract_document_text(file_bytes, mime_type)
+    text_date = find_issue_date(text)
     heuristic = classify_from_text(text)
     if heuristic is not None:
         if heuristic == user_choice:
@@ -103,6 +114,7 @@ async def verify_user_doc_type(
                 confidence=HEURISTIC_CONFIDENCE,
                 needs_confirmation=False,
                 method="heuristic_match",
+                issue_date=text_date,
             )
         logger.info(
             "document_classification.heuristic_mismatch",
@@ -117,6 +129,7 @@ async def verify_user_doc_type(
             confidence=HEURISTIC_CONFIDENCE,
             needs_confirmation=True,
             method="heuristic_mismatch",
+            issue_date=text_date,
         )
 
     try:
@@ -140,6 +153,7 @@ async def verify_user_doc_type(
             confidence=None,
             needs_confirmation=False,
             method="llm_failed_trust_user",
+            issue_date=text_date,
         )
 
     detected = DocTypeCode(llm_result.doc_type)
@@ -163,12 +177,18 @@ async def verify_user_doc_type(
         needs_confirmation=needs,
         method=method,
     )
+    llm_date = (
+        llm_result.fecha_emision
+        if llm_result.fecha_confianza >= ISSUE_DATE_CONFIDENCE_THRESHOLD
+        else None
+    )
     return TypeVerificationResult(
         user_choice=user_choice,
         detected=detected,
         confidence=confidence,
         needs_confirmation=needs,
         method=method,
+        issue_date=text_date or llm_date,
     )
 
 

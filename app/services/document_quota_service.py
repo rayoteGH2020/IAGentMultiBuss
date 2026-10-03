@@ -41,7 +41,7 @@ from app.core.billing_period import (
 )
 from app.core.cache import get_redis
 from app.core.db import set_tenant_context
-from app.core.document_processing_errors import DocumentErrorCode
+from app.core.document_processing_errors import DocumentErrorCode, is_retryable
 from app.core.entitlement_codes import LIMIT_INVOICES_PER_MONTH, LIMIT_TICKETS_PER_MONTH
 from app.core.errors import RateLimitError
 from app.models import Contract, ContractStatus, Invoice, InvoiceStatus, Ticket, TicketStatus
@@ -101,6 +101,7 @@ class DuplicateMatch:
     document_id: UUID
     status: str
     created_at: datetime
+    error_code: str | None = None
     # Fuera del histórico visible del plan (history_months, D017): no lo ve.
     hidden_by_history: bool = False
 
@@ -213,7 +214,13 @@ async def find_duplicate(
         visible = literal(True) if visible_from is None else _HISTORY_CONDITIONS[kind](visible_from)
         row = (
             await db.execute(
-                select(model.id, model.status, model.created_at, visible.label("visible"))
+                select(
+                    model.id,
+                    model.status,
+                    model.created_at,
+                    model.error_code,
+                    visible.label("visible"),
+                )
                 .where(
                     model.tenant_id == tenant_id,
                     model.file_sha256 == sha256,
@@ -229,6 +236,7 @@ async def find_duplicate(
                 document_id=row.id,
                 status=str(row.status.value),
                 created_at=row.created_at,
+                error_code=row.error_code,
                 hidden_by_history=not row.visible,
             )
     return None
@@ -244,6 +252,8 @@ def duplicate_message(
     )
     if match.hidden_by_history:
         return f"{base} {document_history_service.hidden_message(history_months)}"
+    if match.status == "failed" and not is_retryable(match.error_code):
+        return f"{base} Ese documento no se pudo procesar y no admite reintento."
     if match.status == "failed":
         return f"{base} Ese documento falló al procesarse: usa «Reintentar» en él."
     return base

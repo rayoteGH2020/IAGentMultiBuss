@@ -37,6 +37,9 @@ class DocumentErrorCode(StrEnum):
     # tickets, o sin presupuesto de IA. Se procesan solos al haber hueco.
     monthly_quota = "monthly_quota"
     llm_budget = "llm_budget"
+    # Fecha de emisión anterior al histórico del plan (history_months, D017):
+    # no se procesa ni consume cupo. Definitivo: ni reintento ni procesado del SADM.
+    outside_history = "outside_history"
 
 
 # Rechazos que dependen del fichero, no del momento: reintentar con el mismo
@@ -52,6 +55,10 @@ NON_RETRYABLE_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset(
         DocumentErrorCode.plan_feature_disabled,
     },
 )
+
+# Rechazos definitivos: ni reintento ni procesado excepcional del SADM (el
+# documento seguiría fuera del histórico visible del plan).
+FINAL_ERROR_CODES: frozenset[DocumentErrorCode] = frozenset({DocumentErrorCode.outside_history})
 
 # Fallos que no causa el usuario (reinicio del worker, proveedor saturado o sin
 # saldo): reintentarlos no gasta reintento del mes ni del documento (decisión
@@ -121,6 +128,9 @@ _REJECTION_REASONS: dict[DocumentErrorCode, str] = {
     DocumentErrorCode.type_confirmation_required: (
         "Confirma el tipo de documento antes de procesarlo."
     ),
+    DocumentErrorCode.outside_history: (
+        "Es anterior al histórico que incluye tu plan: no se ha procesado ni consume cupo."
+    ),
 }
 
 
@@ -162,7 +172,14 @@ def is_retryable(error_code: str | None) -> bool:
         code = DocumentErrorCode(error_code)
     except ValueError:
         return True
-    return code not in NON_RETRYABLE_ERROR_CODES
+    return code not in NON_RETRYABLE_ERROR_CODES and code not in FINAL_ERROR_CODES
+
+
+def is_overridable(error_code: str | None) -> bool:
+    """True si el SADM puede autorizar un procesado excepcional (rechazo por límites)."""
+    return not is_retryable(error_code) and error_code not in {
+        code.value for code in FINAL_ERROR_CODES
+    }
 
 
 def rejection_message(

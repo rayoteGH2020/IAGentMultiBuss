@@ -25,7 +25,7 @@ from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.core.db import set_tenant_context
-from app.core.document_processing_errors import is_retryable
+from app.core.document_processing_errors import is_overridable
 from app.core.errors import NotFoundError, ValidationError
 from app.core.media_limits import PDF_MIME, MediaLimitExceeded, pdf_page_count
 from app.core.storage import get_storage
@@ -151,22 +151,22 @@ async def list_rejected_documents(db: AsyncSession, *, limit: int = 100) -> list
     rows: list[RejectedDocument] = [
         _row_from_invoice(invoice, tenant_name)
         for invoice, tenant_name in (await db.execute(invoice_stmt)).all()
-        if not is_retryable(invoice.error_code)
+        if is_overridable(invoice.error_code)
     ]
     rows.extend(
         _row_from_ticket(ticket, tenant_name)
         for ticket, tenant_name in (await db.execute(ticket_stmt)).all()
-        if not is_retryable(ticket.error_code)
+        if is_overridable(ticket.error_code)
     )
     rows.extend(
         _row_from_contract(contract, tenant_name)
         for contract, tenant_name in (await db.execute(contract_stmt)).all()
-        if not is_retryable(contract.error_code)
+        if is_overridable(contract.error_code)
     )
     rows.extend(
         _row_from_insurance(insurance, tenant_name)
         for insurance, tenant_name in (await db.execute(insurance_stmt)).all()
-        if not is_retryable(insurance.error_code)
+        if is_overridable(insurance.error_code)
     )
     rows.sort(key=lambda row: row.updated_at, reverse=True)
     return rows[:limit]
@@ -340,7 +340,7 @@ async def authorize_processing(
     review = await build_review(db, kind=kind, document_id=document_id)
     document = review.document
 
-    if is_retryable(document.error_code):
+    if not is_overridable(document.error_code):
         raise ValidationError(
             "Este documento no está rechazado por límites; usa el reintento normal.",
         )

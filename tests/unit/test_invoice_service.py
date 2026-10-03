@@ -140,7 +140,8 @@ async def test_apply_extraction_result_persists_vat_breakdown(
     db_session: AsyncSession,
     tenant_factory: Callable[..., Coroutine[Any, Any, Tenant]],
 ) -> None:
-    tenant = await tenant_factory()
+    # Premium: sin límite de histórico (fecha fija del pasado, D017).
+    tenant = await tenant_factory(plan_code="premium")
     await set_tenant_context(db_session, str(tenant.id))
 
     invoice = await invoice_service.create_invoice_stub(
