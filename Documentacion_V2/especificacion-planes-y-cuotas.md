@@ -99,7 +99,7 @@ Precios sin IVA (21 %). Pago anual = 10 mensualidades (2 meses gratis).
 
 ### 3.1 Límites comerciales mensuales (los que ve el cliente)
 
-En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contratos. `members_max` aplicado (D022). Sin crear todavía: `history_months` (bloque 6), `assistant_messages_per_month` y `reminders_per_month` (canales, fuera del producto mínimo).
+En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contratos. `members_max` aplicado (D022). `history_months` aplicado (bloque 6, `p83`). Sin crear todavía: `assistant_messages_per_month` y `reminders_per_month` (canales, fuera del producto mínimo).
 
 | Limit code | Unidad | Básico | Avanzado | Premium |
 |---|---|---:|---:|---:|
@@ -260,7 +260,7 @@ En el catálogo desde `p77` (D027), aún sin aplicar: facturas, tickets y contra
 - **`history_months` (D017):** oculta facturas y tickets con fecha de emisión anterior al límite. Los contratos activos o pendientes de vencer son siempre visibles, buscables en el chat y avisables; tras vencer o ser sustituidos, se aplica el mismo límite contado desde su fecha de fin.
 - Las pólizas seguirán la regla de los contratos cuando se resuelva su encaje en los planes (aparcado).
 - El histórico más antiguo que `history_months` **no se borra**, solo se oculta. Si el cliente sube de plan, vuelve a verse.
-- Aún no implementado (`history_months` no existe en el código, 2026-09-30): implementarlo ya con esta regla.
+- **Estado actual (hecho 2026-10-03, bloque 6, `p83_history_months_01`):** corte por meses completos (el mes en curso y los N anteriores) sobre la fecha de emisión (sin ella, la de subida); contratos por vigencia, con `replaced_at` para los sustituidos sin fecha de fin. Se aplica al panel y al chat; no al export RGPD, SADM ni cupos. Un duplicado de un documento oculto se rechaza explicando el motivo. Pendiente de decidir qué hacer con los documentos que ya nacen fuera del histórico al subirlos (D017).
 
 ### 4.8 Control de coste (`llm_budget_eur_month`)
 - Cada llamada al LLM (también la clasificación con Haiku y los embeddings de Voyage) se registra en `llm_calls` con `tenant_id`, `task`, `prompt_version`, tokens y coste (**verificado**). No hay columna `feature`: la función se identifica con `task` + `prompt_version` (el asistente de canales usa `channel_external_v1`; el chat de la app, el prompt de `chat_prompts.py`; el analista, `task="sql"`). El chat de documentos y el de conocimiento son un único chat (`PROMPT_UNIFIED`) y una misma pregunta puede usar herramientas de ambos, así que no se separan por llamada. Los topes de preguntas de §3.2 son contadores de cuota y no dependen de `llm_calls`. Tokens de caché: aplazado (Backlog P2b-20). `plan_quota_service` acumula el gasto del periodo.
@@ -422,7 +422,7 @@ Para el asistente y las citas (`messaging_channels`, `end_customers`, `assistant
 4. ~~Cuotas en facturas y tickets (`quota_pending`).~~ Hecho (bloques 2 y 3, 2026-10-01, `p80_document_quota_01`): reserva al encolar y devolución si no termina bien, `quota_pending` con su job, hash SHA-256, avisos por email al 80 % y al primer pendiente, y reintentos al mes con máximo 3 por documento. Detalles en D027.
 5. ~~Contratos: estados, renovación, altas al mes con carga inicial, páginas, hash y extracción.~~ Hecho (bloque 5, 2026-10-03, `p82_contract_quota_01`). Fuera: borrado diferido y purga (Backlog P3-8) y renovación enlazada automática. Detalles en D027.
 6. ~~Historial de los chats (sección 4.4).~~ Sin cambios de código: se acepta el comportamiento actual (§4.4, 2026-09-30). Medición pendiente en Backlog P2b-21.
-7. Usuarios (hecho, D022) e histórico (`history_months`, bloque 6).
+7. Usuarios (hecho, D022) e histórico (hecho, bloque 6, `p83_history_months_01`; pendiente la decisión sobre documentos que nacen fuera del histórico, D017).
 8. Interfaz de consumo y avisos.
 9. Trabajos programados: reinicio de periodos y purga de contratos borrados (los avisos de contratos, post producto mínimo).
 10. Asistente: cuotas de mensajes y recordatorios, anti-abuso, corte por presupuesto (P2b-17), límites en el contenido y derivación a una persona (sobre lo existente en `appointments` y los canales). Requisito previo: conectar las citas del canal al módulo interno (`Paso12`, D030). **[Post producto mínimo]**: WhatsApp/Telegram quedan fuera del soft launch. El conocimiento en el prompt es una optimización no comprometida (P2b-22).

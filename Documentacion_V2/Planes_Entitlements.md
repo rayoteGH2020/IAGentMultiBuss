@@ -78,6 +78,7 @@ Pendiente / ops:
 | `members_max` | seats | 3 | 9 | 20 |
 | `llm_budget_eur_month` | EUR | 6 | 15 | 30 |
 | `channel_external_slots` | integraciones | 0 | 2 | 2 |
+| `history_months` | meses visibles (facturas y tickets) | 12 | 36 | sin limite |
 
 ## 5. Precios
 
@@ -101,7 +102,7 @@ Precios vigentes: **`especificacion-planes-y-cuotas.md` §2.2** (22 / 49 / 99 EU
 - D011: Analytics no se implementa (vigente hasta retomar el analista de Premium, D018).
 - D012: catalogo Basico / Avanzado / Premium; calendar fuera de oferta; limites duros escalonados.
 - D016: plan asignado solo por SADM; Stripe retirado; cobro pendiente de decidir.
-- D017: historico visible (`history_months`) solo para facturas y tickets; contratos por vigencia. Pendiente de implementar (bloque 6).
+- D017: historico visible (`history_months`, 12 / 36 / sin limite) solo para facturas y tickets; contratos por vigencia. Implementado (bloque 6, 2026-10-03, `p83`) en el panel y el chat.
 - D018: analista de datos de Premium aplazado hasta despues del producto minimo.
 - D019: presupuesto de IA con aviso al 80 % y corte del chat al 90 % (implementado).
 - D022: `members_max` 3 / 9 / 20 (implementado, `p74`).

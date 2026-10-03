@@ -336,9 +336,44 @@ ORDER BY created_at DESC;
 - [ ] `CONTRACT_UPLOAD_PAGE_TIERS` no está en Infisical `prod` salvo que se quieran otros tramos (por defecto `30,60`).
 - [ ] Subir un contrato de prueba de varias páginas → se procesa; la fila muestra el detalle y «Marcar como sustituido».
 
-## Fila 6 — Histórico (bloque 6)
+## Fila 6 — Histórico (bloque 6, `432d7e6`)
 
-Pendiente de implementar. Previsto: en Básico no se ven facturas ni tickets de hace más de 12 meses (`history_months`), ni en el panel ni en el chat, y la regla de vigencia de los contratos.
+**[auto]**
+
+```powershell
+infisical run -- uv run pytest tests/integration/test_document_history.py tests/unit/test_document_history_units.py tests/integration/test_document_query.py tests/unit/test_document_chat_tools.py tests/unit/test_chat_tool_security.py -q
+```
+
+Cubre: corte por meses completos (cambios de año incluidos); valores del catálogo (12 / 36 / sin límite) y override de 0 rechazado; sin el límite en el catálogo se aplican 12 meses; facturas y tickets antiguos ocultos en el panel, búsqueda, agregación y contrapartes del chat, y `get_document` responde «no encontrado»; sin fecha de emisión cuenta la de subida; subir de plan vuelve a mostrar lo oculto; contratos vigentes siempre visibles, vencidos y sustituidos por fecha de fin o `replaced_at`; `replaced_at` se rellena al sustituir y se borra al reactivar; el duplicado de un documento oculto se rechaza explicando el histórico.
+
+**[dev]** — tenant Básico con una factura y un ticket procesados. Para envejecer la factura:
+
+```sql
+UPDATE invoices SET fecha = now() - interval '14 months' WHERE id = '<factura>';
+```
+
+- [ ] La factura desaparece de `/documents` al recargar; el ticket reciente sigue.
+- [ ] En el chat, «¿cuánto me facturó <proveedor de esa factura>?» no la cuenta y no la cita.
+- [ ] Volver a subir el mismo fichero → «ya está subido como factura ... Queda fuera de los 12 meses de histórico de tu plan, por eso no lo ves.»
+- [ ] Override `history_months` = 36 en `/sadm/plans/tenants/{id}` → la factura vuelve a verse en el panel y en el chat. Quitar el override.
+- [ ] Override `history_months` = 0 → el SADM lo rechaza («history_months must be at least 1»).
+- [ ] Contratos: uno vigente con fecha de inicio de hace años se ve; uno vencido hace más de 12 meses no:
+
+```sql
+UPDATE contracts SET fecha_fin = now() - interval '14 months' WHERE id = '<contrato>';
+```
+
+- [ ] «Mi cuenta» muestra «Meses de histórico de facturas y tickets: 12» (Premium: «Ilimitado»).
+- [ ] Pendiente de decisión (D017, punto 9): una factura de hace más de 12 meses subida hoy se procesa, consume cupo y queda oculta sin aviso. Revisar cuando se decida.
+
+**[prod]**
+
+- [ ] `alembic current` = `p83_history_months_01` (o posterior) y el catálogo tiene el límite:
+
+```sql
+SELECT p.code, pe.limit_value FROM plan_entitlements pe JOIN plans p ON p.id = pe.plan_id
+WHERE pe.kind = 'limit' AND pe.code = 'history_months' ORDER BY p.code;
+```
 
 ## Fila 7 — Consumo en «Mi cuenta» (bloque 7)
 

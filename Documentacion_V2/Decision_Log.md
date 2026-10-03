@@ -301,6 +301,18 @@ Consecuencia:
 - Ni `history_months` ni los avisos de contratos existen aun en el codigo (2026-09-29); implementar ambos ya con esta regla.
 - El historico oculto no se borra; si el cliente sube de plan, vuelve a verse (§4.7 sin cambios en ese punto).
 
+**Implementada 2026-10-03** (bloque 6, `432d7e6`, migracion `p83_history_months_01`). Detalles aprobados:
+
+1. `history_months` en el catalogo: 12 / 36 / sin limite (NULL). Un override de 0 o negativo se rechaza (ocultaria todo); si el limite faltara en el catalogo se aplican 12.
+2. Corte por meses completos: el mes en curso y los N anteriores (12 el 3/10/2026 → desde el 1/10/2025). Se calcula al leer (`document_history_service`).
+3. Facturas y tickets: fecha de emision; sin ella (pendientes, fallidas o sin fecha extraida), la de subida.
+4. Contratos: vigentes (activos y no vencidos) siempre visibles; vencidos por `fecha_fin`; sustituidos por `fecha_fin` o, sin ella, por `replaced_at` (columna nueva, rellenada con `updated_at` en los ya sustituidos).
+5. Polizas: sin cambios (aparcadas).
+6. Se aplica al panel `/documents` y a las tools del chat (buscar, agregar, contrapartes y `get_document`, que responde "no encontrado" para un documento oculto).
+7. No se aplica al export RGPD, SADM, cupos, job de pendientes ni a acciones por id sin boton visible.
+8. Un documento oculto sigue bloqueando el mismo fichero (hash); el aviso explica que queda fuera de los N meses de historico del plan.
+9. **Pendiente de decidir:** documentos que ya nacen fuera del historico (p. ej. una factura de hace 2 anos subida en Basico). La fecha solo se conoce tras extraer: hoy se procesan, consumen cupo y quedan ocultos sin aviso. Rechazada la propuesta de avisarlo en la fila y mantenerlo asi (2026-10-03).
+
 ## D018 - Analista de datos en Premium: aplazado hasta despues del producto minimo
 
 Decision (cerrada 2026-09-29): el analista de datos conversacional para Premium (`analytics`, §2.1 y §4.5 de `especificacion-planes-y-cuotas.md`) **no se desarrolla ahora**. Queda en el roadmap para despues del producto minimo, junto con el resto de funcionalidades posteriores.

@@ -80,7 +80,7 @@ infisical run -- uv run pytest tests/unit/test_deploy_config.py tests/unit/test_
 infisical run -- uv run alembic heads
 ```
 
-- [ ] `alembic heads` = un unico head (a 2026-10-03: `p82_contract_quota_01`; los bloques 6-7 pueden anadir migraciones: anotar aqui el head final).
+- [ ] `alembic heads` = un unico head (a 2026-10-03: `p83_history_months_01`; el bloque 7 puede anadir migraciones: anotar aqui el head final).
 - [ ] PR #1 fusionado en `main` con CI verde (quitar antes la etiqueta `eval-regression-accepted`: mientras esta, una bajada real de las evals no falla el job).
 
 ### 1.2 RLS real en dev (riesgo detectado 2026-09-24)
@@ -502,7 +502,7 @@ tail -n 3 /var/backups/iagent/releases.log
 
 - [ ] Los 5 servicios `healthy`/`running`.
 - [ ] `saas_app|f|f` (sin superusuario, sin bypass RLS).
-- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-03: `p82_contract_quota_01`). Si no pone `(head)`, falta alguna migracion.
+- [ ] `alembic current` (lo imprime `deploy.sh`) muestra `(head)` y coincide con `alembic heads` del commit desplegado (a 2026-10-03: `p83_history_months_01`). Si no pone `(head)`, falta alguna migracion.
 
 ### 8.4 Login y `azp`
 
@@ -647,7 +647,11 @@ SELECT action, created_at FROM audit_log
 WHERE tenant_id = '<tenant>' AND action IN ('contract.replaced', 'contract.reactivated')
 ORDER BY created_at DESC;
 ```
-- [ ] Historico (bloque 6): en Basico no se ven facturas ni tickets de hace mas de 12 meses.
+- [ ] Historico (bloque 6), en un tenant Basico con una factura de hace mas de 12 meses (en dev, cambiar su fecha: `UPDATE invoices SET fecha = now() - interval '14 months' WHERE id = '<factura>';`):
+  - No aparece en `/documents` ni el chat la encuentra ("¿cuanto me facturo <proveedor>?" no la cuenta).
+  - Volver a subir el mismo fichero → "ya esta subido... Queda fuera de los 12 meses de historico de tu plan".
+  - Pasar el tenant a Avanzado (o override `history_months` = 36) → vuelve a verse.
+  - Un contrato vigente con fecha de inicio antigua se ve siempre; uno vencido hace mas de 12 meses, no.
 - [ ] "Mi cuenta" (bloque 7) muestra "X de Y" de cada cupo.
 - [ ] `/settings/members` muestra "Miembros: X de Y"; en Basico (3) se rechaza el alta del 4.º miembro y aparece el aviso de maximo alcanzado (D022). Recordar el limite de Clerk >= 20 (Fase 6).
 

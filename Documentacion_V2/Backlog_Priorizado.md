@@ -18,12 +18,12 @@ Fuente unica del plan de cierre. Los invitados del soft launch tienen los mismos
 | 3 | Reintentos (bloque 3) | `document_retries_per_month` (40 / 150 / 400) y maximo 3 por documento (`manual_retry_count`); al agotarlos, `failed` con "Revision manual" y sin "Reintentar". Los fallos que no causa el usuario (`processing_interrupted`, `provider_overload`, `provider_billing`) no gastan reintento. Reintentar sin cupo de documentos se rechaza sin gastar nada. Retirado `document_retries_per_day` (catalogo y UI) | **Hecho** (`adb8eed`, `p80_document_quota_01`) | — |
 | 4 | Chat (bloque 4) | `chat_questions_per_month` (400 / 1.500 / 4.000, D023): una pregunta se cuenta al empezar el turno y se devuelve si el proveedor falla; el corte por presupuesto (D019) no la cuenta. Al 100 %, respuesta fija sin LLM con la fecha de renovacion y el contacto del admin. Limite de ritmo por usuario y tenant (10 por minuto y 60 por hora, `CHAT_RATE_LIMIT_PER_MINUTE` / `_PER_HOUR`). Retirados los tres topes diarios (`chat_messages_per_day`, `CHAT_DAILY_MESSAGE_LIMIT`, `CHAT_USER_DAILY_MESSAGE_LIMIT`; cierra P2b-24). Detalles en D023 | **Hecho** (`b69e936`, `p81_chat_quota_01`) | — |
 | 5 | Contratos (bloque 5) | 15 activos, 5 altas al mes, carga inicial de 15 hasta el final del primer mes completo, tramos por paginas (1/2/3 altas, mas de 100 paginas se rechaza) y hash SHA-256 contra duplicados (sin LLM ni consumo de alta). Renovacion con boton manual "Marcar como sustituido" en el contrato anterior: libera su hueco de activo, sigue en el historico y el chat no lo trata como vigente. **Fuera:** renovacion enlazada automatica (se puede montar despues sobre el estado "sustituido") y purga a los 30 dias (P3-8). Decisiones de implementacion en D027 | **Hecho** (`99132d3`, `p82_contract_quota_01`) | — |
-| 6 | Historico (bloque 6) | `history_months` = 12 (D017): oculta facturas y tickets antiguos y aplica la regla de vigencia a los contratos | Pendiente | 0,5-1 |
+| 6 | Historico (bloque 6) | `history_months` = 12 / 36 / sin limite (D017): oculta facturas y tickets antiguos y aplica la regla de vigencia a los contratos, en el panel y en el chat. **Pendiente de decidir:** que hacer con los documentos que ya nacen fuera del historico al subirlos (D017) | **Hecho** (`432d7e6`, `p83_history_months_01`) | — |
 | 7 | Consumo en "Mi cuenta" (bloque 7) | "X de Y" mensual de todos los cupos y avisos al 80 % y 100 % en la app; cierra P2b-18 y el resto de P2-4 (los emails y el corte del chat de D019 ya estan hechos) | Pendiente | 1 |
 | 8 | Cierre del codigo | Suite completa, smoke con `saas_app` en dev (`PasosParaProduccion.md` Fase 1.2; cierra P2b-10), fusionar el PR #1 en `main` (el tag de produccion sale de `main`) | Pendiente | 0,5 |
 | 9 | Ops de despliegue | `PasosParaProduccion.md` Fases 2-13, en dos tandas. **Tanda A, desde ya y en paralelo a las filas 1-8 (Fases 2-7, no dependen del codigo):** dominio, VPS, buckets R2, claves LLM de prod y clave de Google aparte para CI (P2b-2), rotacion de secretos (P0-1), endurecer la VPS, Machine Identity de Infisical, Infisical `prod` con SMTP y `EMAIL_SADM` y sin `LLM_MODEL_*` para que rijan los modelos del codigo (P2b-1), Clerk prod con limite de miembros por organizacion >= 20 (P2b-23) y webhook con `user.deleted` (D021), DNS. **Tanda B, despues de la fila 8 (Fases 8-13):** repaso de la Fase 5 por si los bloques anadieron variables, primer deploy, backups y restore probado, alta del piloto con telefono del admin (P2b-19), QA manual de la Fase 11 con alcance Clerk/R2/documentos/chat/planes (P1-7), verificacion de seguridad y firma en `Paso10` | Pendiente (ops) | 1-2 |
 
-Codigo pendiente: unos 2-2,5 dias.
+Codigo pendiente: unos 1,5 dias.
 
 ### Orden de ejecucion
 
@@ -36,7 +36,7 @@ Codigo pendiente: unos 2-2,5 dias.
 3. ~~**Filas 2 -> 3, facturas y tickets y reintentos.**~~ Hechas.
 4. ~~**Fila 4, chat.**~~ Hecha.
 5. ~~**Fila 5, contratos.**~~ Hecha.
-6. **Fila 6, historico.**
+6. ~~**Fila 6, historico.**~~ Hecha (falta decidir los documentos que nacen fuera del historico, D017).
 7. **Fila 7, consumo en "Mi cuenta".** Al final, para mostrar todos los cupos ya aplicados.
 8. **Fila 8, cierre del codigo.** Suite completa, smoke con `saas_app` y fusion del PR #1 en `main`.
 
